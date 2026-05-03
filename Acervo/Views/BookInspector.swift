@@ -10,15 +10,18 @@ import PhosphorSwift
 struct BookInspector: View {
     let book: Book?
     let device: DeviceContext?
-    /// Set when the parent has more than one book selected. The inspector
-    /// can't render a single book's metadata, so it shows a count placeholder.
-    var multiSelectionCount: Int? = nil
+    /// Selected books when the parent has more than one book selected.
+    /// Drives the multi-selection state with stack preview and bulk actions.
+    var multiBooks: [Book]? = nil
+    var multiDeviceInfo: MultiDeviceInfo? = nil
 
     let onClose: () -> Void
     let onEdit: () -> Void
     let onShowInFinder: () -> Void
     let onSendToDevice: () -> Void
     let onRequestDelete: () -> Void
+    let onSendMultiToDevice: () -> Void
+    let onRequestDeleteMulti: () -> Void
 
     /// Pre-resolved device context: lets the view branch on send-to-device
     /// without knowing about `BookDevice` or `AppState`.
@@ -28,14 +31,21 @@ struct BookInspector: View {
         let canSend: Bool
     }
 
+    /// Pre-resolved multi-selection device context. `sendableCount` is
+    /// the subset of `multiBooks` the device can accept.
+    struct MultiDeviceInfo {
+        let displayName: String
+        let sendableCount: Int
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             Theme.panel
 
             if let book {
                 content(for: book)
-            } else if let count = multiSelectionCount {
-                multiState(count: count)
+            } else if let multiBooks, !multiBooks.isEmpty {
+                multiContent(books: multiBooks)
             } else {
                 emptyState
             }
@@ -57,18 +67,52 @@ struct BookInspector: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func multiState(count: Int) -> some View {
-        VStack(spacing: Theme.Spacing.xs) {
-            Spacer()
-            Text("\(count) books selected")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.primary.opacity(0.85))
-            Text("Select a single book to see details.")
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.primary.opacity(0.45))
-            Spacer()
+    @ViewBuilder
+    private func multiContent(books: [Book]) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                multiHeader(books: books)
+                    .padding(.top, 56)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.xl + Theme.Spacing.xs)
+
+                multiActions(books: books)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Spacing.xxl)
+            }
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    private func multiHeader(books: [Book]) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+            BookDragPreview(books: books)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("\(books.count) books selected")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.primary)
+        }
+    }
+
+    @ViewBuilder
+    private func multiActions(books: [Book]) -> some View {
+        VStack(spacing: 0) {
+            if let info = multiDeviceInfo, info.sendableCount > 0 {
+                Button(action: onSendMultiToDevice) {
+                    actionLabel(
+                        icon: .deviceTablet,
+                        title: "Send \(info.sendableCount) to \(info.displayName)"
+                    )
+                }
+            }
+            ShareLink(items: books.map(\.fileURL)) {
+                actionLabel(icon: .share, title: "Share \(books.count)…")
+            }
+            Button(role: .destructive, action: onRequestDeleteMulti) {
+                actionLabel(icon: .trash, title: "Move \(books.count) to Trash…")
+            }
+        }
+        .buttonStyle(MenuRowStyle())
     }
 
     private var closeButton: some View {
@@ -190,6 +234,9 @@ struct BookInspector: View {
             }
             Button(action: onShowInFinder) {
                 actionLabel(icon: .folderOpen, title: "Show in Finder")
+            }
+            ShareLink(item: book.fileURL) {
+                actionLabel(icon: .share, title: "Share…")
             }
             Button(role: .destructive, action: onRequestDelete) {
                 actionLabel(icon: .trash, title: "Move to Trash…")

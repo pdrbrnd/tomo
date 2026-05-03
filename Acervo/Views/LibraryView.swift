@@ -40,11 +40,16 @@ struct LibraryView: View {
         return bySearch.filter { $0.locale == lang }
     }
 
-    /// The book shown in the inspector. Only resolves when exactly one is
-    /// selected — multi-select shows a count placeholder instead.
+    /// Selection resolved against the full library, not the filtered grid.
+    /// Drives the inspector — a search/filter change must not make the
+    /// inspector forget the user's selection.
+    private var inspectorBooks: [Book] {
+        state.books.filter { selectedBookIDs.contains($0.id) }
+    }
+
+    /// The book shown in the single-book inspector branch.
     private var inspectorBook: Book? {
-        guard selectedBookIDs.count == 1, let id = selectedBookIDs.first else { return nil }
-        return state.books.first(where: { $0.id == id })
+        inspectorBooks.count == 1 ? inspectorBooks.first : nil
     }
 
     /// Selected books in the order they appear in the current filtered grid.
@@ -64,6 +69,16 @@ struct LibraryView: View {
             displayName: device.displayName,
             isOnDevice: state.deviceFilenames.contains(device.deviceFilename(for: book)),
             canSend: device.canAccept(book)
+        )
+    }
+
+    /// Pre-filtered multi-selection device context for the inspector.
+    private func multiDeviceInfo(for books: [Book]) -> BookInspector.MultiDeviceInfo? {
+        guard let device = state.device else { return nil }
+        let sendable = books.filter { device.canAccept($0) }
+        return BookInspector.MultiDeviceInfo(
+            displayName: device.displayName,
+            sendableCount: sendable.count
         )
     }
 
@@ -278,8 +293,8 @@ struct LibraryView: View {
         return BookCard(
             book: book,
             isSelected: isSelected,
-            cardWidth: cardWidth,
-            menu: { dismiss in bookMenu(for: book, dismiss: dismiss) }
+            deviceStatus: deviceStatus(for: book),
+            cardWidth: cardWidth
         )
         .background(
             GeometryReader { geo in
@@ -506,6 +521,13 @@ struct LibraryView: View {
             NSWorkspace.shared.activateFileViewerSelecting([book.fileURL])
             dismiss()
         }
+        ShareLink(item: book.fileURL) {
+            HStack(spacing: 9) {
+                Icon(symbol: .share, weight: .regular, size: 13)
+                    .frame(width: 14)
+                Text("Share…")
+            }
+        }
         if let device = state.device, device.canAccept(book) {
             MenuDivider()
             if isOnDevice(book) {
@@ -536,9 +558,16 @@ struct LibraryView: View {
                     Task { await state.sendBooksToDevice(sendable) }
                     dismiss()
                 }
-                MenuDivider()
             }
         }
+        ShareLink(items: books.map(\.fileURL)) {
+            HStack(spacing: 9) {
+                Icon(symbol: .share, weight: .regular, size: 13)
+                    .frame(width: 14)
+                Text("Share \(books.count)…")
+            }
+        }
+        MenuDivider()
         bookMenuItem("Move \(books.count) to Trash…", icon: .trash, destructive: true) {
             booksPendingDelete = books
             dismiss()
@@ -577,7 +606,8 @@ struct LibraryView: View {
         BookInspector(
             book: inspectorBook,
             device: inspectorBook.flatMap { deviceContext(for: $0) },
-            multiSelectionCount: selectedBookIDs.count > 1 ? selectedBookIDs.count : nil,
+            multiBooks: inspectorBooks.count > 1 ? inspectorBooks : nil,
+            multiDeviceInfo: inspectorBooks.count > 1 ? multiDeviceInfo(for: inspectorBooks) : nil,
             onClose: { inspectorOpen = false },
             onEdit: { if let book = inspectorBook { editingBook = book } },
             onShowInFinder: {
@@ -590,7 +620,13 @@ struct LibraryView: View {
                     Task { await state.sendToDevice(book: book) }
                 }
             },
-            onRequestDelete: { if let book = inspectorBook { booksPendingDelete = [book] } }
+            onRequestDelete: { if let book = inspectorBook { booksPendingDelete = [book] } },
+            onSendMultiToDevice: {
+                guard let device = state.device else { return }
+                let sendable = inspectorBooks.filter { device.canAccept($0) }
+                Task { await state.sendBooksToDevice(sendable) }
+            },
+            onRequestDeleteMulti: { booksPendingDelete = inspectorBooks }
         )
         .frame(width: Self.inspectorWidth)
         .frame(maxHeight: .infinity)
@@ -620,6 +656,13 @@ struct LibraryView: View {
     private func isOnDevice(_ book: Book) -> Bool {
         guard let device = state.device else { return false }
         return state.deviceFilenames.contains(device.deviceFilename(for: book))
+    }
+
+    /// Resolves the card's relation to the connected device. Drives the
+    /// cover dim (missing) and the on-device check badge (present).
+    private func deviceStatus(for book: Book) -> BookCardDeviceStatus {
+        guard state.device != nil else { return .noDevice }
+        return isOnDevice(book) ? .onDevice : .missingFromDevice
     }
 
     // MARK: - Keyboard shortcuts

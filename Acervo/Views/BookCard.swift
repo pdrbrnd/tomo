@@ -1,25 +1,34 @@
 import SwiftUI
 import PhosphorSwift
 
-/// Book card: cover at rest, backdrop-blurred dark overlay with title + author
-/// + 3-dot menu when selected. The card is gesture-agnostic — the parent
-/// wires single/double tap and the menu items.
+/// Book card: cover at rest, backdrop-blurred dark overlay with title +
+/// author when selected. Pure presentation — the parent wires single/double
+/// tap and the right-click menu.
 ///
-/// `MenuContent` is a `@ViewBuilder` so the parent passes Buttons directly,
-/// the same pattern as React's `children`. The card just decides where the
-/// menu lives (the 3-dot popover and the right-click contextMenu).
-struct BookCard<MenuContent: View>: View {
+/// Tri-state device relation for a card. Mutually exclusive: a book on
+/// the device gets the check badge, one missing gets the cover dim, and
+/// without a device neither applies.
+enum BookCardDeviceStatus {
+    case noDevice
+    case onDevice
+    case missingFromDevice
+}
+
+struct BookCard: View {
     let book: Book
     let isSelected: Bool
+    /// See `BookCardDeviceStatus`. Dim is applied surgically to the cover —
+    /// `.opacity()` on the whole card breaks the selection overlay's
+    /// `.ultraThinMaterial` backdrop blur (the modifier rasterizes the
+    /// layer and kills Material's window-backdrop sampling).
+    var deviceStatus: BookCardDeviceStatus = .noDevice
     let cardWidth: CGFloat
-    /// Builds the popover menu. Receives a `dismiss` closure that the
-    /// menu items can call to close the popover after acting.
-    @ViewBuilder var menu: (_ dismiss: @escaping () -> Void) -> MenuContent
 
-    @State private var menuOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var cardHeight: CGFloat { cardWidth * 1.5 }
+    private var isDimmed: Bool { deviceStatus == .missingFromDevice }
+    private var showsOnDeviceBadge: Bool { deviceStatus == .onDevice }
 
     var body: some View {
         ZStack {
@@ -28,10 +37,24 @@ struct BookCard<MenuContent: View>: View {
                 fallbackTitle: book.title,
                 fallbackAuthor: book.authors.first
             )
+            .opacity(isDimmed ? 0.45 : 1.0)
+            .animation(.easeInOut(duration: 0.18), value: isDimmed)
 
             if isSelected {
                 overlay
                     .transition(.opacity)
+            }
+
+            if showsOnDeviceBadge {
+                VStack {
+                    HStack {
+                        onDeviceBadge
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding(Theme.Spacing.sm + 2)
+                .transition(.opacity)
             }
         }
         .frame(width: cardWidth, height: cardHeight)
@@ -75,41 +98,20 @@ struct BookCard<MenuContent: View>: View {
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.bottom, Theme.Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            VStack {
-                HStack {
-                    Spacer()
-                    moreButton
-                }
-                Spacer()
-            }
-            .padding(Theme.Spacing.sm + 2)
         }
     }
 
-    /// Native macOS Menu leaks an indicator chevron despite `.menuIndicator(.hidden)`,
-    /// so we use a Button + popover. The popover content uses `MenuRowStyle`
-    /// for native-menu-feeling rows in app colors.
-    private var moreButton: some View {
-        Button {
-            menuOpen.toggle()
-        } label: {
-            ZStack {
-                Circle().fill(.ultraThinMaterial)
-                Circle().fill(Color.black.opacity(0.55))
-                Icon(symbol: .dotsThree, weight: .bold, size: 14)
-                    .foregroundStyle(Color.white)
-            }
-            .frame(width: 26, height: 26)
-            .contentShape(Circle())
+    /// Subtle blurred check pill at the top-left of cards whose book is on
+    /// the connected device. Pairs with the cover dim on missing books —
+    /// together they give a clear positive/negative signal at a glance.
+    private var onDeviceBadge: some View {
+        ZStack {
+            Circle().fill(.ultraThinMaterial)
+            Circle().fill(Color.black.opacity(0.62))
+            Icon(symbol: .check, weight: .bold, size: 9)
+                .foregroundStyle(Color.white)
         }
-        .buttonStyle(.plain)
-        .help("More options")
-        .popover(isPresented: $menuOpen, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 0) {
-                menu({ menuOpen = false })
-            }
-            .menuPopoverContainer()
-        }
+        .frame(width: 18, height: 18)
+        .help("On device")
     }
 }
