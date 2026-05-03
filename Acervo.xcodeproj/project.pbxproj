@@ -11,11 +11,27 @@
 		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		EB2319082FA766F800EC4BCD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EB4E9A502FA6F23B0015E496 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EB4E9A572FA6F23B0015E496;
+			remoteInfo = Acervo;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		EB2319042FA766F800EC4BCD /* AcervoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AcervoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EB4E9A582FA6F23B0015E496 /* Acervo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Acervo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		EB2319052FA766F800EC4BCD /* AcervoTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = AcervoTests;
+			sourceTree = "<group>";
+		};
 		EB4E9A5A2FA6F23B0015E496 /* Acervo */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Acervo;
@@ -24,6 +40,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		EB2319012FA766F800EC4BCD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EB4E9A552FA6F23B0015E496 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -40,6 +63,7 @@
 			isa = PBXGroup;
 			children = (
 				EB4E9A5A2FA6F23B0015E496 /* Acervo */,
+				EB2319052FA766F800EC4BCD /* AcervoTests */,
 				EB4E9A592FA6F23B0015E496 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				EB4E9A582FA6F23B0015E496 /* Acervo.app */,
+				EB2319042FA766F800EC4BCD /* AcervoTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,6 +80,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		EB2319032FA766F800EC4BCD /* AcervoTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB23190C2FA766F800EC4BCD /* Build configuration list for PBXNativeTarget "AcervoTests" */;
+			buildPhases = (
+				EB2319002FA766F800EC4BCD /* Sources */,
+				EB2319012FA766F800EC4BCD /* Frameworks */,
+				EB2319022FA766F800EC4BCD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EB2319092FA766F800EC4BCD /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				EB2319052FA766F800EC4BCD /* AcervoTests */,
+			);
+			name = AcervoTests;
+			packageProductDependencies = (
+			);
+			productName = AcervoTests;
+			productReference = EB2319042FA766F800EC4BCD /* AcervoTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		EB4E9A572FA6F23B0015E496 /* Acervo */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = EB4E9A632FA6F23C0015E496 /* Build configuration list for PBXNativeTarget "Acervo" */;
@@ -89,6 +137,10 @@
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
+					EB2319032FA766F800EC4BCD = {
+						CreatedOnToolsVersion = 26.4.1;
+						TestTargetID = EB4E9A572FA6F23B0015E496;
+					};
 					EB4E9A572FA6F23B0015E496 = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -113,11 +165,19 @@
 			projectRoot = "";
 			targets = (
 				EB4E9A572FA6F23B0015E496 /* Acervo */,
+				EB2319032FA766F800EC4BCD /* AcervoTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		EB2319022FA766F800EC4BCD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EB4E9A562FA6F23B0015E496 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -128,6 +188,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		EB2319002FA766F800EC4BCD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		EB4E9A542FA6F23B0015E496 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -137,7 +204,55 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		EB2319092FA766F800EC4BCD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EB4E9A572FA6F23B0015E496 /* Acervo */;
+			targetProxy = EB2319082FA766F800EC4BCD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		EB23190A2FA766F800EC4BCD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pdrbrnd.AcervoTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Acervo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Acervo";
+			};
+			name = Debug;
+		};
+		EB23190B2FA766F800EC4BCD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pdrbrnd.AcervoTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Acervo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Acervo";
+			};
+			name = Release;
+		};
 		EB4E9A612FA6F23C0015E496 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -315,6 +430,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		EB23190C2FA766F800EC4BCD /* Build configuration list for PBXNativeTarget "AcervoTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB23190A2FA766F800EC4BCD /* Debug */,
+				EB23190B2FA766F800EC4BCD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		EB4E9A532FA6F23B0015E496 /* Build configuration list for PBXProject "Acervo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

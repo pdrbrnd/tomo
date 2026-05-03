@@ -15,7 +15,6 @@ natively and treats device delivery as a first-class workflow.
 - Not a sync service (single-user, single-Mac)
 - Not a Calibre clone (no plugin ecosystem, no news, no server mode)
 - Not a DRM tool (out of scope; books arrive DRM-free or they don't arrive)
-- Not a format converter (see "Conversion is deferred" below)
 
 ## Owner / context
 
@@ -73,24 +72,6 @@ These are load-bearing. Don't violate them without flagging it.
 6. **No external binary dependencies in v1.** Everything ships in the app
    bundle as Swift code or pure-Swift packages. No shelling out to
    `ebook-convert`, `pandoc`, or anything else.
-
-## Conversion is deferred
-
-We considered building format conversion in. We're not, for v1. The reasoning:
-
-- Kindle's Send to Kindle service now accepts EPUB, PDF, DOC, DOCX, TXT,
-  RTF, HTM, HTML, PNG, GIF, JPG, JPEG, BMP natively (since late 2022).
-- Most books in the wild — especially from non-store sources — are EPUB.
-- The realistic conversion landscape is bleak: no clean, embeddable,
-  permissively-licensed library exists. Calibre's `ebook-convert` is the
-  de facto standard but is GPLv3, ~500MB, and Python+Qt. Pandoc is MIT
-  but doesn't write MOBI/AZW3. Amazon's KindleGen was discontinued in 2020.
-- Deferring means v1 ships without a 500MB dependency or a Calibre install
-  prerequisite.
-
-For v1, the app passes files through as-is. If a user hits a format the
-Kindle can't handle, they convert externally for that one book. We'll
-revisit conversion in v2 with real data on how often it actually matters.
 
 ## Tech stack
 
