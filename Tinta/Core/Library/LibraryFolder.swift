@@ -1,6 +1,6 @@
 import Foundation
 
-enum LibraryFolder {
+nonisolated enum LibraryFolder {
     private static let userDefaultsKey = "libraryFolderPath"
 
     static func load() -> URL? {
