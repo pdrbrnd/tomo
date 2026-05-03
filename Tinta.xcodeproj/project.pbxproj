@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 		EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */; };
+		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -336,14 +336,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/groue/GRDB.swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 7.0.0;
-			};
-		};
 		EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
@@ -352,18 +344,26 @@
 				minimumVersion = 0.9.19;
 			};
 		};
+		EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		EBF14F852FA6F64400045D30 /* GRDB */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */;
-			productName = GRDB;
-		};
 		EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		EBF14F852FA6F64400045D30 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
