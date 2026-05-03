@@ -1,13 +1,26 @@
 import Foundation
+import os
 
 nonisolated enum LibraryFolder {
     private static let userDefaultsKey = "libraryFolderPath"
 
+    /// Returns the persisted library folder URL, or nil if none has been chosen
+    /// or the previously chosen folder no longer exists on disk.
     static func load() -> URL? {
         guard let path = UserDefaults.standard.string(forKey: userDefaultsKey) else {
             return nil
         }
-        return URL(fileURLWithPath: path, isDirectory: true)
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(
+            atPath: url.path(percentEncoded: false),
+            isDirectory: &isDir
+        )
+        guard exists, isDir.boolValue else {
+            libraryLogger.warning("saved library folder no longer exists: \(path, privacy: .public)")
+            return nil
+        }
+        return url
     }
 
     static func save(_ url: URL?) {
@@ -25,6 +38,19 @@ nonisolated enum LibraryFolder {
         try await Task.detached {
             try walkBookFolders(in: libraryFolder)
         }.value
+    }
+
+    /// True if the folder contains no non-hidden entries.
+    /// Returns false if the folder can't be read (we don't assume empty on error).
+    static func isEmpty(_ folder: URL) -> Bool {
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+        return contents.isEmpty
     }
 
     private static func walkBookFolders(in libraryFolder: URL) throws -> [URL] {

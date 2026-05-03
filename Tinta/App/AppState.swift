@@ -50,9 +50,22 @@ final class AppState {
             return
         }
         let bookFolder = book.fileURL.deletingLastPathComponent()
+        let authorFolder = bookFolder.deletingLastPathComponent()
+        let libFolder = libraryFolder
         do {
             try await Task.detached {
                 try FileManager.default.trashItem(at: bookFolder, resultingItemURL: nil)
+                // Best-effort cleanup of now-empty author folder. Never trash the
+                // library folder itself, even if it's empty.
+                if let libFolder,
+                   authorFolder.standardizedFileURL != libFolder.standardizedFileURL,
+                   LibraryFolder.isEmpty(authorFolder) {
+                    do {
+                        try FileManager.default.trashItem(at: authorFolder, resultingItemURL: nil)
+                    } catch {
+                        libraryLogger.warning("author folder cleanup failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
             }.value
             try await index.delete(book)
             await loadBooks()

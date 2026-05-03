@@ -41,25 +41,36 @@ actor LibraryImporter {
         try FileManager.default.createDirectory(at: bookFolder, withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: sourceURL, to: destFile)
 
-        let coverFileName = writeCover(metadata.coverImage, in: bookFolder)
+        // Past this point, any failure must roll back the partially-created folder.
+        do {
+            let coverFileName = writeCover(metadata.coverImage, in: bookFolder)
 
-        let book = Book(
-            id: UUID(),
-            title: metadata.title,
-            authors: metadata.authors,
-            year: metadata.year,
-            languageCode: metadata.language ?? "und",
-            coverPath: coverFileName,
-            dateAdded: .now,
-            fileURL: destFile,
-            origin: .manualImport
-        )
+            let book = Book(
+                id: UUID(),
+                title: metadata.title,
+                authors: metadata.authors,
+                year: metadata.year,
+                languageCode: metadata.language ?? "und",
+                coverPath: coverFileName,
+                dateAdded: .now,
+                fileURL: destFile,
+                origin: .manualImport
+            )
 
-        try MetadataSidecar.write(book, to: bookFolder)
-        try await index.add(book)
+            try MetadataSidecar.write(book, to: bookFolder)
+            try await index.add(book)
 
-        libraryLogger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
-        return book
+            libraryLogger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
+            return book
+        } catch {
+            do {
+                try FileManager.default.trashItem(at: bookFolder, resultingItemURL: nil)
+                libraryLogger.warning("rolled back partial import: \(bookFolder.path(percentEncoded: false), privacy: .public)")
+            } catch let cleanupError {
+                libraryLogger.error("rollback failed for \(bookFolder.path(percentEncoded: false), privacy: .public): \(cleanupError.localizedDescription, privacy: .public)")
+            }
+            throw error
+        }
     }
 }
 
