@@ -10,6 +10,16 @@ private nonisolated func pngData(from image: NSImage) -> Data? {
     return bitmap.representation(using: .png, properties: [:])
 }
 
+/// Drives the device tile's morphing UI for the send-to-device flow.
+/// Distinct from the drag-active scale-up: this only covers the post-drop
+/// progress + success/failure stretch.
+enum DeviceSendState: Equatable {
+    case idle
+    case sending(completed: Int, total: Int)
+    case success(count: Int)
+    case error(String)
+}
+
 @Observable
 final class AppState {
     var libraryFolder: URL? {
@@ -22,8 +32,19 @@ final class AppState {
     private(set) var device: (any BookDevice)?
     private(set) var deviceFilenames: Set<String> = []
 
+    /// Number of items currently being dragged inside the app. Zero when
+    /// nothing is being dragged. The device tile reads this to scale up
+    /// when *any* in-app drag is active, drawing attention as a drop target.
+    var inAppDragCount: Int = 0
+
+    /// State of the most recent send-to-device operation. Drives the device
+    /// tile's morphing UI (idle → sending → success/error). Cleared back to
+    /// idle after a brief display.
+    var deviceSendState: DeviceSendState = .idle
+
     private var mountObserver: NSObjectProtocol?
     private var unmountObserver: NSObjectProtocol?
+    private var sendStateResetTask: Task<Void, Never>?
 
     init() {
         self.libraryFolder = LibraryFolder.load()
@@ -35,16 +56,57 @@ final class AppState {
     }
 
     func sendToDevice(book: Book) async {
+        await sendBooksToDevice([book])
+    }
+
+    /// Sequentially copies books to the connected device, driving
+    /// `deviceSendState` so the tile can morph through sending → success/error.
+    /// Books that the device can't accept are filtered out before sending.
+    func sendBooksToDevice(_ books: [Book]) async {
         guard let device else {
             deliveryLogger.error("send to device: no device connected")
             return
         }
-        do {
-            try await device.copy(book)
-            deliveryLogger.info("copied to \(device.displayName, privacy: .public): \(book.title, privacy: .public)")
-            deviceFilenames = device.filenames()
-        } catch {
-            deliveryLogger.error("device copy failed: \(error.localizedDescription, privacy: .public)")
+        let toSend = books.filter { device.canAccept($0) }
+        guard !toSend.isEmpty else { return }
+
+        sendStateResetTask?.cancel()
+        deviceSendState = .sending(completed: 0, total: toSend.count)
+
+        var successes = 0
+        var lastError: Error?
+        for (index, book) in toSend.enumerated() {
+            do {
+                try await device.copy(book)
+                successes += 1
+                deliveryLogger.info("copied to \(device.displayName, privacy: .public): \(book.title, privacy: .public)")
+                deviceSendState = .sending(completed: index + 1, total: toSend.count)
+            } catch {
+                lastError = error
+                deliveryLogger.error("device copy failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        deviceFilenames = device.filenames()
+
+        if let lastError, successes == 0 {
+            deviceSendState = .error(lastError.localizedDescription)
+        } else {
+            deviceSendState = .success(count: successes)
+        }
+
+        sendStateResetTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled else { return }
+            self?.deviceSendState = .idle
+        }
+    }
+
+    /// Bulk trash. Each delete runs independently; failures are logged
+    /// (in `deleteBook`) but don't halt the loop. Partial-success is
+    /// surfaced through the on-disk truth (loadBooks reflects what's left).
+    func deleteBooks(_ books: [Book]) async {
+        for book in books {
+            await deleteBook(book)
         }
     }
 

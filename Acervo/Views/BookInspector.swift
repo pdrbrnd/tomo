@@ -10,6 +10,9 @@ import PhosphorSwift
 struct BookInspector: View {
     let book: Book?
     let device: DeviceContext?
+    /// Set when the parent has more than one book selected. The inspector
+    /// can't render a single book's metadata, so it shows a count placeholder.
+    var multiSelectionCount: Int? = nil
 
     let onClose: () -> Void
     let onEdit: () -> Void
@@ -31,6 +34,8 @@ struct BookInspector: View {
 
             if let book {
                 content(for: book)
+            } else if let count = multiSelectionCount {
+                multiState(count: count)
             } else {
                 emptyState
             }
@@ -47,6 +52,20 @@ struct BookInspector: View {
             Text("Select a book")
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(.primary.opacity(0.42))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func multiState(count: Int) -> some View {
+        VStack(spacing: Theme.Spacing.xs) {
+            Spacer()
+            Text("\(count) books selected")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.85))
+            Text("Select a single book to see details.")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(.primary.opacity(0.45))
             Spacer()
         }
         .frame(maxWidth: .infinity)

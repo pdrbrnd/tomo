@@ -12,7 +12,9 @@ struct BookCard<MenuContent: View>: View {
     let book: Book
     let isSelected: Bool
     let cardWidth: CGFloat
-    @ViewBuilder var menu: () -> MenuContent
+    /// Builds the popover menu. Receives a `dismiss` closure that the
+    /// menu items can call to close the popover after acting.
+    @ViewBuilder var menu: (_ dismiss: @escaping () -> Void) -> MenuContent
 
     @State private var menuOpen = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -105,7 +107,7 @@ struct BookCard<MenuContent: View>: View {
         .help("More options")
         .popover(isPresented: $menuOpen, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 0) {
-                menu()
+                menu({ menuOpen = false })
             }
             .menuPopoverContainer()
         }
