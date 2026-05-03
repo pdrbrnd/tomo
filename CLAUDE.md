@@ -268,8 +268,10 @@ Project-specific additions on top of the skill:
 - Error handling: typed errors at module boundaries (`enum LibraryError`),
   not `throws Error`.
 - Logs via `os.Logger`, one logger per subsystem.
-- Tests: XCTest, focus on the classifier and the file-organisation logic.
-  UI tests are not worth the maintenance for v1.
+- Tests: Swift Testing (`@Test`, `#expect`), focus on the classifier and
+  the file-organisation logic. UI tests are not worth the maintenance for v1.
+  Test target not scaffolded yet — added when the first thing worth testing
+  exists.
 
 ## Project-specific watchouts
 
@@ -296,8 +298,23 @@ Worth flagging in code review:
 
 ## Build / run
 
-(To be filled in once project is scaffolded. Likely `xcodebuild` from CLI
-plus the `swift build` for non-UI modules if we extract any.)
+Single Xcode project, no Swift Package Manager wrapping.
+
+```
+Tinta.xcodeproj/   # at repo root
+Tinta/             # source folder
+  TintaApp.swift
+  ContentView.swift
+  Assets.xcassets/
+```
+
+- **Open in Xcode:** `open Tinta.xcodeproj` then `⌘R` to build and run.
+- **CLI build:** `xcodebuild -project Tinta.xcodeproj -scheme Tinta -configuration Debug build`
+- **Bundle ID:** `com.pdrbrnd.tinta` (used for `~/Library/Application Support/com.pdrbrnd.tinta/`).
+- **Deployment target:** macOS 26.0.
+- **Swift language mode:** 6.0 (strict concurrency; types default to `MainActor` isolation).
+- **Sandbox:** off. Distribution path is Homebrew cask, not Mac App Store. Signing/notarization deferred until distribution is a concern.
+- **Dependencies:** added via Xcode → File → Add Package Dependencies (SwiftPM-resolved into the project).
 
 ## Known unknowns to flag, not solve silently
 

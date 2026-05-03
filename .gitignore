@@ -1,0 +1,27 @@
+# Xcode build artefacts
+build/
+DerivedData/
+
+# Xcode user-specific
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+*.xcscheme.bak
+
+# Swift Package Manager (in case we ever embed packages)
+.build/
+.swiftpm/
+Packages/
+Package.pins
+
+# Generated
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
