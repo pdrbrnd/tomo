@@ -15,17 +15,7 @@ internal cleanups.
 
 ## A. Format-correctness gaps (will produce broken output for some inputs)
 
-### A.1 Multibyte UTF-8 trailing hint
-**File:** `Acervo/Core/Conversion/AZW3/TrailingBytes.swift`
-**Symptom:** Portuguese/Spanish/French/etc. books may render with a
-broken character at every 4096-byte record boundary that happens to
-slice through a multibyte UTF-8 sequence.
-**Fix:** Look at the last bytes of each text record. If they form an
-incomplete UTF-8 sequence, set `multibyte` to the count of bytes that
-spilled over from a sequence that started in this record. Currently
-hardcoded to `0` (correct for ASCII only). ~10 LOC.
-
-### A.2 `XMLDocument`-based body extraction may transform bytes
+### A.1 `XMLDocument`-based body extraction may transform bytes
 **File:** `Acervo/Core/Metadata/EPUBSource.swift` (`bodyInnerHTML`)
 **Symptom:** Whitespace, namespace declarations, and entity escaping
 in the produced HTML chunk may differ from the original EPUB
@@ -36,7 +26,7 @@ spine-item body. Kindle may render slightly different output.
 preserves byte-equivalence with the source; (b) is safer for
 malformed inputs.
 
-### A.3 Skeleton template has no CSS-flow link tags
+### A.2 Skeleton template has no CSS-flow link tags
 **File:** `Acervo/Core/Conversion/AZW3/Markup.swift`
 **Symptom:** EPUBs that rely on stylesheet rules render with default
 Kindle styling. No actual breakage; degraded fidelity.

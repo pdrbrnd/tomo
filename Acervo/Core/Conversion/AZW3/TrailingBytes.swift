@@ -66,6 +66,48 @@ nonisolated struct TrailingData: Sendable, Equatable {
     }
 }
 
+/// Number of bytes at the start of the *next* record that belong to
+/// a UTF-8 multibyte sequence beginning in *this* record. Kindle uses
+/// this to reattach a sequence that got sliced when text was sharded
+/// at the 4096-byte boundary.
+///
+/// Returns 0 for ASCII-only records, records ending on a complete
+/// multibyte sequence, or empty records. Returns 1–3 when the record
+/// ends mid-sequence, telling the reader how many continuation bytes
+/// from the next record complete it.
+///
+/// References: MobileRead Wiki MOBI Extra Data Flags; KindleUnpack
+/// `mobi_header.py` parser side reads this as `(last_byte & 3) + 1`.
+nonisolated func multibyteOverlap(in record: Data) -> UInt8 {
+    let bytes = Array(record)
+    guard !bytes.isEmpty else { return 0 }
+
+    // Walk backwards over UTF-8 continuation bytes (0x80-0xBF) until
+    // we hit either the start of the record or a non-continuation
+    // byte (which is either the sequence starter or ASCII).
+    var i = bytes.count - 1
+    while i > 0, bytes[i] >= 0x80, bytes[i] < 0xC0 {
+        i -= 1
+    }
+
+    let starter = bytes[i]
+    let expected: Int
+    switch starter {
+    case 0x00...0x7F:    return 0   // ASCII or end of complete sequence
+    case 0x80...0xBF:    return 0   // Stuck on continuation byte; broken UTF-8
+    case 0xC0...0xDF:    expected = 2
+    case 0xE0...0xEF:    expected = 3
+    case 0xF0...0xF7:    expected = 4
+    default:             return 0   // Invalid UTF-8 starter
+    }
+
+    let bytesInThisRecord = bytes.count - i
+    if bytesInThisRecord >= expected {
+        return 0  // Sequence completed inside this record
+    }
+    return UInt8(expected - bytesInThisRecord)
+}
+
 /// Builds `TrailingData` for arbitrary `[from, to)` byte ranges by
 /// walking the chapter table. The first chapter that wholly contains
 /// the range owns the strand; otherwise we record the first chapter

@@ -52,46 +52,43 @@ nonisolated struct Kindle: BookDevice {
         return Set(entries.map { $0.lastPathComponent })
     }
 
-    func deviceFilename(for book: Book) -> String {
-        fatSafeFilename(book.fileURL.lastPathComponent)
-    }
-
     func copy(_ book: Book) async throws {
-        let sourceExt = book.fileURL.pathExtension.lowercased()
-        let target = FileFormat.azw3
-
-        // Pass-through: source format is already indexable by Kindle.
-        if supportedFormats.contains(sourceExt) {
-            let dest = volumeURL
-                .appending(component: "documents")
-                .appending(component: deviceFilename(for: book))
-            try await performCopy(from: book.fileURL, to: dest)
-            return
-        }
-
-        // Conversion required (e.g. EPUB → AZW3). Layer 1 ships the
-        // adapter scaffolding with no converters registered, so EPUBs
-        // still fail here — but loudly, with a clear message.
-        guard let sourceFormat = FileFormat(rawValue: sourceExt),
-              let converter = ConversionRegistry.default
-                .converter(from: sourceFormat, to: target)
-        else {
-            throw BookDeviceError.copyFailed(
-                underlying: FormatConverterError.unsupported(
-                    input: sourceExt, output: target
-                )
-            )
-        }
-        let convertedFilename = fatSafeFilename(
-            book.fileURL.deletingPathExtension().lastPathComponent
-                + "." + target.rawValue
-        )
         let dest = volumeURL
             .appending(component: "documents")
-            .appending(component: convertedFilename)
-        try await ConversionScratch.withScratchDirectory { scratch in
-            let converted = try await converter.convert(source: book.fileURL, into: scratch)
-            try await self.performCopy(from: converted, to: dest)
+            .appending(component: deviceFilename(for: book))
+
+        switch deliveryRoute(for: book) {
+        case .passthrough:
+            try await performCopy(from: book.fileURL, to: dest)
+
+        case .convert(let target):
+            // The route helper already verified a converter exists,
+            // but we fetch it again here for the actual call. Source
+            // format is guaranteed to round-trip since we just got
+            // back a non-nil route.
+            let sourceExt = book.fileURL.pathExtension.lowercased()
+            guard let sourceFormat = FileFormat(rawValue: sourceExt),
+                  let converter = ConversionRegistry.default
+                    .converter(from: sourceFormat, to: target)
+            else {
+                throw BookDeviceError.copyFailed(
+                    underlying: FormatConverterError.unsupported(
+                        input: sourceExt, output: target
+                    )
+                )
+            }
+            try await ConversionScratch.withScratchDirectory { scratch in
+                let converted = try await converter.convert(source: book.fileURL, into: scratch)
+                try await self.performCopy(from: converted, to: dest)
+            }
+
+        case .none:
+            throw BookDeviceError.copyFailed(
+                underlying: FormatConverterError.unsupported(
+                    input: book.fileURL.pathExtension.lowercased(),
+                    output: .azw3
+                )
+            )
         }
     }
 

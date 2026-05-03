@@ -55,20 +55,57 @@ extension BookDevice {
     /// book's format). Conversion runs lazily inside `copy` when the
     /// user actually drops the book, so accepting here only commits
     /// to a *path*, not the work itself.
-    func canAccept(_ book: Book) -> Bool {
-        let sourceExt = book.fileURL.pathExtension.lowercased()
-        if supportedFormats.contains(sourceExt) {
-            return true
-        }
-        guard let sourceFormat = FileFormat(rawValue: sourceExt) else {
-            return false
-        }
-        return supportedFormats.contains { supported in
-            guard let target = FileFormat(rawValue: supported) else { return false }
-            return ConversionRegistry.default
-                .converter(from: sourceFormat, to: target) != nil
+    nonisolated func canAccept(_ book: Book) -> Bool {
+        deliveryRoute(for: book) != nil
+    }
+
+    /// What this book's filename will be on the device after sanitisation
+    /// AND any conversion the device will run. Kept consistent across
+    /// copy / remove / "is this on device" so post-conversion books
+    /// (e.g. an EPUB that lands as `<stem>.azw3`) match correctly.
+    nonisolated func deviceFilename(for book: Book) -> String {
+        let stem = book.fileURL.deletingPathExtension().lastPathComponent
+        switch deliveryRoute(for: book) {
+        case .passthrough:
+            return fatSafeFilename(book.fileURL.lastPathComponent)
+        case .convert(let target):
+            return fatSafeFilename(stem + "." + target.rawValue)
+        case .none:
+            // canAccept would have rejected; fall back to the original
+            // name so callers get a sensible string instead of a crash.
+            return fatSafeFilename(book.fileURL.lastPathComponent)
         }
     }
+
+    /// Internal helper. Returns the route the device will take for
+    /// this book — either pass-through copy or conversion to a
+    /// specific format — or nil if neither applies. `canAccept` and
+    /// `deviceFilename` and `Kindle.copy` all flow from this so the
+    /// three views stay in lockstep.
+    nonisolated func deliveryRoute(for book: Book) -> DeliveryRoute? {
+        let sourceExt = book.fileURL.pathExtension.lowercased()
+        if supportedFormats.contains(sourceExt) {
+            return .passthrough
+        }
+        guard let sourceFormat = FileFormat(rawValue: sourceExt) else {
+            return nil
+        }
+        for supported in supportedFormats {
+            guard let target = FileFormat(rawValue: supported) else { continue }
+            if ConversionRegistry.default
+                .converter(from: sourceFormat, to: target) != nil
+            {
+                return .convert(to: target)
+            }
+        }
+        return nil
+    }
+}
+
+/// How a device will deliver a book — direct copy or via conversion.
+nonisolated enum DeliveryRoute: Sendable, Equatable {
+    case passthrough
+    case convert(to: FileFormat)
 }
 
 /// Errors any device implementation can throw at the device boundary.

@@ -75,7 +75,7 @@ These are load-bearing. Don't violate them without flagging it.
 
 ## Tech stack
 
-- Swift 5.9+ / SwiftUI, macOS 14+ target
+- Swift 6.0 / SwiftUI, macOS 26+ target (`MainActor` default isolation)
 - GRDB for SQLite
 - ZIPFoundation for EPUB reading (EPUB is just zip + XML)
 - Native `FileManager` + `NSFileCoordinator` for file ops
@@ -93,90 +93,55 @@ Fast and snappy is not negotiable:
 ## Folder layout (in-app)
 
 ```
-BookLib/
+Acervo/
   App/                    # @main, app lifecycle, settings
   Views/                  # SwiftUI views, one per file
-  Models/                 # plain structs: Book, Author, LanguageProfile, etc.
+  Models/                 # plain structs: Book, BookOrigin, LanguageProfile
   Core/
     Library/              # library folder operations
     Index/                # SQLite index (GRDB)
-    Metadata/             # EPUB parsing, sidecar I/O
+    Metadata/             # EPUB parsing, sidecar I/O, EPUBSource
     Classifier/           # language profile engine
-    Delivery/             # Kindle USB + email
-    Sources/              # external book sources (v2; empty in v1)
+    Delivery/             # Kindle USB driver
+    Conversion/           # EPUB→AZW3 writer + adapter layer
+      AZW3/               # standalone-package-shaped AZW3 writer
   Resources/
     Profiles/             # bundled language profile JSON files
 ```
 
-## Data model (working draft)
+The `Conversion/AZW3/` subdirectory is destined for extraction into a
+standalone Swift package. Nothing in there may import or reference any
+Acervo type — see `Acervo/Core/Conversion/AZW3/README.md`.
 
-```swift
-struct Book {
-    let id: UUID
-    var title: String
-    var authors: [String]       // first author drives folder layout
-    var year: Int?
-    var locale: String          // "pt-PT", "en-GB", "pt", "und" — BCP 47, single source of truth
-    var tags: [String]
-    var formats: [BookFormat]   // multiple files for the same logical book
-    var coverPath: String?      // relative to book folder
-    var dateAdded: Date
-    var fileURL: URL            // primary file, used for ops
-    var origin: BookOrigin      // where this book came from
-}
+## Data model
 
-enum BookOrigin: Codable, Equatable {
-    case manualImport                      // user dropped or picked the file
-    case source(id: String, ref: String?)  // external source + provider-specific id
-}
+Models live in `Acervo/Models/`. Read those files for the current
+shapes (`Book.swift`, `LanguageProfile.swift`). The sidecar
+`metadata.json` mirrors `Book` minus `id` (id lives in the index).
 
-struct BookFormat {
-    let ext: String            // "epub", "pdf", "azw3"
-    let path: String           // relative to book folder
-    let sizeBytes: Int
-}
+Two intent notes the code can't express:
 
-struct LanguageProfile {
-    let id: String             // "pt-PT", "pt-BR", "en-GB", etc.
-    let label: String          // user-facing
-    let baseLanguage: String   // "pt", "en"
-    let markers: [Marker]
-}
+- `BookOrigin` is in v1 even though sources are v2. Every v1-imported
+  book is `.manualImport`. This avoids a migration when sources ship.
+- `Book` has a single `fileURL` (primary file) — multi-format-per-book
+  (`formats: [BookFormat]`) is deferred until v2 sources need it. The
+  `FileFormat` enum in `Acervo/Core/Conversion/` is unrelated; it's
+  the conversion layer's format identifier, not a data-model type.
 
-struct Marker {
-    let pattern: String        // word, phrase, or regex
-    let isRegex: Bool
-    let weight: Double         // can be negative
-}
-```
-
-The sidecar `metadata.json` mirrors `Book` minus `id` (id lives in the index).
-
-`BookOrigin` is included in v1 even though sources land in v2. Every
-v1-imported book is `.manualImport`. This avoids a migration when sources
-ship.
-
-## Language profiles — the generic mechanism
+## Language profiles — intent
 
 Not "pt-PT detection." A general system: weighted-marker classifier per
-profile, profiles grouped by base language. Detection flow:
+profile, profiles grouped by base language. Implementation lives in
+`Acervo/Core/Classifier/` — read `Classifier.swift` and the bundled
+profiles in `Resources/Profiles/` for current shape.
 
-1. Detect base language from sample text (small Swift port of franc-style
-   trigram matching, or NSLinguisticTagger as a starting point)
-2. All profiles matching that base language score the sample
-3. Highest score wins, with a confidence value
-4. Manual user override is persisted and never overwritten
+The principle to preserve: **manual user override is persisted and
+never overwritten.** Bulk re-classify is a deliberate user action; the
+system never silently changes a locale the user has already accepted.
 
-Ship four profiles in v1: `pt-PT`, `pt-BR`, `en-GB`, `en-US`. Profile JSON
-files live in `Resources/Profiles/` and are user-editable (eventually
-copyable to `~/Library/Application Support/[app]/Profiles/`).
-
-Sample size: first ~5000 words of extracted text. Extraction:
-- EPUB: read native (it's zip + XHTML, ZIPFoundation handles it)
-- PDF: PDFKit (built-in)
-- MOBI/AZW3: skip in v1 — most non-Amazon books are EPUB anyway. If a
-  user has a MOBI/AZW3 they want classified, they classify by hand or it
-  goes in unclassified. Document this clearly.
+For non-EPUB formats: classifier doesn't reach into MOBI/AZW3/PDF
+contents. Books in those formats either get a manually-set locale or
+sit at `und` (the BCP 47 "undetermined" tag).
 
 ## Sources — v2 concept
 
@@ -191,7 +156,7 @@ notes. Not a v1 concern beyond the `BookOrigin` field on `Book`.
 2. Language profiles: classification on import (when EPUB doesn't declare a full locale), badges, bulk re-classify
 3. Cover art editing: paste, file picker, fetch from Open Library by ISBN
 4. Duplicate detection: title+author fuzzy match, format preference (EPUB > AZW3 > MOBI > PDF), manual merge UI
-5. Kindle delivery: USB (mount detection, copy to `documents/`, eject) + Send to Kindle email
+5. Kindle delivery: USB sideload, with EPUB→AZW3 conversion done in-app (no Amazon-server round-trip)
 
 ## Editing model
 
@@ -239,15 +204,19 @@ book's files on disk in v1 — the `Author/Title (Year)/` folder name may
 drift from the metadata after edits. Harmless for the index; worth fixing
 later (rename folders to match new metadata on save).
 
-Send to Kindle is simple now that Amazon accepts EPUB natively: SMTP +
-attachment. Including it in v1 because the official Send to Kindle Mac app
-is required for USB on 2024+ Kindles anyway, so email is the cleaner
-uniform path across all Kindle generations.
+## Conversion
+
+EPUB→AZW3 (KF8) is implemented in-app under `Acervo/Core/Conversion/`.
+The writer half lives in `AZW3/` as a self-contained module ready for
+extraction into a standalone Swift package. Phase 1 hardware-validated
+2026-05-03; Phase 2 backlog (cover, TOC, CSS, image records, etc.) is
+in `docs/azw3_phase2.md`. We do not bundle Calibre, KindleGen, or
+Amazon's Send to Kindle Mac app, and we don't route through SMTP /
+Amazon servers.
 
 ## v2 (later, not now)
 
-- Sources system (see "Sources — v2 concept" above)
-- Conversion (revisit with real data on which formats users actually hit)
+- Sources system (see `docs/sources.md`)
 - Reading progress sync from `My Clippings.txt`
 - Collections / saved searches
 - Series support
@@ -268,7 +237,7 @@ The codebase has three loose layers. Files should sit clearly in one.
 
 **Models (`Models/`).** Plain structs. `Codable` where they cross the disk
 boundary. No SwiftUI imports, no business logic beyond data shape. `Book`,
-`BookFormat`, `LanguageProfile`.
+`BookOrigin`, `LanguageProfile`.
 
 **Core (`Core/`).** The work the app does. File I/O, parsing, classifying,
 indexing, delivering. Pure-Swift modules with no SwiftUI dependency. Each
@@ -323,18 +292,13 @@ Worth flagging in code review:
 
 ## Build / run
 
-Single Xcode project, no Swift Package Manager wrapping.
-
-```
-Acervo.xcodeproj/   # at repo root
-Acervo/             # source folder
-  AcervoApp.swift
-  ContentView.swift
-  Assets.xcassets/
-```
+Single Xcode project, no Swift Package Manager wrapping. Source lives
+under `Acervo/`, the project file is `Acervo.xcodeproj/` at repo root.
+Tests live under `AcervoTests/`.
 
 - **Open in Xcode:** `open Acervo.xcodeproj` then `⌘R` to build and run.
 - **CLI build:** `xcodebuild -project Acervo.xcodeproj -scheme Acervo -configuration Debug build`
+- **CLI test:** `xcodebuild -project Acervo.xcodeproj -scheme Acervo -destination 'platform=macOS' test`
 - **Bundle ID:** `com.pdrbrnd.acervo` (used for `~/Library/Application Support/com.pdrbrnd.acervo/`).
 - **Deployment target:** macOS 26.0.
 - **Swift language mode:** 6.0 (strict concurrency; types default to `MainActor` isolation).
@@ -343,12 +307,10 @@ Acervo/             # source folder
 
 ## Known unknowns to flag, not solve silently
 
-- Newer Kindles (Scribe, 2024+ models) require Amazon's Send to Kindle
-  Mac app for USB transfer; older Kindles still mount as mass storage.
-  Detect both cases. The user's specific device behaviour gets verified
-  when we build the delivery feature.
 - Open Library API rate limits and metadata quality vary. Treat fetched
   metadata as a suggestion, never auto-apply.
-- Send to Kindle email requires the sender address to be on the user's
-  Amazon Approved Personal Document E-mail List. Surface this clearly
-  in setup; it's a one-time configuration on Amazon's side.
+- Kindle firmware behaviour around AZW3 indexing is empirically
+  verified per device, not by spec. The current writer was validated
+  on FW 5.19.2 (Paperwhite Signature) on 2026-05-03; if a future
+  firmware tightens validation, expect the spike's Phase 2 work to
+  surface here first.

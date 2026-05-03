@@ -23,8 +23,14 @@ nonisolated func textToRecords(
     for i in 0..<recordCount {
         let from = i * TextRecord.maxSize
         let to = min(from + TextRecord.maxSize, text.count)
-        let trail = provider.get(from: from, to: to)
         let slice = text.subdata(in: from..<to)
+        var trail = provider.get(from: from, to: to)
+        // Multibyte overlap only matters when there's a next record
+        // to spill into. The last record's last bytes either complete
+        // a sequence or terminate the document.
+        if to < text.count {
+            trail.multibyte = multibyteOverlap(in: slice)
+        }
         records.append(TextRecord(text: slice, trail: trail))
     }
     return records

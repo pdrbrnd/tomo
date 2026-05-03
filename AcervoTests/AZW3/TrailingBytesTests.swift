@@ -69,6 +69,65 @@ struct StrandDataTests {
     }
 }
 
+@Suite("multibyteOverlap")
+struct MultibyteOverlapTests {
+
+    @Test func emptyRecordReturnsZero() {
+        #expect(multibyteOverlap(in: Data()) == 0)
+    }
+
+    @Test func asciiOnlyReturnsZero() {
+        let record = Data("Hello, world.".utf8)
+        #expect(multibyteOverlap(in: record) == 0)
+    }
+
+    @Test func recordEndingOnCompleteTwoByteCharReturnsZero() {
+        // "café" — 5 bytes UTF-8: 63 61 66 C3 A9. Ends with the
+        // continuation byte A9, but the sequence is complete.
+        let record = Data("café".utf8)
+        #expect(multibyteOverlap(in: record) == 0)
+    }
+
+    @Test func recordEndingMidTwoByteSequenceReturnsOne() {
+        // "ca" + just the starter byte of "fé" — 0xC3 alone.
+        // 1 byte missing to complete the 2-byte sequence.
+        var record = Data("ca".utf8)
+        record.append(0xC3)
+        #expect(multibyteOverlap(in: record) == 1)
+    }
+
+    @Test func recordEndingMidThreeByteSequenceWithStarterOnlyReturnsTwo() {
+        // 0xE2 starts a 3-byte sequence. 2 continuation bytes still
+        // expected in the next record.
+        var record = Data("ab".utf8)
+        record.append(0xE2)
+        #expect(multibyteOverlap(in: record) == 2)
+    }
+
+    @Test func recordEndingMidThreeByteSequenceWithOneContReturnsOne() {
+        // 0xE2 + 0x80 → starter + first continuation. 1 byte left.
+        var record = Data("ab".utf8)
+        record.append(0xE2)
+        record.append(0x80)
+        #expect(multibyteOverlap(in: record) == 1)
+    }
+
+    @Test func recordEndingMidFourByteSequenceWithStarterOnlyReturnsThree() {
+        // 0xF0 starts a 4-byte sequence (e.g. emoji range).
+        var record = Data()
+        record.append(0xF0)
+        #expect(multibyteOverlap(in: record) == 3)
+    }
+
+    @Test func emojiSplitInMiddleReturnsRemaining() {
+        // "🎉" = F0 9F 8E 89. Split after byte 2 → 2 bytes remaining.
+        var record = Data()
+        record.append(0xF0)
+        record.append(0x9F)
+        #expect(multibyteOverlap(in: record) == 2)
+    }
+}
+
 @Suite("TrailProvider")
 struct TrailProviderTests {
 
