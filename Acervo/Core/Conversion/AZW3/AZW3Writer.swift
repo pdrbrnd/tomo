@@ -24,12 +24,20 @@ nonisolated struct AZW3Writer: Sendable {
         // 1. Render the combined text and figure out chunk + chapter geometry.
         let (text, chunks, chapters) = Markup.chaptersToText(manifest)
 
+        // KF8 record offsets are 32-bit; books over 4 GB of combined
+        // text aren't representable. The format also breaks down well
+        // before that — Kindle's parser practically caps around the
+        // hundreds of MB. This precondition documents the boundary.
+        precondition(text.count <= UInt32.max,
+            "AZW3 combined text exceeds UInt32.max bytes (\(text.count))")
+
         // 2. Build the null record with EXTH metadata. We mutate it
         //    progressively as we add records and learn their indices,
         //    then replace record 0 at the end.
         let uniqueID = stableID(for: manifest)
         var null = NullRecord(fullName: manifest.title)
         null.mobi.uniqueID = uniqueID
+        null.mobi.locale = MicrosoftLocale.code(for: manifest.language)
         null.exth.add(.title, string: manifest.title)
         null.exth.add(.updatedTitle, string: manifest.title)
         for author in manifest.authors {
@@ -38,6 +46,9 @@ nonisolated struct AZW3Writer: Sendable {
         null.exth.add(.language, string: manifest.language)
         null.exth.add(.asin, string: encodeASIN(uniqueID))
         null.exth.add(.docType, string: "EBOK")
+        if let date = manifest.publishingDate {
+            null.exth.add(.publishingDate, string: iso8601(date))
+        }
 
         // 3. Slice text into 4096-byte records with trailing chapter hints.
         let textRecords = textToRecords(text: text, chapters: chapters)
@@ -95,18 +106,52 @@ nonisolated struct AZW3Writer: Sendable {
         db.records.append(ncxData)
         db.records.append(ncxCNCX)
 
-        // 9. (Image records — skipped in Phase 1.)
+        // 9. Image records — cover first, then body images. The
+        //    `firstImageIndex` field on the MOBI header points to the
+        //    first image record; EXTH 201 (`coverOffset`) is the
+        //    cover's index *within* the image array (always 0 since
+        //    cover comes first when present). EXTH 125
+        //    (`KF8CountResources`) carries the total image count.
+        let images: [ImageData] = (manifest.cover.map { [$0] } ?? []) + manifest.bodyImages
+        if !images.isEmpty {
+            null.mobi.firstImageIndex = UInt32(db.records.count)
+            if manifest.cover != nil {
+                null.exth.add(.coverOffset, integer: 0)
+                null.exth.add(.hasFakeCover, integer: 0)
+                // Newer Kindle firmware uses these to surface covers on
+                // the home screen. The URI is 1-based 4-hex-digit; the
+                // cover is always the first image record.
+                null.exth.add(.kf8CoverURI, string: "kindle:embed:0001")
+                null.exth.add(.thumbOffset, integer: 0)
+            }
+            null.exth.add(.kf8CountResources, integer: UInt32(images.count))
+            for image in images {
+                db.records.append(PalmDB.RawRecord(image.bytes))
+            }
+        }
 
         // 10. FDST: declares the byte ranges of each text "flow" inside
-        //     the combined text stream. Phase 1 has one flow (the HTML
-        //     itself); Phase 2 adds CSS flows to this list.
-        let fdst = FDSTRecord(entries: [
-            .init(start: 0, end: UInt32(text.count))
-        ])
-        null.mobi.fdstEntryCount = 1
+        //     the combined text stream. Entry 0 is the HTML; one entry
+        //     per CSS file follows. The skeleton template references
+        //     CSS flows as `kindle:flow:NNNN` (1-based decimal).
+        let cssLengths = manifest.cssFlows.map { Data($0.utf8).count }
+        let totalCSS = cssLengths.reduce(0, +)
+        let htmlEnd = text.count - totalCSS
+        var fdstEntries: [FDSTRecord.Entry] = [
+            .init(start: 0, end: UInt32(htmlEnd))
+        ]
+        var cssOffset = htmlEnd
+        for cssLen in cssLengths {
+            fdstEntries.append(.init(
+                start: UInt32(cssOffset),
+                end: UInt32(cssOffset + cssLen)
+            ))
+            cssOffset += cssLen
+        }
+        null.mobi.fdstEntryCount = UInt32(fdstEntries.count)
         null.mobi.fdstNumberMSB = 0
         null.mobi.fdstNumberLSB = UInt16(db.records.count)
-        db.records.append(fdst)
+        db.records.append(FDSTRecord(entries: fdstEntries))
 
         // 11. FLIS — fixed magic record.
         db.records.append(FLISRecord())
@@ -131,26 +176,37 @@ nonisolated struct AZW3Writer: Sendable {
     }
 }
 
-/// Deterministic 32-bit ID derived from the manifest's identifying
-/// fields. Same input → same ID across runs and machines (unlike
-/// Swift's `String.hashValue` which is randomised per process).
-/// Drives the MOBI `uniqueID` and the pseudo-ASIN.
+/// Deterministic 32-bit ID. Prefers `<dc:identifier>` from the source
+/// EPUB when present (so re-converting the same book gets the same ID
+/// across edits to title/author metadata); falls back to FNV-1a of
+/// title+authors+language. Drives the MOBI `uniqueID` and pseudo-ASIN.
 private nonisolated func stableID(for manifest: BookManifest) -> UInt32 {
+    if let id = manifest.identifier, !id.isEmpty {
+        return fnv1a(Data(id.utf8))
+    }
     var bytes = Data(manifest.title.utf8)
     for author in manifest.authors {
-        bytes.append(0)               // separator
+        bytes.append(0)
         bytes.append(Data(author.utf8))
     }
     bytes.append(0)
     bytes.append(Data(manifest.language.utf8))
+    return fnv1a(bytes)
+}
 
-    // FNV-1a 32-bit. ~5 lines, no dependencies, stable forever.
+private nonisolated func fnv1a(_ bytes: Data) -> UInt32 {
     var hash: UInt32 = 0x811C_9DC5
     for byte in bytes {
         hash ^= UInt32(byte)
         hash &*= 0x0100_0193
     }
     return hash
+}
+
+private nonisolated func iso8601(_ date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.string(from: date)
 }
 
 /// Pseudo-ASIN: 15-character lowercase hex. UInt32 only fills 8 hex

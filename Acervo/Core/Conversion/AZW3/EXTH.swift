@@ -24,6 +24,22 @@ nonisolated enum EXTHEntryType: UInt32, Sendable {
     /// Modern Kindle UI uses this rather than EXTHTitle in some
     /// places. Same value as title, emitted for parity.
     case updatedTitle = 503
+    /// Index of the cover image within the image record array (0-based).
+    /// Set with `firstImageIndex` on the MOBI header.
+    case coverOffset = 201
+    /// 0 = real cover (the `coverOffset` points to a real image record).
+    /// Calibre always writes 0; we do the same.
+    case hasFakeCover = 203
+    /// Total count of image resources in the file (cover + body images).
+    case kf8CountResources = 125
+    /// Cover URI for newer Kindle firmwares — typically
+    /// `"kindle:embed:0001"` pointing at the cover image record.
+    case kf8CoverURI = 129
+    /// Index of thumbnail within the image array (we point it at the
+    /// cover since we don't ship a separate thumbnail record).
+    case thumbOffset = 202
+    /// `<dc:date>` from the EPUB, ISO 8601 formatted.
+    case publishingDate = 106
 }
 
 /// One EXTH entry: 8-byte header (type + total length) followed by the

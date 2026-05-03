@@ -127,7 +127,7 @@ struct EPUBSourceTests {
         """, files: [:])
         defer { try? FileManager.default.removeItem(at: url) }
 
-        #expect(throws: EPUBSourceError.self) {
+        #expect(throws: EPUBArchiveError.self) {
             _ = try EPUBSource.read(from: url)
         }
     }
@@ -138,7 +138,7 @@ struct EPUBSourceTests {
         try Data("not a zip".utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
-        #expect(throws: EPUBSourceError.self) {
+        #expect(throws: EPUBArchiveError.self) {
             _ = try EPUBSource.read(from: url)
         }
     }
