@@ -43,6 +43,36 @@ final class AppState {
         }
     }
 
+    func rebuildIndex() async {
+        await openIndexIfNeeded()
+        guard let index else {
+            libraryLogger.error("rebuild: no index")
+            return
+        }
+        guard let libraryFolder else {
+            libraryLogger.error("rebuild: no library folder")
+            return
+        }
+        do {
+            try await index.wipeAll()
+            let folders = try await LibraryFolder.bookFolders(in: libraryFolder)
+            var imported = 0
+            for folder in folders {
+                do {
+                    let book = try MetadataSidecar.read(from: folder)
+                    try await index.add(book)
+                    imported += 1
+                } catch {
+                    libraryLogger.error("rebuild: skipped \(folder.path(percentEncoded: false), privacy: .public) - \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            libraryLogger.info("rebuild: indexed \(imported) of \(folders.count) folders")
+            await loadBooks()
+        } catch {
+            libraryLogger.error("rebuild failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     private func openIndexIfNeeded() async {
         guard index == nil else { return }
         let opened = await Task.detached { BookIndex.open() }.value

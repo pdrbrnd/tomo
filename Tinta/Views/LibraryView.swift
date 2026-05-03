@@ -11,6 +11,17 @@ struct LibraryView: View {
             detail
         }
         .frame(minWidth: 720, minHeight: 480)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await state.rebuildIndex() }
+                } label: {
+                    Label("Rebuild Index", systemImage: "arrow.clockwise")
+                }
+                .disabled(state.libraryFolder == nil)
+                .help("Wipes the SQLite index and rebuilds it from the metadata.json sidecars on disk")
+            }
+        }
         .dropDestination(for: URL.self) { urls, _ in
             let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
             guard !epubs.isEmpty else { return false }

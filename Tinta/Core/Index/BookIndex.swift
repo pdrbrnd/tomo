@@ -53,6 +53,12 @@ actor BookIndex {
         }
     }
 
+    func wipeAll() async throws {
+        try await pool.write { db in
+            try db.execute(sql: "DELETE FROM books")
+        }
+    }
+
     private static func databaseURL() throws -> URL {
         let appSupport = try FileManager.default.url(
             for: .applicationSupportDirectory,
