@@ -43,6 +43,25 @@ final class AppState {
         }
     }
 
+    func deleteBook(_ book: Book) async {
+        await openIndexIfNeeded()
+        guard let index else {
+            libraryLogger.error("delete: no index")
+            return
+        }
+        let bookFolder = book.fileURL.deletingLastPathComponent()
+        do {
+            try await Task.detached {
+                try FileManager.default.trashItem(at: bookFolder, resultingItemURL: nil)
+            }.value
+            try await index.delete(book)
+            await loadBooks()
+            libraryLogger.info("trashed: \(book.title, privacy: .public)")
+        } catch {
+            libraryLogger.error("delete failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     func rebuildIndex() async {
         await openIndexIfNeeded()
         guard let index else {

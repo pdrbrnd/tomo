@@ -4,6 +4,7 @@ struct LibraryView: View {
     let state: AppState
     @State private var selectedBookID: Book.ID?
     @State private var searchText = ""
+    @State private var bookPendingDelete: Book?
 
     private var filteredBooks: [Book] {
         guard !searchText.isEmpty else { return state.books }
@@ -44,6 +45,25 @@ struct LibraryView: View {
             return true
         }
         .task { await state.loadBooks() }
+        .confirmationDialog(
+            "Move \"\(bookPendingDelete?.title ?? "")\" to Trash?",
+            isPresented: Binding(
+                get: { bookPendingDelete != nil },
+                set: { if !$0 { bookPendingDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: bookPendingDelete
+        ) { book in
+            Button("Move to Trash", role: .destructive) {
+                Task { await state.deleteBook(book) }
+                bookPendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                bookPendingDelete = nil
+            }
+        } message: { _ in
+            Text("The book and its metadata will be moved to the Trash. You can restore it from there if needed.")
+        }
     }
 
     @ViewBuilder
@@ -80,6 +100,11 @@ struct LibraryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+        }
+        .contextMenu {
+            Button("Move to Trash…", role: .destructive) {
+                bookPendingDelete = book
             }
         }
     }

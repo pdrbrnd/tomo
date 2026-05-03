@@ -59,6 +59,15 @@ actor BookIndex {
         }
     }
 
+    func delete(_ book: Book) async throws {
+        try await pool.write { db in
+            try db.execute(
+                sql: "DELETE FROM books WHERE id = ?",
+                arguments: [book.id.uuidString]
+            )
+        }
+    }
+
     private static func databaseURL() throws -> URL {
         let appSupport = try FileManager.default.url(
             for: .applicationSupportDirectory,
