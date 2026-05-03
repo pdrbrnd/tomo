@@ -27,18 +27,20 @@ nonisolated struct Kindle: BookDevice {
         self.firmwareVersion = Self.readFirmwareVersion(volumeURL: volumeURL)
     }
 
-    /// Kindle's home-screen scanner ignores EPUB regardless of firmware. The
-    /// renderer reads EPUB on FW 5.16+, but the scanner that builds the
-    /// library list from `/documents/` only indexes Amazon-friendly formats.
-    /// Confirmed across MobileRead and Amazon docs: EPUB only enters Kindle
-    /// via the server-side Send to Kindle pipeline (which converts to KFX).
+    /// Kindle's home-screen scanner ignores EPUB regardless of firmware.
+    /// The renderer reads EPUB on FW 5.16+, but the scanner that builds
+    /// the library list from `/documents/` only indexes Amazon-friendly
+    /// formats. EPUBs are converted to AZW3 on the fly via the
+    /// conversion adapter — see `Acervo/Core/Conversion/`.
     var supportedFormats: Set<String> {
         ["azw", "azw3", "mobi", "prc", "pdf", "txt"]
     }
 
-    var compatibilityWarning: String? {
-        "Kindle's home-screen scanner doesn't index sideloaded EPUBs (only AZW3, MOBI, PDF, TXT). For EPUBs, use Share → Send to Kindle so Amazon converts on its servers."
-    }
+    /// No persistent warning: EPUBs are routed through the EPUB→AZW3
+    /// converter when the user drops them, so the UI doesn't need to
+    /// pre-warn about format support. Surface real conversion failures
+    /// at copy time instead.
+    var compatibilityWarning: String? { nil }
 
     func filenames() -> Set<String> {
         let documents = volumeURL.appending(component: "documents")

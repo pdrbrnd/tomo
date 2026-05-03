@@ -48,10 +48,26 @@ nonisolated protocol BookDevice: Sendable {
 }
 
 extension BookDevice {
-    /// True if the device's home-screen scanner will index this book's format.
-    /// Default implementation tests the file's extension against `supportedFormats`.
+    /// True if this device will end up with an indexable copy of the
+    /// book — either by direct copy (the book's format is already in
+    /// `supportedFormats`) or via conversion (a registered converter
+    /// can produce one of the device's native formats from this
+    /// book's format). Conversion runs lazily inside `copy` when the
+    /// user actually drops the book, so accepting here only commits
+    /// to a *path*, not the work itself.
     func canAccept(_ book: Book) -> Bool {
-        supportedFormats.contains(book.fileURL.pathExtension.lowercased())
+        let sourceExt = book.fileURL.pathExtension.lowercased()
+        if supportedFormats.contains(sourceExt) {
+            return true
+        }
+        guard let sourceFormat = FileFormat(rawValue: sourceExt) else {
+            return false
+        }
+        return supportedFormats.contains { supported in
+            guard let target = FileFormat(rawValue: supported) else { return false }
+            return ConversionRegistry.default
+                .converter(from: sourceFormat, to: target) != nil
+        }
     }
 }
 
