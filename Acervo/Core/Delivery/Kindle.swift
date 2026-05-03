@@ -55,16 +55,52 @@ nonisolated struct Kindle: BookDevice {
     }
 
     func copy(_ book: Book) async throws {
-        let dest = volumeURL
-            .appending(component: "documents")
-            .appending(component: deviceFilename(for: book))
-        let source = book.fileURL
+        let sourceExt = book.fileURL.pathExtension.lowercased()
 
-        try await Task.detached {
-            let fm = FileManager.default
-            if fm.fileExists(atPath: dest.path(percentEncoded: false)) {
+        // Pass-through: source format is already indexable by Kindle.
+        if supportedFormats.contains(sourceExt) {
+            let dest = volumeURL
+                .appending(component: "documents")
+                .appending(component: deviceFilename(for: book))
+            if FileManager.default.fileExists(atPath: dest.path(percentEncoded: false)) {
                 throw BookDeviceError.alreadyOnDevice
             }
+            try await performCopy(from: book.fileURL, to: dest)
+            return
+        }
+
+        // Conversion required (e.g. EPUB → AZW3). Layer 1 ships the
+        // adapter scaffolding with no converters registered, so EPUBs
+        // still fail here — but loudly, with a clear message.
+        let target = BookFormat.azw3
+        guard let converter = ConversionRegistry.default
+            .converter(from: BookFormat(sourceExt), to: target)
+        else {
+            throw BookDeviceError.copyFailed(
+                underlying: FormatConverterError.unsupported(
+                    input: BookFormat(sourceExt), output: target
+                )
+            )
+        }
+        let convertedFilename = fatSafeFilename(
+            book.fileURL.deletingPathExtension().lastPathComponent
+                + "." + target.rawValue
+        )
+        let dest = volumeURL
+            .appending(component: "documents")
+            .appending(component: convertedFilename)
+        if FileManager.default.fileExists(atPath: dest.path(percentEncoded: false)) {
+            throw BookDeviceError.alreadyOnDevice
+        }
+        try await ConversionScratch.withScratchDirectory { scratch in
+            let converted = try await converter.convert(source: book.fileURL, into: scratch)
+            try await self.performCopy(from: converted, to: dest)
+        }
+    }
+
+    private func performCopy(from source: URL, to dest: URL) async throws {
+        try await Task.detached {
+            let fm = FileManager.default
             do {
                 try fm.copyItem(at: source, to: dest)
             } catch {
