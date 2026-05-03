@@ -127,9 +127,6 @@ BookLib/
     Profiles/             # bundled language profile JSON files
 ```
 
-Kebab-case files. One type per file unless they're trivially small and
-co-located by purpose.
-
 ## Data model (working draft)
 
 ```swift
