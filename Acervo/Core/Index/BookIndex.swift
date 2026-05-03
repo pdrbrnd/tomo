@@ -107,7 +107,7 @@ actor BookIndex {
             appropriateFor: nil,
             create: true
         )
-        let dir = appSupport.appendingPathComponent("com.pdrbrnd.tinta", isDirectory: true)
+        let dir = appSupport.appendingPathComponent("com.pdrbrnd.acervo", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("index.db")
     }

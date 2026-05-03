@@ -12,13 +12,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		EB4E9A582FA6F23B0015E496 /* Tinta.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tinta.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EB4E9A582FA6F23B0015E496 /* Acervo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Acervo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		EB4E9A5A2FA6F23B0015E496 /* Tinta */ = {
+		EB4E9A5A2FA6F23B0015E496 /* Acervo */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Tinta;
+			path = Acervo;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -39,7 +39,7 @@
 		EB4E9A4F2FA6F23B0015E496 = {
 			isa = PBXGroup;
 			children = (
-				EB4E9A5A2FA6F23B0015E496 /* Tinta */,
+				EB4E9A5A2FA6F23B0015E496 /* Acervo */,
 				EB4E9A592FA6F23B0015E496 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -47,7 +47,7 @@
 		EB4E9A592FA6F23B0015E496 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				EB4E9A582FA6F23B0015E496 /* Tinta.app */,
+				EB4E9A582FA6F23B0015E496 /* Acervo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,9 +55,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		EB4E9A572FA6F23B0015E496 /* Tinta */ = {
+		EB4E9A572FA6F23B0015E496 /* Acervo */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EB4E9A632FA6F23C0015E496 /* Build configuration list for PBXNativeTarget "Tinta" */;
+			buildConfigurationList = EB4E9A632FA6F23C0015E496 /* Build configuration list for PBXNativeTarget "Acervo" */;
 			buildPhases = (
 				EB4E9A542FA6F23B0015E496 /* Sources */,
 				EB4E9A552FA6F23B0015E496 /* Frameworks */,
@@ -68,15 +68,15 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				EB4E9A5A2FA6F23B0015E496 /* Tinta */,
+				EB4E9A5A2FA6F23B0015E496 /* Acervo */,
 			);
-			name = Tinta;
+			name = Acervo;
 			packageProductDependencies = (
 				EBF14F852FA6F64400045D30 /* GRDB */,
 				EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */,
 			);
-			productName = Tinta;
-			productReference = EB4E9A582FA6F23B0015E496 /* Tinta.app */;
+			productName = Acervo;
+			productReference = EB4E9A582FA6F23B0015E496 /* Acervo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -94,7 +94,7 @@
 					};
 				};
 			};
-			buildConfigurationList = EB4E9A532FA6F23B0015E496 /* Build configuration list for PBXProject "Tinta" */;
+			buildConfigurationList = EB4E9A532FA6F23B0015E496 /* Build configuration list for PBXProject "Acervo" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -112,7 +112,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				EB4E9A572FA6F23B0015E496 /* Tinta */,
+				EB4E9A572FA6F23B0015E496 /* Acervo */,
 			);
 		};
 /* End PBXProject section */
@@ -273,7 +273,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pdrbrnd.tinta;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pdrbrnd.acervo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -301,7 +301,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.pdrbrnd.tinta;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pdrbrnd.acervo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -315,7 +315,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		EB4E9A532FA6F23B0015E496 /* Build configuration list for PBXProject "Tinta" */ = {
+		EB4E9A532FA6F23B0015E496 /* Build configuration list for PBXProject "Acervo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EB4E9A612FA6F23C0015E496 /* Debug */,
@@ -324,7 +324,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		EB4E9A632FA6F23C0015E496 /* Build configuration list for PBXNativeTarget "Tinta" */ = {
+		EB4E9A632FA6F23C0015E496 /* Build configuration list for PBXNativeTarget "Acervo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EB4E9A642FA6F23C0015E496 /* Debug */,

@@ -345,16 +345,16 @@ Worth flagging in code review:
 Single Xcode project, no Swift Package Manager wrapping.
 
 ```
-Tinta.xcodeproj/   # at repo root
-Tinta/             # source folder
-  TintaApp.swift
+Acervo.xcodeproj/   # at repo root
+Acervo/             # source folder
+  AcervoApp.swift
   ContentView.swift
   Assets.xcassets/
 ```
 
-- **Open in Xcode:** `open Tinta.xcodeproj` then `⌘R` to build and run.
-- **CLI build:** `xcodebuild -project Tinta.xcodeproj -scheme Tinta -configuration Debug build`
-- **Bundle ID:** `com.pdrbrnd.tinta` (used for `~/Library/Application Support/com.pdrbrnd.tinta/`).
+- **Open in Xcode:** `open Acervo.xcodeproj` then `⌘R` to build and run.
+- **CLI build:** `xcodebuild -project Acervo.xcodeproj -scheme Acervo -configuration Debug build`
+- **Bundle ID:** `com.pdrbrnd.acervo` (used for `~/Library/Application Support/com.pdrbrnd.acervo/`).
 - **Deployment target:** macOS 26.0.
 - **Swift language mode:** 6.0 (strict concurrency; types default to `MainActor` isolation).
 - **Sandbox:** off. Distribution path is Homebrew cask, not Mac App Store. Signing/notarization deferred until distribution is a concern.

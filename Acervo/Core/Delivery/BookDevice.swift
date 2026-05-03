@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import os
 
-nonisolated let deliveryLogger = Logger(subsystem: "com.pdrbrnd.tinta", category: "delivery")
+nonisolated let deliveryLogger = Logger(subsystem: "com.pdrbrnd.acervo", category: "delivery")
 
 /// A connected e-reader. Implementations live alongside this file
 /// (`Kindle.swift`, eventually `Kobo.swift`, etc). The library/UI never

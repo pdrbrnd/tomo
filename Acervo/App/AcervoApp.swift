@@ -1,11 +1,11 @@
 import SwiftUI
 
 @main
-struct TintaApp: App {
+struct AcervoApp: App {
     @State private var state = AppState()
 
     var body: some Scene {
-        WindowGroup("Tinta") {
+        WindowGroup("Acervo") {
             LibraryView(state: state)
         }
 

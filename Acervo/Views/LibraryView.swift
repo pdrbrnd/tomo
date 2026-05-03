@@ -75,7 +75,7 @@ struct LibraryView: View {
                 deviceFooter(device: device)
             }
         }
-        .navigationTitle("Tinta")
+        .navigationTitle("Acervo")
         .navigationSplitViewColumnWidth(min: 280, ideal: 340)
     }
 
