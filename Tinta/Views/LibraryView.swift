@@ -46,18 +46,24 @@ struct LibraryView: View {
             .navigationTitle("Tinta")
         } else {
             List(state.books, selection: $selectedBookID) { book in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(book.title)
-                        .lineLimit(1)
-                    Text(book.authors.first ?? "Unknown")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                HStack(spacing: 8) {
+                    LocalCoverImage(url: book.coverURL)
+                        .frame(width: 28, height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(book.title)
+                            .lineLimit(1)
+                        Text(book.authors.first ?? "Unknown")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 .tag(book.id)
             }
             .navigationTitle("Tinta")
-            .navigationSplitViewColumnWidth(min: 240, ideal: 300)
+            .navigationSplitViewColumnWidth(min: 280, ideal: 340)
         }
     }
 

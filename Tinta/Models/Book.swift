@@ -10,6 +10,11 @@ nonisolated struct Book: Sendable, Identifiable, Equatable {
     var dateAdded: Date
     var fileURL: URL               // absolute path to primary file
     var origin: BookOrigin
+
+    var coverURL: URL? {
+        guard let coverPath else { return nil }
+        return fileURL.deletingLastPathComponent().appending(component: coverPath)
+    }
 }
 
 nonisolated enum BookOrigin: Codable, Sendable, Equatable, Hashable {
