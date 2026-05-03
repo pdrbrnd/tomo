@@ -13,7 +13,7 @@ nonisolated struct ConversionRegistry: Sendable {
         self.converters = converters
     }
 
-    func converter(from input: BookFormat, to output: BookFormat) -> (any FormatConverter)? {
+    func converter(from input: FileFormat, to output: FileFormat) -> (any FormatConverter)? {
         converters.first { $0.input == input && $0.output == output }
     }
 

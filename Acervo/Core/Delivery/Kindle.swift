@@ -56,15 +56,13 @@ nonisolated struct Kindle: BookDevice {
 
     func copy(_ book: Book) async throws {
         let sourceExt = book.fileURL.pathExtension.lowercased()
+        let target = FileFormat.azw3
 
         // Pass-through: source format is already indexable by Kindle.
         if supportedFormats.contains(sourceExt) {
             let dest = volumeURL
                 .appending(component: "documents")
                 .appending(component: deviceFilename(for: book))
-            if FileManager.default.fileExists(atPath: dest.path(percentEncoded: false)) {
-                throw BookDeviceError.alreadyOnDevice
-            }
             try await performCopy(from: book.fileURL, to: dest)
             return
         }
@@ -72,13 +70,13 @@ nonisolated struct Kindle: BookDevice {
         // Conversion required (e.g. EPUB → AZW3). Layer 1 ships the
         // adapter scaffolding with no converters registered, so EPUBs
         // still fail here — but loudly, with a clear message.
-        let target = BookFormat.azw3
-        guard let converter = ConversionRegistry.default
-            .converter(from: BookFormat(sourceExt), to: target)
+        guard let sourceFormat = FileFormat(rawValue: sourceExt),
+              let converter = ConversionRegistry.default
+                .converter(from: sourceFormat, to: target)
         else {
             throw BookDeviceError.copyFailed(
                 underlying: FormatConverterError.unsupported(
-                    input: BookFormat(sourceExt), output: target
+                    input: sourceExt, output: target
                 )
             )
         }
@@ -89,9 +87,6 @@ nonisolated struct Kindle: BookDevice {
         let dest = volumeURL
             .appending(component: "documents")
             .appending(component: convertedFilename)
-        if FileManager.default.fileExists(atPath: dest.path(percentEncoded: false)) {
-            throw BookDeviceError.alreadyOnDevice
-        }
         try await ConversionScratch.withScratchDirectory { scratch in
             let converted = try await converter.convert(source: book.fileURL, into: scratch)
             try await self.performCopy(from: converted, to: dest)
@@ -103,6 +98,11 @@ nonisolated struct Kindle: BookDevice {
             let fm = FileManager.default
             do {
                 try fm.copyItem(at: source, to: dest)
+            } catch let error as NSError where
+                error.domain == NSCocoaErrorDomain &&
+                error.code == NSFileWriteFileExistsError
+            {
+                throw BookDeviceError.alreadyOnDevice
             } catch {
                 throw BookDeviceError.copyFailed(underlying: error)
             }
