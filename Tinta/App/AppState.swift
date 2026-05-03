@@ -19,10 +19,83 @@ final class AppState {
     private(set) var importer: LibraryImporter?
     let profiles: [LanguageProfile]
     var books: [Book] = []
+    private(set) var device: (any BookDevice)?
+    private(set) var deviceFilenames: Set<String> = []
+
+    private var mountObserver: NSObjectProtocol?
+    private var unmountObserver: NSObjectProtocol?
 
     init() {
         self.libraryFolder = LibraryFolder.load()
         self.profiles = LanguageProfileStore.loadBundled()
+        let detected = DeviceScanner.detect()
+        self.device = detected
+        self.deviceFilenames = detected?.filenames() ?? []
+        startVolumeMonitoring()
+    }
+
+    func sendToDevice(book: Book) async {
+        guard let device else {
+            deliveryLogger.error("send to device: no device connected")
+            return
+        }
+        do {
+            try await device.copy(book)
+            deliveryLogger.info("copied to \(device.displayName, privacy: .public): \(book.title, privacy: .public)")
+            deviceFilenames = device.filenames()
+        } catch {
+            deliveryLogger.error("device copy failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func removeFromDevice(book: Book) async {
+        guard let device else { return }
+        do {
+            try await device.remove(book)
+            deliveryLogger.info("removed from \(device.displayName, privacy: .public): \(book.title, privacy: .public)")
+            deviceFilenames = device.filenames()
+        } catch {
+            deliveryLogger.error("device remove failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func ejectDevice() async {
+        guard let device else { return }
+        do {
+            try await device.eject()
+            deliveryLogger.info("ejected device: \(device.displayName, privacy: .public)")
+            // The unmount notification clears `device` and `deviceFilenames`.
+        } catch {
+            deliveryLogger.error("eject failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func startVolumeMonitoring() {
+        let center = NSWorkspace.shared.notificationCenter
+        mountObserver = center.addObserver(
+            forName: NSWorkspace.didMountNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshDeviceState()
+            }
+        }
+        unmountObserver = center.addObserver(
+            forName: NSWorkspace.didUnmountNotification,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshDeviceState()
+            }
+        }
+    }
+
+    private func refreshDeviceState() {
+        let detected = DeviceScanner.detect()
+        device = detected
+        deviceFilenames = detected?.filenames() ?? []
     }
 
     func loadBooks() async {

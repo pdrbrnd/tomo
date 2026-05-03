@@ -36,6 +36,29 @@ struct BookDetailView: View {
         .navigationTitle(book.title)
         .navigationSubtitle(book.authors.first ?? "Unknown")
         .toolbar {
+            if let device = state.device, device.canAccept(book) {
+                ToolbarItem(placement: .primaryAction) {
+                    if isOnDevice {
+                        Label("On \(device.displayName)", systemImage: "checkmark.circle.fill")
+                            .labelStyle(.titleAndIcon)
+                            .foregroundStyle(.secondary)
+                            .help("This book is already on the connected \(device.displayName).")
+                    } else {
+                        Button {
+                            Task { await state.sendToDevice(book: book) }
+                        } label: {
+                            Label("Send to \(device.displayName)", systemImage: "ipad.and.iphone")
+                        }
+                        .help(sendHelpText)
+                    }
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                ShareLink(item: book.fileURL) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .help("Share this book — pick a destination from the system share sheet (e.g. Amazon's Send to Kindle app, AirDrop, Mail).")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button("Edit") { showingEdit = true }
             }
@@ -114,6 +137,16 @@ struct BookDetailView: View {
 
     private var clipboardHasImage: Bool {
         NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil)
+    }
+
+    private var sendHelpText: String {
+        guard let device = state.device else { return "Plug in a device to enable USB delivery." }
+        return "Copy this book to \(device.displayName). It'll appear on the device after you eject."
+    }
+
+    private var isOnDevice: Bool {
+        guard let device = state.device else { return false }
+        return state.deviceFilenames.contains(device.deviceFilename(for: book))
     }
 
     private func pasteCover() {

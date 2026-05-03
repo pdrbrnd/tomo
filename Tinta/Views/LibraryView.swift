@@ -5,6 +5,7 @@ struct LibraryView: View {
     @State private var selectedBookID: Book.ID?
     @State private var searchText = ""
     @State private var bookPendingDelete: Book?
+    @State private var deviceDropTargeted = false
 
     private var filteredBooks: [Book] {
         guard !searchText.isEmpty else { return state.books }
@@ -68,23 +69,31 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var sidebar: some View {
-        Group {
-            if state.books.isEmpty {
-                ContentUnavailableView(
-                    "No books yet",
-                    systemImage: "books.vertical",
-                    description: Text("Drop EPUB files anywhere in the window to import.")
-                )
-            } else if filteredBooks.isEmpty {
-                ContentUnavailableView.search(text: searchText)
-            } else {
-                List(filteredBooks, selection: $selectedBookID) { book in
-                    row(for: book)
-                }
+        VStack(spacing: 0) {
+            sidebarContent
+            if let device = state.device {
+                deviceFooter(device: device)
             }
         }
         .navigationTitle("Tinta")
         .navigationSplitViewColumnWidth(min: 280, ideal: 340)
+    }
+
+    @ViewBuilder
+    private var sidebarContent: some View {
+        if state.books.isEmpty {
+            ContentUnavailableView(
+                "No books yet",
+                systemImage: "books.vertical",
+                description: Text("Drop EPUB files anywhere in the window to import.")
+            )
+        } else if filteredBooks.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+        } else {
+            List(filteredBooks, selection: $selectedBookID) { book in
+                row(for: book)
+            }
+        }
     }
 
     private func row(for book: Book) -> some View {
@@ -113,11 +122,89 @@ struct LibraryView: View {
                 }
             }
         }
+        .opacity(rowOpacity(for: book))
+        .draggable(book.fileURL)
         .contextMenu {
             Button("Move to Trash…", role: .destructive) {
                 bookPendingDelete = book
             }
+            if let device = state.device, isOnDevice(book) {
+                Divider()
+                Button("Remove from \(device.displayName)", role: .destructive) {
+                    Task { await state.removeFromDevice(book: book) }
+                }
+            }
         }
+    }
+
+    private func deviceFooter(device: any BookDevice) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: "ipad.and.iphone")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(device.displayName)
+                        .font(.callout)
+                    Text(deviceFooterSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    Task { await state.ejectDevice() }
+                } label: {
+                    Image(systemName: "eject.fill")
+                }
+                .buttonStyle(.borderless)
+                .help("Eject \(device.displayName). Books appear on the device after eject.")
+            }
+
+            if let warning = device.compatibilityWarning {
+                Text(warning)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(deviceDropTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundStyle(.separator),
+            alignment: .top
+        )
+        .background(.bar)
+        .dropDestination(for: URL.self) { urls, _ in
+            let booksToSend = urls
+                .compactMap { url in state.books.first(where: { $0.fileURL == url }) }
+                .filter { device.canAccept($0) }
+            guard !booksToSend.isEmpty else { return false }
+            Task {
+                for book in booksToSend {
+                    await state.sendToDevice(book: book)
+                }
+            }
+            return true
+        } isTargeted: { targeted in
+            deviceDropTargeted = targeted
+        }
+    }
+
+    private var deviceFooterSubtitle: String {
+        if deviceDropTargeted { return "Drop to send" }
+        let count = state.deviceFilenames.count
+        return "\(count) book\(count == 1 ? "" : "s") on device"
+    }
+
+    private func rowOpacity(for book: Book) -> Double {
+        guard state.device != nil else { return 1.0 }
+        return isOnDevice(book) ? 1.0 : 0.45
+    }
+
+    private func isOnDevice(_ book: Book) -> Bool {
+        guard let device = state.device else { return false }
+        return state.deviceFilenames.contains(device.deviceFilename(for: book))
     }
 
     @ViewBuilder

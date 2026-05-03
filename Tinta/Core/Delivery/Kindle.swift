@@ -1,0 +1,113 @@
+import Foundation
+import os
+
+/// USB-mass-storage Kindle driver. Identifies a Kindle volume by the presence
+/// of `documents/` and `system/` directories at the volume root. Reads the
+/// firmware version from `system/version.txt` for diagnostics; firmware does
+/// not gate format support — Kindle's scanner has never indexed EPUB
+/// regardless of firmware. See `supportedFormats`.
+nonisolated struct Kindle: BookDevice {
+    let volumeURL: URL
+    let firmwareVersion: String?
+
+    var id: String { volumeURL.path(percentEncoded: false) }
+    var displayName: String { "Kindle" }
+
+    /// Init returns nil if the volume doesn't look like a Kindle.
+    init?(volumeURL: URL) {
+        let fm = FileManager.default
+        let documents = volumeURL.appending(component: "documents")
+        let system = volumeURL.appending(component: "system")
+        var isDir: ObjCBool = false
+        let docOK = fm.fileExists(atPath: documents.path(percentEncoded: false), isDirectory: &isDir) && isDir.boolValue
+        let sysOK = fm.fileExists(atPath: system.path(percentEncoded: false), isDirectory: &isDir) && isDir.boolValue
+        guard docOK && sysOK else { return nil }
+
+        self.volumeURL = volumeURL
+        self.firmwareVersion = Self.readFirmwareVersion(volumeURL: volumeURL)
+    }
+
+    /// Kindle's home-screen scanner ignores EPUB regardless of firmware. The
+    /// renderer reads EPUB on FW 5.16+, but the scanner that builds the
+    /// library list from `/documents/` only indexes Amazon-friendly formats.
+    /// Confirmed across MobileRead and Amazon docs: EPUB only enters Kindle
+    /// via the server-side Send to Kindle pipeline (which converts to KFX).
+    var supportedFormats: Set<String> {
+        ["azw", "azw3", "mobi", "prc", "pdf", "txt"]
+    }
+
+    var compatibilityWarning: String? {
+        "Kindle's home-screen scanner doesn't index sideloaded EPUBs (only AZW3, MOBI, PDF, TXT). For EPUBs, use Share → Send to Kindle so Amazon converts on its servers."
+    }
+
+    func filenames() -> Set<String> {
+        let documents = volumeURL.appending(component: "documents")
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: documents,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return Set(entries.map { $0.lastPathComponent })
+    }
+
+    func deviceFilename(for book: Book) -> String {
+        fatSafeFilename(book.fileURL.lastPathComponent)
+    }
+
+    func copy(_ book: Book) async throws {
+        let dest = volumeURL
+            .appending(component: "documents")
+            .appending(component: deviceFilename(for: book))
+        let source = book.fileURL
+
+        try await Task.detached {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: dest.path(percentEncoded: false)) {
+                throw BookDeviceError.alreadyOnDevice
+            }
+            do {
+                try fm.copyItem(at: source, to: dest)
+            } catch {
+                throw BookDeviceError.copyFailed(underlying: error)
+            }
+            // fsync — macOS lazy-flushes; without this the eject can race the write.
+            do {
+                let handle = try FileHandle(forUpdating: dest)
+                try handle.synchronize()
+                try handle.close()
+            } catch {
+                deliveryLogger.warning("fsync after copy failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }.value
+    }
+
+    func remove(_ book: Book) async throws {
+        let dest = volumeURL
+            .appending(component: "documents")
+            .appending(component: deviceFilename(for: book))
+        do {
+            try await Task.detached {
+                try FileManager.default.removeItem(at: dest)
+            }.value
+        } catch {
+            throw BookDeviceError.removeFailed(underlying: error)
+        }
+    }
+
+    func eject() async throws {
+        try await ejectVolume(volumeURL)
+    }
+
+    // MARK: - Firmware
+
+    private static func readFirmwareVersion(volumeURL: URL) -> String? {
+        let url = volumeURL
+            .appending(component: "system")
+            .appending(component: "version.txt")
+        guard let raw = try? String(contentsOf: url, encoding: .utf8) else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
