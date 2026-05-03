@@ -1,51 +1,81 @@
 import SwiftUI
+import AppKit
+import PhosphorSwift
 
 struct LibraryView: View {
     let state: AppState
+
     @State private var selectedBookID: Book.ID?
+    @State private var inspectorOpen = false
     @State private var searchText = ""
+    @State private var languageFilter: String?
     @State private var bookPendingDelete: Book?
-    @State private var deviceDropTargeted = false
+    @State private var editingBook: Book?
+    @State private var dropTargeted = false
+    @FocusState private var searchFocused: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let inspectorWidth: CGFloat = 332
+    private static let inspectorInset: CGFloat = 8
+    private static let inspectorPaneWidth: CGFloat = inspectorWidth + inspectorInset * 2
 
     private var filteredBooks: [Book] {
-        guard !searchText.isEmpty else { return state.books }
-        let needle = searchText.lowercased()
-        return state.books.filter { book in
-            book.title.lowercased().contains(needle) ||
-            book.authors.contains { $0.lowercased().contains(needle) }
+        let bySearch: [Book]
+        if searchText.isEmpty {
+            bySearch = state.books
+        } else {
+            let needle = searchText.lowercased()
+            bySearch = state.books.filter { book in
+                book.title.lowercased().contains(needle) ||
+                book.authors.contains { $0.lowercased().contains(needle) }
+            }
         }
+        guard let lang = languageFilter else { return bySearch }
+        return bySearch.filter { $0.locale == lang }
+    }
+
+    private var selectedBook: Book? {
+        guard let id = selectedBookID else { return nil }
+        return state.books.first(where: { $0.id == id })
+    }
+
+    private var languageCounts: [String: Int] {
+        Dictionary(grouping: state.books, by: { $0.locale }).mapValues(\.count)
+    }
+
+    /// Resolves the current device into something the inspector can render
+    /// without knowing about `BookDevice` or `AppState`.
+    private func deviceContext(for book: Book) -> BookInspector.DeviceContext? {
+        guard let device = state.device else { return nil }
+        return BookInspector.DeviceContext(
+            displayName: device.displayName,
+            isOnDevice: state.deviceFilenames.contains(device.deviceFilename(for: book)),
+            canSend: device.canAccept(book)
+        )
     }
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-        } detail: {
-            detail
-        }
-        .frame(minWidth: 720, minHeight: 480)
-        .searchable(text: $searchText, prompt: "Search title or author")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    Task { await state.rebuildIndex() }
-                } label: {
-                    Label("Rebuild Index", systemImage: "arrow.clockwise")
-                }
-                .disabled(state.libraryFolder == nil)
-                .help("Wipes the SQLite index and rebuilds it from the metadata.json sidecars on disk")
+        HStack(spacing: 0) {
+            mainPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if inspectorOpen {
+                inspectorPane
+                    .frame(width: Self.inspectorPaneWidth)
+                    .transition(inspectorTransition)
             }
         }
-        .dropDestination(for: URL.self) { urls, _ in
-            let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
-            guard !epubs.isEmpty else { return false }
-            Task {
-                for url in epubs {
-                    await state.importBook(from: url)
-                }
-            }
-            return true
-        }
+        .ignoresSafeArea(.all)
+        .background(WindowCustomizer(cornerRadius: Theme.Radius.window))
+        .frame(minWidth: 880, minHeight: 600)
+        .animation(inspectorAnimation, value: inspectorOpen)
         .task { await state.loadBooks() }
+        .sheet(item: $editingBook) { book in
+            EditBookView(book: book, state: state) { updated in
+                Task { await state.updateBook(updated) }
+            }
+        }
         .confirmationDialog(
             "Move \"\(bookPendingDelete?.title ?? "")\" to Trash?",
             isPresented: Binding(
@@ -63,143 +93,274 @@ struct LibraryView: View {
                 bookPendingDelete = nil
             }
         } message: { _ in
-            Text("The book and its metadata will be moved to the Trash. You can restore it from there if needed.")
+            Text("The book and its metadata will be moved to the Trash.")
         }
     }
 
-    @ViewBuilder
-    private var sidebar: some View {
-        VStack(spacing: 0) {
-            sidebarContent
+    // MARK: - Main pane
+
+    private var mainPane: some View {
+        ZStack(alignment: .top) {
+            Theme.canvas
+                .ignoresSafeArea()
+
+            gridArea
+                .ignoresSafeArea(.all, edges: .top)
+
+            TopChrome(
+                searchText: $searchText,
+                searchFocused: $searchFocused,
+                isFilterActive: languageFilter != nil
+            ) {
+                LanguageFilterPopover(
+                    counts: languageCounts,
+                    total: state.books.count,
+                    selected: $languageFilter,
+                    onSelect: {}
+                )
+            }
+
             if let device = state.device {
-                deviceFooter(device: device)
-            }
-        }
-        .navigationTitle("Acervo")
-        .navigationSplitViewColumnWidth(min: 280, ideal: 340)
-    }
-
-    @ViewBuilder
-    private var sidebarContent: some View {
-        if state.books.isEmpty {
-            ContentUnavailableView(
-                "No books yet",
-                systemImage: "books.vertical",
-                description: Text("Drop EPUB files anywhere in the window to import.")
-            )
-        } else if filteredBooks.isEmpty {
-            ContentUnavailableView.search(text: searchText)
-        } else {
-            List(filteredBooks, selection: $selectedBookID) { book in
-                row(for: book)
-            }
-        }
-    }
-
-    private func row(for book: Book) -> some View {
-        HStack(spacing: 8) {
-            LocalCoverImage(url: book.coverURL)
-                .frame(width: 28, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 2))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(book.title)
-                    .lineLimit(1)
-                HStack(spacing: 4) {
-                    Text(book.authors.first ?? "Unknown")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if book.locale != "und" {
-                        Text(book.locale)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(.quaternary, in: Capsule())
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        DeviceTile(
+                            displayName: device.displayName,
+                            bookCount: state.deviceFilenames.count,
+                            onEject: { Task { await state.ejectDevice() } },
+                            onDrop: { urls in
+                                let booksToSend = urls
+                                    .compactMap { url in state.books.first(where: { $0.fileURL == url }) }
+                                    .filter { device.canAccept($0) }
+                                guard !booksToSend.isEmpty else { return false }
+                                Task {
+                                    for book in booksToSend {
+                                        await state.sendToDevice(book: book)
+                                    }
+                                }
+                                return true
+                            }
+                        )
+                        .padding(.trailing, Theme.Spacing.lg)
+                        .padding(.bottom, Theme.Spacing.lg)
                     }
                 }
             }
-        }
-        .opacity(rowOpacity(for: book))
-        .draggable(book.fileURL)
-        .contextMenu {
-            Button("Move to Trash…", role: .destructive) {
-                bookPendingDelete = book
-            }
-            if let device = state.device, isOnDevice(book) {
-                Divider()
-                Button("Remove from \(device.displayName)", role: .destructive) {
-                    Task { await state.removeFromDevice(book: book) }
-                }
-            }
-        }
-    }
 
-    private func deviceFooter(device: any BookDevice) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "ipad.and.iphone")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(device.displayName)
-                        .font(.callout)
-                    Text(deviceFooterSubtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    Task { await state.ejectDevice() }
-                } label: {
-                    Image(systemName: "eject.fill")
-                }
-                .buttonStyle(.borderless)
-                .help("Eject \(device.displayName). Books appear on the device after eject.")
+            if dropTargeted {
+                DropOverlay()
+                    .ignoresSafeArea(.all)
+                    .transition(.opacity)
             }
 
-            if let warning = device.compatibilityWarning {
-                Text(warning)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            keyboardShortcuts
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(deviceDropTargeted ? Color.accentColor.opacity(0.18) : Color.clear)
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundStyle(.separator),
-            alignment: .top
-        )
-        .background(.bar)
         .dropDestination(for: URL.self) { urls, _ in
-            let booksToSend = urls
-                .compactMap { url in state.books.first(where: { $0.fileURL == url }) }
-                .filter { device.canAccept($0) }
-            guard !booksToSend.isEmpty else { return false }
+            let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
+            guard !epubs.isEmpty else { return false }
             Task {
-                for book in booksToSend {
-                    await state.sendToDevice(book: book)
+                for url in epubs {
+                    await state.importBook(from: url)
                 }
             }
             return true
         } isTargeted: { targeted in
-            deviceDropTargeted = targeted
+            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .snappy(duration: 0.20)) {
+                dropTargeted = targeted
+            }
         }
     }
 
-    private var deviceFooterSubtitle: String {
-        if deviceDropTargeted { return "Drop to send" }
-        let count = state.deviceFilenames.count
-        return "\(count) book\(count == 1 ? "" : "s") on device"
+    // MARK: - Grid
+
+    @ViewBuilder
+    private var gridArea: some View {
+        if state.libraryFolder == nil {
+            placeholderText("Open Settings (⌘,) to choose a library folder.")
+        } else if state.books.isEmpty {
+            placeholderText("Drop a book to begin.")
+        } else if filteredBooks.isEmpty {
+            placeholderText("Nothing matches “\(searchText)”.")
+        } else {
+            grid
+        }
     }
 
-    private func rowOpacity(for book: Book) -> Double {
-        guard state.device != nil else { return 1.0 }
-        return isOnDevice(book) ? 1.0 : 0.45
+    private var grid: some View {
+        GeometryReader { proxy in
+            let margin: CGFloat = Theme.Spacing.xxl
+            let gutter: CGFloat = Theme.Spacing.xxl
+            let minCardWidth: CGFloat = 168
+            let maxCardWidth: CGFloat = 224
+            let topClearance: CGFloat = Theme.Spacing.xxl
+
+            let availableWidth = proxy.size.width - 2 * margin
+            let cols = max(1, Int((availableWidth + gutter) / (minCardWidth + gutter)))
+            let computed = (availableWidth - CGFloat(cols - 1) * gutter) / CGFloat(cols)
+            let cardWidth = min(maxCardWidth, max(minCardWidth, computed))
+
+            ScrollView {
+                ZStack(alignment: .top) {
+                    // Tap target for empty-grid clicks. Inside the scroll
+                    // content so it actually receives clicks (ScrollView
+                    // would otherwise eat them via its own gesture handling).
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.32, bounce: 0.10)) {
+                                selectedBookID = nil
+                                searchFocused = false
+                            }
+                        }
+
+                    LazyVGrid(
+                        columns: Array(repeating: GridItem(.fixed(cardWidth), spacing: gutter), count: cols),
+                        alignment: .center,
+                        spacing: gutter
+                    ) {
+                        ForEach(filteredBooks) { book in
+                            bookCell(book, cardWidth: cardWidth)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, margin)
+                    .padding(.top, topClearance + margin)
+                    .padding(.bottom, margin)
+                }
+                .frame(minHeight: proxy.size.height)
+            }
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private func bookCell(_ book: Book, cardWidth: CGFloat) -> some View {
+        BookCard(
+            book: book,
+            isSelected: book.id == selectedBookID,
+            cardWidth: cardWidth,
+            menu: { bookMenu(book) }
+        )
+        .draggable(book.fileURL)
+        // simultaneousGesture so single-tap fires immediately, no double-tap
+        // disambiguation lag. Double-click also fires simultaneously: the
+        // single-tap selects (idempotent), then the double-tap opens. The
+        // selection is harmless side effect; the user sees the book open.
+        .simultaneousGesture(TapGesture(count: 1).onEnded {
+            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(duration: 0.32, bounce: 0.10)) {
+                selectedBookID = book.id
+                searchFocused = false
+            }
+        })
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            NSWorkspace.shared.open(book.fileURL)
+        })
+        .contextMenu { bookMenu(book) }
+    }
+
+    @ViewBuilder
+    private func bookMenu(_ book: Book) -> some View {
+        bookMenuItem("Show Details", icon: .info) {
+            selectedBookID = book.id
+            inspectorOpen = true
+        }
+        bookMenuItem("Open in Default App", icon: .arrowSquareOut) {
+            NSWorkspace.shared.open(book.fileURL)
+        }
+        bookMenuItem("Edit…", icon: .pencilSimple) {
+            editingBook = book
+        }
+        bookMenuItem("Show in Finder", icon: .folderOpen) {
+            NSWorkspace.shared.activateFileViewerSelecting([book.fileURL])
+        }
+        if let device = state.device, device.canAccept(book) {
+            Divider()
+            if isOnDevice(book) {
+                bookMenuItem("Remove from \(device.displayName)", icon: .deviceTablet, destructive: true) {
+                    Task { await state.removeFromDevice(book: book) }
+                }
+            } else {
+                bookMenuItem("Send to \(device.displayName)", icon: .deviceTablet) {
+                    Task { await state.sendToDevice(book: book) }
+                }
+            }
+        }
+        Divider()
+        bookMenuItem("Move to Trash…", icon: .trash, destructive: true) {
+            bookPendingDelete = book
+        }
+    }
+
+    private func bookMenuItem(
+        _ title: String,
+        icon: Ph,
+        destructive: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: destructive ? .destructive : nil, action: action) {
+            HStack(spacing: 9) {
+                Icon(symbol: icon, weight: .regular, size: 13)
+                    .frame(width: 14)
+                Text(title)
+            }
+        }
+    }
+
+    private func placeholderText(_ message: String) -> some View {
+        VStack {
+            Spacer()
+            Text(message)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.primary.opacity(0.45))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Inspector
+
+    private var inspectorPane: some View {
+        BookInspector(
+            book: selectedBook,
+            device: selectedBook.flatMap { deviceContext(for: $0) },
+            onClose: { inspectorOpen = false },
+            onEdit: { if let book = selectedBook { editingBook = book } },
+            onShowInFinder: {
+                if let book = selectedBook {
+                    NSWorkspace.shared.activateFileViewerSelecting([book.fileURL])
+                }
+            },
+            onSendToDevice: {
+                if let book = selectedBook {
+                    Task { await state.sendToDevice(book: book) }
+                }
+            },
+            onRequestDelete: { if let book = selectedBook { bookPendingDelete = book } }
+        )
+        .frame(width: Self.inspectorWidth)
+        .frame(maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                .stroke(Theme.hairline, lineWidth: 0.5)
+        )
+        .softShadow(elevated: true)
+        .padding(Self.inspectorInset)
+    }
+
+    private var inspectorTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .move(edge: .trailing).combined(with: .opacity)
+    }
+
+    private var inspectorAnimation: Animation {
+        if reduceMotion {
+            return .easeOut(duration: 0.18)
+        }
+        return .smooth(duration: 0.32, extraBounce: 0.10)
     }
 
     private func isOnDevice(_ book: Book) -> Bool {
@@ -207,21 +368,32 @@ struct LibraryView: View {
         return state.deviceFilenames.contains(device.deviceFilename(for: book))
     }
 
-    @ViewBuilder
-    private var detail: some View {
-        if let id = selectedBookID, let book = state.books.first(where: { $0.id == id }) {
-            BookDetailView(book: book, state: state)
-        } else if state.libraryFolder == nil {
-            ContentUnavailableView(
-                "No library folder",
-                systemImage: "folder.badge.questionmark",
-                description: Text("Open Settings (⌘,) to choose a folder.")
-            )
-        } else {
-            ContentUnavailableView(
-                "Select a book",
-                systemImage: "book"
-            )
+    // MARK: - Keyboard shortcuts
+
+    private var keyboardShortcuts: some View {
+        ZStack {
+            Button("") { inspectorOpen.toggle() }
+                .keyboardShortcut("i", modifiers: .command)
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+            Button("") {
+                if let book = selectedBook {
+                    NSWorkspace.shared.open(book.fileURL)
+                }
+            }
+            .keyboardShortcut("o", modifiers: .command)
+            Button("") { handleEscape() }
+                .keyboardShortcut(.escape, modifiers: [])
         }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
+    private func handleEscape() {
+        if searchFocused { searchFocused = false; return }
+        if !searchText.isEmpty { searchText = ""; return }
+        if selectedBookID != nil { selectedBookID = nil; return }
+        if inspectorOpen { inspectorOpen = false }
     }
 }

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EB0FBF432FA7C4D900EEC87C /* PhosphorSwift in Frameworks */ = {isa = PBXBuildFile; productRef = EB0FBF422FA7C4D900EEC87C /* PhosphorSwift */; };
 		EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */; };
 		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 /* End PBXBuildFile section */
@@ -53,6 +54,7 @@
 			files = (
 				EBF14F862FA6F64400045D30 /* GRDB in Frameworks */,
 				EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */,
+				EB0FBF432FA7C4D900EEC87C /* PhosphorSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -122,6 +124,7 @@
 			packageProductDependencies = (
 				EBF14F852FA6F64400045D30 /* GRDB */,
 				EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */,
+				EB0FBF422FA7C4D900EEC87C /* PhosphorSwift */,
 			);
 			productName = Acervo;
 			productReference = EB4E9A582FA6F23B0015E496 /* Acervo.app */;
@@ -158,6 +161,7 @@
 			packageReferences = (
 				EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */,
 				EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				EB0FBF412FA7C4D900EEC87C /* XCRemoteSwiftPackageReference "swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;
@@ -460,6 +464,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		EB0FBF412FA7C4D900EEC87C /* XCRemoteSwiftPackageReference "swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/phosphor-icons/swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.1.0;
+			};
+		};
 		EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
@@ -479,6 +491,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		EB0FBF422FA7C4D900EEC87C /* PhosphorSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB0FBF412FA7C4D900EEC87C /* XCRemoteSwiftPackageReference "swift" */;
+			productName = PhosphorSwift;
+		};
 		EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;

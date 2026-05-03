@@ -8,6 +8,9 @@ struct AcervoApp: App {
         WindowGroup("Acervo") {
             LibraryView(state: state)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
+        .defaultSize(width: 1200, height: 820)
 
         Settings {
             SettingsView(state: state)
