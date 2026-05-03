@@ -1,9 +1,12 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 struct BookDetailView: View {
     let book: Book
     let state: AppState
     @State private var showingEdit = false
+    @State private var showingCoverPicker = false
 
     var body: some View {
         ScrollView {
@@ -42,14 +45,19 @@ struct BookDetailView: View {
                 Task { await state.updateBook(updated) }
             }
         }
+        .fileImporter(
+            isPresented: $showingCoverPicker,
+            allowedContentTypes: [.image]
+        ) { result in
+            if case .success(let url) = result {
+                Task { await state.setCover(for: book, fromFile: url) }
+            }
+        }
     }
 
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
-            LocalCoverImage(url: book.coverURL)
-                .frame(width: 160, height: 220)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .shadow(radius: 4)
+            coverView
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(book.title)
@@ -70,6 +78,29 @@ struct BookDetailView: View {
         }
     }
 
+    private var coverView: some View {
+        LocalCoverImage(url: book.coverURL)
+            .frame(width: 160, height: 220)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .shadow(radius: 4)
+            .contextMenu {
+                Button("Replace from File…") { showingCoverPicker = true }
+                Button("Paste") { pasteCover() }
+                    .disabled(!clipboardHasImage)
+                if book.coverPath != nil {
+                    Divider()
+                    Button("Remove Cover", role: .destructive) {
+                        Task { await state.removeCover(for: book) }
+                    }
+                }
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                guard let url = urls.first(where: { isImageFile($0) }) else { return false }
+                Task { await state.setCover(for: book, fromFile: url) }
+                return true
+            }
+    }
+
     private var languageRow: some View {
         LabeledContent("Language", value: book.localeDisplayName)
     }
@@ -79,5 +110,19 @@ struct BookDetailView: View {
         case .manualImport: "Manual import"
         case .source(let id, _): "Source: \(id)"
         }
+    }
+
+    private var clipboardHasImage: Bool {
+        NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil)
+    }
+
+    private func pasteCover() {
+        guard let image = NSImage(pasteboard: NSPasteboard.general) else { return }
+        Task { await state.setCover(for: book, image: image) }
+    }
+
+    private func isImageFile(_ url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return false }
+        return type.conforms(to: .image)
     }
 }
