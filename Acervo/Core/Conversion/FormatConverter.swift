@@ -9,8 +9,10 @@ nonisolated enum FileFormat: String, Hashable, Sendable {
 }
 
 /// One-shot conversion from a single input format to a single output format.
-/// Implementations live under `Core/Conversion/<TargetFormat>/` (e.g.
-/// `Core/Conversion/AZW3/EPUBToAZW3Converter.swift`). They never touch the
+/// Concrete converters live in `Core/Conversion/` (e.g.
+/// `Core/Conversion/EPUBToAZW3Converter.swift`) and bridge between Acervo
+/// types and a writer (the writer itself sits under `AZW3/` and stays free
+/// of Acervo types — see `AZW3/README.md`). Converters never touch the
 /// library folder; they write into a caller-provided scratch directory and
 /// return the URL of the produced file. The file's name should be
 /// `<source-stem>.<output.rawValue>`.

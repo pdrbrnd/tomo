@@ -10,9 +10,20 @@ nonisolated enum EXTHEntryType: UInt32, Sendable {
     case title = 99
     case author = 100
     case publisher = 101
+    /// 15-char lowercase-hex pseudo-ASIN. Kindle uses this to look
+    /// covers up server-side; for sideloaded books we just need it
+    /// present so the parser stops complaining.
+    case asin = 113
     /// BCP 47 language tag. Modern Kindles read this; older
     /// ones fall back to the MOBIHeader.Locale field.
     case language = 524
+    /// "EBOK" by convention. Calibre and leotaku both emit this for
+    /// every book; some Kindle firmware versions reject files
+    /// without it.
+    case docType = 501
+    /// Modern Kindle UI uses this rather than EXTHTitle in some
+    /// places. Same value as title, emitted for parity.
+    case updatedTitle = 503
 }
 
 /// One EXTH entry: 8-byte header (type + total length) followed by the

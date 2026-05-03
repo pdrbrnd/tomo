@@ -17,8 +17,10 @@ nonisolated struct ConversionRegistry: Sendable {
         converters.first { $0.input == input && $0.output == output }
     }
 
-    /// Process-wide registry. The list is empty until a real converter is
-    /// added (see `Core/Conversion/AZW3/` for the EPUB→AZW3 port). Edit this
-    /// single line to add or retire a format adapter.
-    static let `default` = ConversionRegistry()
+    /// Process-wide registry. Edit this list to add or retire a
+    /// format adapter; everything else (device drivers, the UI gate)
+    /// flows from here.
+    static let `default` = ConversionRegistry([
+        EPUBToAZW3Converter(),
+    ])
 }
