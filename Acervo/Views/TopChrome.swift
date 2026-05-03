@@ -17,18 +17,11 @@ struct TopChrome<FilterContent: View>: View {
     /// close button so they align horizontally when the inspector is open.
     static var topPadding: CGFloat { 16 }
     static var trailingPadding: CGFloat { 16 }
-    /// Leading offset so the centered search pill clears the traffic lights.
-    static var leadingTrafficLightClearance: CGFloat { 80 }
 
     var body: some View {
         ZStack {
-            HStack {
-                Spacer()
-                SearchPill(text: $searchText)
-                    .focused(searchFocused)
-                Spacer()
-            }
-            .padding(.leading, Self.leadingTrafficLightClearance)
+            SearchPill(text: $searchText)
+                .focused(searchFocused)
 
             HStack {
                 Spacer()
