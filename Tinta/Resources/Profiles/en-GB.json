@@ -1,0 +1,33 @@
+{
+  "id": "en-GB",
+  "label": "English (UK)",
+  "baseLanguage": "en",
+  "markers": [
+    { "pattern": "colour", "isRegex": false, "weight": 1.5 },
+    { "pattern": "favour", "isRegex": false, "weight": 1.5 },
+    { "pattern": "honour", "isRegex": false, "weight": 1.5 },
+    { "pattern": "behaviour", "isRegex": false, "weight": 1.5 },
+    { "pattern": "neighbour", "isRegex": false, "weight": 1.5 },
+    { "pattern": "organise", "isRegex": false, "weight": 1.5 },
+    { "pattern": "realise", "isRegex": false, "weight": 1.5 },
+    { "pattern": "recognise", "isRegex": false, "weight": 1.5 },
+    { "pattern": "centre", "isRegex": false, "weight": 1.2 },
+    { "pattern": "metre", "isRegex": false, "weight": 1.2 },
+    { "pattern": "theatre", "isRegex": false, "weight": 1.2 },
+    { "pattern": "lorry", "isRegex": false, "weight": 2.0 },
+    { "pattern": "biscuit", "isRegex": false, "weight": 1.0 },
+    { "pattern": "trousers", "isRegex": false, "weight": 1.5 },
+    { "pattern": "rubbish", "isRegex": false, "weight": 1.5 },
+    { "pattern": "whilst", "isRegex": false, "weight": 1.5 },
+    { "pattern": "color", "isRegex": false, "weight": -1.5 },
+    { "pattern": "favor", "isRegex": false, "weight": -1.5 },
+    { "pattern": "honor", "isRegex": false, "weight": -1.5 },
+    { "pattern": "behavior", "isRegex": false, "weight": -1.5 },
+    { "pattern": "neighbor", "isRegex": false, "weight": -1.5 },
+    { "pattern": "organize", "isRegex": false, "weight": -1.5 },
+    { "pattern": "realize", "isRegex": false, "weight": -1.5 },
+    { "pattern": "recognize", "isRegex": false, "weight": -1.5 },
+    { "pattern": "elevator", "isRegex": false, "weight": -1.5 },
+    { "pattern": "gotten", "isRegex": false, "weight": -1.5 }
+  ]
+}

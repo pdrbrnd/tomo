@@ -9,10 +9,12 @@ final class AppState {
     }
     private(set) var index: BookIndex?
     private(set) var importer: LibraryImporter?
+    let profiles: [LanguageProfile]
     var books: [Book] = []
 
     init() {
         self.libraryFolder = LibraryFolder.load()
+        self.profiles = LanguageProfileStore.loadBundled()
     }
 
     func loadBooks() async {
@@ -109,6 +111,7 @@ final class AppState {
         guard index == nil else { return }
         let opened = await Task.detached { BookIndex.open() }.value
         self.index = opened
-        self.importer = opened.map { LibraryImporter(index: $0) }
+        let bundledProfiles = self.profiles
+        self.importer = opened.map { LibraryImporter(index: $0, profiles: bundledProfiles) }
     }
 }

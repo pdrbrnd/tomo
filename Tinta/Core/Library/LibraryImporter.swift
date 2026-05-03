@@ -15,9 +15,11 @@ enum LibraryImporterError: LocalizedError {
 
 actor LibraryImporter {
     private let index: BookIndex
+    private let profiles: [LanguageProfile]
 
-    init(index: BookIndex) {
+    init(index: BookIndex, profiles: [LanguageProfile]) {
         self.index = index
+        self.profiles = profiles
     }
 
     func importBook(from sourceURL: URL, into libraryFolder: URL) async throws -> Book {
@@ -61,6 +63,7 @@ actor LibraryImporter {
             try await index.add(book)
 
             libraryLogger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
+            classify(at: destFile)
             return book
         } catch {
             do {
@@ -70,6 +73,34 @@ actor LibraryImporter {
                 libraryLogger.error("rollback failed for \(bookFolder.path(percentEncoded: false), privacy: .public): \(cleanupError.localizedDescription, privacy: .public)")
             }
             throw error
+        }
+    }
+
+    private func classify(at fileURL: URL) {
+        let text: String
+        do {
+            text = try EPUBText.extract(from: fileURL)
+        } catch {
+            classifierLogger.error("text extract failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard !text.isEmpty else {
+            classifierLogger.info("empty extracted text — skipping classification")
+            return
+        }
+        guard let baseLang = BaseLanguage.detect(in: text) else {
+            classifierLogger.info("could not detect base language")
+            return
+        }
+        let candidates = profiles.filter { $0.baseLanguage == baseLang }
+        guard !candidates.isEmpty else {
+            classifierLogger.info("no profiles for base language \(baseLang, privacy: .public)")
+            return
+        }
+        if let result = ProfileClassifier.classify(text: text, profiles: candidates) {
+            classifierLogger.info("classified: base=\(baseLang, privacy: .public) profile=\(result.profileId, privacy: .public) confidence=\(result.confidence, format: .fixed(precision: 2))")
+        } else {
+            classifierLogger.info("base=\(baseLang, privacy: .public) but no marker matches")
         }
     }
 }

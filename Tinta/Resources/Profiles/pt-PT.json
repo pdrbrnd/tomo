@@ -1,0 +1,29 @@
+{
+  "id": "pt-PT",
+  "label": "Portuguese (Portugal)",
+  "baseLanguage": "pt",
+  "markers": [
+    { "pattern": "está a ", "isRegex": false, "weight": 2.0 },
+    { "pattern": "estás", "isRegex": false, "weight": 1.5 },
+    { "pattern": "ouviste", "isRegex": false, "weight": 1.5 },
+    { "pattern": "viste", "isRegex": false, "weight": 0.8 },
+    { "pattern": "comboio", "isRegex": false, "weight": 2.0 },
+    { "pattern": "autocarro", "isRegex": false, "weight": 2.0 },
+    { "pattern": "casa de banho", "isRegex": false, "weight": 2.0 },
+    { "pattern": "telemóvel", "isRegex": false, "weight": 2.0 },
+    { "pattern": "chávena", "isRegex": false, "weight": 1.5 },
+    { "pattern": "frigorífico", "isRegex": false, "weight": 1.5 },
+    { "pattern": "apanhar", "isRegex": false, "weight": 0.8 },
+    { "pattern": "pequeno-almoço", "isRegex": false, "weight": 2.0 },
+    { "pattern": "fixe", "isRegex": false, "weight": 1.0 },
+    { "pattern": "está fazendo", "isRegex": false, "weight": -2.0 },
+    { "pattern": "estão fazendo", "isRegex": false, "weight": -1.8 },
+    { "pattern": "tô ", "isRegex": false, "weight": -1.5 },
+    { "pattern": "trem", "isRegex": false, "weight": -1.0 },
+    { "pattern": "ônibus", "isRegex": false, "weight": -2.0 },
+    { "pattern": "banheiro", "isRegex": false, "weight": -1.5 },
+    { "pattern": "geladeira", "isRegex": false, "weight": -2.0 },
+    { "pattern": "café da manhã", "isRegex": false, "weight": -2.0 },
+    { "pattern": "xícara", "isRegex": false, "weight": -1.0 }
+  ]
+}
