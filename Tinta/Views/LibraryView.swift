@@ -102,8 +102,8 @@ struct LibraryView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    if let id = book.languageProfileId {
-                        Text(id)
+                    if book.locale != "und" {
+                        Text(book.locale)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)

@@ -1,6 +1,5 @@
 {
   "id": "pt-PT",
-  "label": "Portuguese (Portugal)",
   "baseLanguage": "pt",
   "markers": [
     { "pattern": "está a ", "isRegex": false, "weight": 2.0 },

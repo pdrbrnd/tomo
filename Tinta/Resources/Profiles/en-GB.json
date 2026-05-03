@@ -1,6 +1,5 @@
 {
   "id": "en-GB",
-  "label": "English (UK)",
   "baseLanguage": "en",
   "markers": [
     { "pattern": "colour", "isRegex": false, "weight": 1.5 },

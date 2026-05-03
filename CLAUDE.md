@@ -133,17 +133,15 @@ BookLib/
 struct Book {
     let id: UUID
     var title: String
-    var authors: [String]      // first author drives folder layout
+    var authors: [String]       // first author drives folder layout
     var year: Int?
-    var languageCode: String   // ISO 639-1: "pt", "en", "es"
-    var languageProfileId: String?  // e.g. "pt-PT", "en-GB"
-    var languageConfidence: Double?  // 0.0–1.0
+    var locale: String          // "pt-PT", "en-GB", "pt", "und" — BCP 47, single source of truth
     var tags: [String]
-    var formats: [BookFormat]  // multiple files for the same logical book
-    var coverPath: String?     // relative to book folder
+    var formats: [BookFormat]   // multiple files for the same logical book
+    var coverPath: String?      // relative to book folder
     var dateAdded: Date
-    var fileURL: URL           // primary file, used for ops
-    var origin: BookOrigin     // where this book came from
+    var fileURL: URL            // primary file, used for ops
+    var origin: BookOrigin      // where this book came from
 }
 
 enum BookOrigin: Codable, Equatable {
@@ -208,11 +206,57 @@ notes. Not a v1 concern beyond the `BookOrigin` field on `Book`.
 
 ## v1 scope (in priority order)
 
-1. Library: import, organise, browse (grid + list), search, edit metadata, delete
-2. Language profiles: classification on import, badges, manual override, bulk re-classify
+1. Library: import, organise, browse (grid + list), search, edit metadata (incl. language profile and cover), delete
+2. Language profiles: classification on import (when EPUB doesn't declare a full locale), badges, bulk re-classify
 3. Cover art editing: paste, file picker, fetch from Open Library by ISBN
 4. Duplicate detection: title+author fuzzy match, format preference (EPUB > AZW3 > MOBI > PDF), manual merge UI
 5. Kindle delivery: USB (mount detection, copy to `documents/`, eject) + Send to Kindle email
+
+## Editing model
+
+Every field on a `Book` is editable through one Edit UI. There is no hidden
+"this was auto-set vs manual" state — what's in the sidecar (and the index)
+is what the user has accepted.
+
+**Language profile, specifically:**
+
+- On import, if the EPUB declares a full locale (`pt-BR`, `en-GB`, etc.) that
+  matches a known profile, trust it and skip classification. The classifier
+  exists for cases where the EPUB declares only a base language or none.
+- Re-classify is always a deliberate user action — per-book (button in the
+  Edit dialog) or bulk (menu action with explicit warning). It overwrites
+  whatever's currently set.
+- No lock flag. If a user manually corrects a profile and later runs bulk
+  re-classify, the manual fix is lost. That's the trade for not carrying
+  hidden override state. Bulk re-classify is rare; an explicit warning at
+  the action point is enough.
+
+**One language field.** `Book.locale` is a BCP 47 string (per RFC 5646 and
+EPUB's `<dc:language>`) — the single source of truth. It holds whatever the
+user has accepted: a profile id ("pt-PT"), a bare base code ("pt") when no
+profile fits or the EPUB only declared a base, or "und". Profiles exist as
+classification infrastructure (marker JSON + scorer); they are not a separate
+field on `Book`. Display labels are derived from the BCP 47 tag via Apple's
+`Locale.localizedString(forIdentifier:)` — free localization, no hardcoded
+labels in JSON.
+
+**Confidence is not persisted.** The classifier produces a confidence score,
+but it's only meaningful at the moment of classification. Once a locale is
+set, the user has either accepted it (no edit) or fixed it (edit). The
+number stops carrying signal. So:
+
+- At import time, classifier output is applied **only when confidence ≥
+  threshold (0.6)** — below that, the classifier is essentially guessing
+  between variants and we leave the locale at the EPUB's declared base
+  rather than commit a coin-flip variant.
+- In the Edit dialog, "Re-classify from text" surfaces the confidence
+  transiently next to the picker so the user can judge whether to keep it.
+  The number isn't saved.
+
+**File relocation on edit:** Editing title/authors/year does *not* move the
+book's files on disk in v1 — the `Author/Title (Year)/` folder name may
+drift from the metadata after edits. Harmless for the index; worth fixing
+later (rename folders to match new metadata on save).
 
 Send to Kindle is simple now that Amazon accepts EPUB natively: SMTP +
 attachment. Including it in v1 because the official Send to Kindle Mac app

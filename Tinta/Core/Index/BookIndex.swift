@@ -28,16 +28,14 @@ actor BookIndex {
         try await pool.write { db in
             try db.execute(
                 sql: """
-                INSERT INTO books (id, title, authors_json, language_code, language_profile_id, language_confidence, year, file_path, cover_path, date_added, origin)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO books (id, title, authors_json, locale, year, file_path, cover_path, date_added, origin)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
                     book.id.uuidString,
                     book.title,
                     authorsJson,
-                    book.languageCode,
-                    book.languageProfileId,
-                    book.languageConfidence,
+                    book.locale,
                     book.year,
                     book.fileURL.path(percentEncoded: false),
                     book.coverPath,
@@ -66,6 +64,38 @@ actor BookIndex {
             try db.execute(
                 sql: "DELETE FROM books WHERE id = ?",
                 arguments: [book.id.uuidString]
+            )
+        }
+    }
+
+    func update(_ book: Book) async throws {
+        let authorsJson = try Self.encodeJSON(book.authors)
+        let originJson = try Self.encodeJSON(book.origin)
+        try await pool.write { db in
+            try db.execute(
+                sql: """
+                UPDATE books SET
+                    title = ?,
+                    authors_json = ?,
+                    locale = ?,
+                    year = ?,
+                    file_path = ?,
+                    cover_path = ?,
+                    date_added = ?,
+                    origin = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    book.title,
+                    authorsJson,
+                    book.locale,
+                    book.year,
+                    book.fileURL.path(percentEncoded: false),
+                    book.coverPath,
+                    book.dateAdded,
+                    originJson,
+                    book.id.uuidString,
+                ]
             )
         }
     }
@@ -106,6 +136,32 @@ actor BookIndex {
             }
         }
 
+        m.registerMigration("v3_unified_locale") { db in
+            // Add new columns
+            try db.alter(table: "books") { t in
+                t.add(column: "locale", .text).notNull().defaults(to: "und")
+                t.add(column: "locale_confidence", .double)
+            }
+            // Backfill from old columns
+            try db.execute(sql: """
+                UPDATE books SET
+                    locale = COALESCE(language_profile_id, language_code, 'und'),
+                    locale_confidence = language_confidence
+                """)
+            // Drop old columns
+            try db.alter(table: "books") { t in
+                t.drop(column: "language_code")
+                t.drop(column: "language_profile_id")
+                t.drop(column: "language_confidence")
+            }
+        }
+
+        m.registerMigration("v4_drop_locale_confidence") { db in
+            try db.alter(table: "books") { t in
+                t.drop(column: "locale_confidence")
+            }
+        }
+
         return m
     }
 
@@ -142,20 +198,16 @@ actor BookIndex {
             return nil
         }
 
-        let languageCode: String = row["language_code"] ?? "und"
+        let locale: String = row["locale"] ?? "und"
         let year: Int? = row["year"]
         let coverPath: String? = row["cover_path"]
-        let languageProfileId: String? = row["language_profile_id"]
-        let languageConfidence: Double? = row["language_confidence"]
 
         return Book(
             id: id,
             title: title,
             authors: authors,
             year: year,
-            languageCode: languageCode,
-            languageProfileId: languageProfileId,
-            languageConfidence: languageConfidence,
+            locale: locale,
             coverPath: coverPath,
             dateAdded: dateAdded,
             fileURL: URL(fileURLWithPath: filePath),

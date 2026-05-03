@@ -3,11 +3,7 @@ import SwiftUI
 struct BookDetailView: View {
     let book: Book
     let state: AppState
-
-    private var profile: LanguageProfile? {
-        guard let id = book.languageProfileId else { return nil }
-        return state.profiles.first { $0.id == id }
-    }
+    @State private var showingEdit = false
 
     var body: some View {
         ScrollView {
@@ -36,6 +32,16 @@ struct BookDetailView: View {
         }
         .navigationTitle(book.title)
         .navigationSubtitle(book.authors.first ?? "Unknown")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit") { showingEdit = true }
+            }
+        }
+        .sheet(isPresented: $showingEdit) {
+            EditBookView(book: book, state: state) { updated in
+                Task { await state.updateBook(updated) }
+            }
+        }
     }
 
     private var header: some View {
@@ -64,20 +70,8 @@ struct BookDetailView: View {
         }
     }
 
-    @ViewBuilder
     private var languageRow: some View {
-        if let profile, let confidence = book.languageConfidence {
-            LabeledContent("Language") {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(profile.label)
-                    Text("\(profile.id) · \(Int((confidence * 100).rounded()))% confidence")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } else {
-            LabeledContent("Language", value: book.languageCode)
-        }
+        LabeledContent("Language", value: book.localeDisplayName)
     }
 
     private var originLabel: String {

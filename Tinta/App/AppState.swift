@@ -1,6 +1,14 @@
 import Foundation
 import Observation
+import AppKit
 import os
+
+private nonisolated func pngData(from image: NSImage) -> Data? {
+    guard let tiff = image.tiffRepresentation,
+          let bitmap = NSBitmapImageRep(data: tiff)
+    else { return nil }
+    return bitmap.representation(using: .png, properties: [:])
+}
 
 @Observable
 final class AppState {
@@ -43,6 +51,78 @@ final class AppState {
         } catch {
             libraryLogger.error("import failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    func updateBook(_ book: Book) async {
+        await openIndexIfNeeded()
+        guard let index else {
+            libraryLogger.error("update: no index")
+            return
+        }
+        let bookFolder = book.fileURL.deletingLastPathComponent()
+        let bookForSidecar = book
+        do {
+            try await Task.detached {
+                try MetadataSidecar.write(bookForSidecar, to: bookFolder)
+            }.value
+            try await index.update(book)
+            await loadBooks()
+            libraryLogger.info("updated: \(book.title, privacy: .public)")
+        } catch {
+            libraryLogger.error("update failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func setCover(for book: Book, fromFile url: URL) async {
+        let ext = url.pathExtension.lowercased().isEmpty ? "jpg" : url.pathExtension.lowercased()
+        do {
+            let data = try await Task.detached { try Data(contentsOf: url) }.value
+            await writeCover(data, ext: ext, for: book)
+        } catch {
+            libraryLogger.error("cover read failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func setCover(for book: Book, image: NSImage) async {
+        guard let data = pngData(from: image) else {
+            libraryLogger.error("cover encode to PNG failed")
+            return
+        }
+        await writeCover(data, ext: "png", for: book)
+    }
+
+    func removeCover(for book: Book) async {
+        if let coverURL = book.coverURL {
+            try? await Task.detached {
+                try FileManager.default.removeItem(at: coverURL)
+            }.value
+        }
+        var updated = book
+        updated.coverPath = nil
+        await updateBook(updated)
+    }
+
+    private func writeCover(_ data: Data, ext: String, for book: Book) async {
+        let bookFolder = book.fileURL.deletingLastPathComponent()
+        let newFileName = "cover.\(ext)"
+        let newURL = bookFolder.appending(component: newFileName)
+        let oldCoverURL = book.coverURL
+
+        do {
+            try await Task.detached {
+                if let oldCoverURL, oldCoverURL.lastPathComponent != newFileName {
+                    try? FileManager.default.removeItem(at: oldCoverURL)
+                }
+                try data.write(to: newURL, options: .atomic)
+            }.value
+        } catch {
+            libraryLogger.error("cover write failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        var updated = book
+        updated.coverPath = newFileName
+        await updateBook(updated)
     }
 
     func deleteBook(_ book: Book) async {

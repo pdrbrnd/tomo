@@ -26,9 +26,7 @@ private nonisolated struct SidecarPayload: Codable {
     var title: String
     var authors: [String]
     var year: Int?
-    var languageCode: String
-    var languageProfileId: String?
-    var languageConfidence: Double?
+    var locale: String
     var coverPath: String?
     var dateAdded: Date
     var fileName: String
@@ -38,9 +36,7 @@ private nonisolated struct SidecarPayload: Codable {
         self.title = book.title
         self.authors = book.authors
         self.year = book.year
-        self.languageCode = book.languageCode
-        self.languageProfileId = book.languageProfileId
-        self.languageConfidence = book.languageConfidence
+        self.locale = book.locale
         self.coverPath = book.coverPath
         self.dateAdded = book.dateAdded
         self.fileName = book.fileURL.lastPathComponent
@@ -53,13 +49,49 @@ private nonisolated struct SidecarPayload: Codable {
             title: title,
             authors: authors,
             year: year,
-            languageCode: languageCode,
-            languageProfileId: languageProfileId,
-            languageConfidence: languageConfidence,
+            locale: locale,
             coverPath: coverPath,
             dateAdded: dateAdded,
             fileURL: folder.appending(component: fileName),
             origin: origin
         )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title, authors, year, locale, coverPath, dateAdded, fileName, origin
+        // Legacy keys (sidecars written before the unified-locale refactor):
+        case languageCode, languageProfileId
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.authors = try c.decode([String].self, forKey: .authors)
+        self.year = try c.decodeIfPresent(Int.self, forKey: .year)
+        self.coverPath = try c.decodeIfPresent(String.self, forKey: .coverPath)
+        self.dateAdded = try c.decode(Date.self, forKey: .dateAdded)
+        self.fileName = try c.decode(String.self, forKey: .fileName)
+        self.origin = try c.decode(BookOrigin.self, forKey: .origin)
+
+        if let new = try c.decodeIfPresent(String.self, forKey: .locale) {
+            self.locale = new
+        } else {
+            // Legacy: prefer profile id, fall back to base code, then "und"
+            let profileId = try c.decodeIfPresent(String.self, forKey: .languageProfileId)
+            let baseCode = try c.decodeIfPresent(String.self, forKey: .languageCode)
+            self.locale = profileId ?? baseCode ?? "und"
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(title, forKey: .title)
+        try c.encode(authors, forKey: .authors)
+        try c.encodeIfPresent(year, forKey: .year)
+        try c.encode(locale, forKey: .locale)
+        try c.encodeIfPresent(coverPath, forKey: .coverPath)
+        try c.encode(dateAdded, forKey: .dateAdded)
+        try c.encode(fileName, forKey: .fileName)
+        try c.encode(origin, forKey: .origin)
     }
 }

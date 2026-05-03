@@ -1,6 +1,5 @@
 {
   "id": "pt-BR",
-  "label": "Portuguese (Brazil)",
   "baseLanguage": "pt",
   "markers": [
     { "pattern": "está fazendo", "isRegex": false, "weight": 2.0 },

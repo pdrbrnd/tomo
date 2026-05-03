@@ -46,16 +46,14 @@ actor LibraryImporter {
         // Past this point, any failure must roll back the partially-created folder.
         do {
             let coverFileName = writeCover(metadata.coverImage, in: bookFolder)
-            let classification = classify(at: destFile)
+            let locale = resolveLocale(declared: metadata.language, file: destFile)
 
             let book = Book(
                 id: UUID(),
                 title: metadata.title,
                 authors: metadata.authors,
                 year: metadata.year,
-                languageCode: metadata.language ?? "und",
-                languageProfileId: classification?.profileId,
-                languageConfidence: classification?.confidence,
+                locale: locale,
                 coverPath: coverFileName,
                 dateAdded: .now,
                 fileURL: destFile,
@@ -78,34 +76,27 @@ actor LibraryImporter {
         }
     }
 
-    private func classify(at fileURL: URL) -> Classification? {
-        let text: String
-        do {
-            text = try EPUBText.extract(from: fileURL)
-        } catch {
-            classifierLogger.error("text extract failed: \(error.localizedDescription, privacy: .public)")
-            return nil
+    /// Decide the book's locale: trust the EPUB-declared full locale when it
+    /// matches a known profile, otherwise classify (only applied above the
+    /// confidence threshold — uncertain results would be coin flips), otherwise
+    /// fall back to the EPUB's raw declaration or "und". The classifier still
+    /// logs its confidence as a dev-time signal.
+    private func resolveLocale(declared: String?, file: URL) -> String {
+        if let declared,
+           let direct = profiles.first(where: { $0.id.caseInsensitiveCompare(declared) == .orderedSame }) {
+            classifierLogger.info("trusting EPUB-declared locale: \(declared, privacy: .public)")
+            return direct.id
         }
-        guard !text.isEmpty else {
-            classifierLogger.info("empty extracted text — skipping classification")
-            return nil
+        if let result = Classifier.classifyEPUB(at: file, profiles: profiles),
+           result.confidence >= Self.classificationThreshold {
+            return result.profileId
         }
-        guard let baseLang = BaseLanguage.detect(in: text) else {
-            classifierLogger.info("could not detect base language")
-            return nil
-        }
-        let candidates = profiles.filter { $0.baseLanguage == baseLang }
-        guard !candidates.isEmpty else {
-            classifierLogger.info("no profiles for base language \(baseLang, privacy: .public)")
-            return nil
-        }
-        guard let result = ProfileClassifier.classify(text: text, profiles: candidates) else {
-            classifierLogger.info("base=\(baseLang, privacy: .public) but no marker matches")
-            return nil
-        }
-        classifierLogger.info("classified: base=\(baseLang, privacy: .public) profile=\(result.profileId, privacy: .public) confidence=\(result.confidence, format: .fixed(precision: 2))")
-        return result
+        return declared ?? "und"
     }
+
+    /// Below this, the classifier is essentially guessing between variants —
+    /// fall back to the base declaration rather than commit a coin-flip variant.
+    private static let classificationThreshold = 0.6
 }
 
 private nonisolated func writeCover(_ cover: EPUBMetadata.CoverImage?, in bookFolder: URL) -> String? {
