@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
+		EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EBF14F862FA6F64400045D30 /* GRDB in Frameworks */,
+				EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -71,6 +73,7 @@
 			name = Tinta;
 			packageProductDependencies = (
 				EBF14F852FA6F64400045D30 /* GRDB */,
+				EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */,
 			);
 			productName = Tinta;
 			productReference = EB4E9A582FA6F23B0015E496 /* Tinta.app */;
@@ -102,6 +105,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */,
+				EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;
@@ -340,6 +344,14 @@
 				minimumVersion = 7.0.0;
 			};
 		};
+		EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/weichsel/ZIPFoundation";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.19;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -347,6 +359,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
+		};
+		EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
+			productName = ZIPFoundation;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
