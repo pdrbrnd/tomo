@@ -104,7 +104,7 @@ struct BookCard<MenuContent: View>: View {
         .buttonStyle(.plain)
         .help("More options")
         .popover(isPresented: $menuOpen, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 0) {
                 menu()
             }
             .menuPopoverContainer()

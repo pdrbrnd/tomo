@@ -46,8 +46,9 @@ enum Theme {
         static let cover: CGFloat = 4
         static let card: CGFloat = 8
         static let panel: CGFloat = 14
-        static let menu: CGFloat = 12
-        static let menuItem: CGFloat = 6  // = menu(12) − inset(6)
+
+        static let menu: CGFloat = 18
+        static let menuItem: CGFloat = 14
         static let window: CGFloat = 18
     }
 

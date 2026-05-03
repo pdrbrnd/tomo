@@ -14,7 +14,7 @@ struct LanguageFilterPopover: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             heading
 
             Button {
@@ -37,14 +37,16 @@ struct LanguageFilterPopover: View {
         .menuPopoverContainer(minWidth: 220)
     }
 
+    /// Heading sits at the same horizontal indent as the row content
+    /// (menuInset + row's internal horizontal padding), so it visually labels
+    /// the items below.
     private var heading: some View {
         Text("Language")
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(.primary.opacity(0.55))
             .tracking(0.2)
             .textCase(.uppercase)
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.top, Theme.Spacing.sm)
+            .padding(.leading, Theme.Spacing.menuInset + Theme.Spacing.md)
             .padding(.bottom, Theme.Spacing.xs)
     }
 

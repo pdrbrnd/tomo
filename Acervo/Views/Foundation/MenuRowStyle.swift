@@ -5,6 +5,10 @@ import SwiftUI
 ///
 /// Use as `.buttonStyle(MenuRowStyle())` on the parent VStack so all child
 /// Buttons inherit the look. Honors `role: .destructive` for delete actions.
+///
+/// The row's hover highlight is inset horizontally by `Theme.Spacing.menuInset`
+/// — so dividers (which fill full width) and rows are concentric. The popover
+/// container only adds *vertical* padding; horizontal inset lives here.
 struct MenuRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         MenuRowBody(configuration: configuration)
@@ -22,11 +26,12 @@ private struct MenuRowBody: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.menuItem, style: .continuous)
                     .fill(highlight)
             )
+            .padding(.horizontal, Theme.Spacing.menuInset)
+            .contentShape(Rectangle())
             .onHover { hovered = $0 }
     }
 
@@ -45,21 +50,33 @@ private struct MenuRowBody: View {
             if hovered { return Color.red.opacity(0.10) }
             return .clear
         }
-        // Neutral — `.primary` auto-adapts to color scheme.
         if configuration.isPressed { return Color.primary.opacity(0.12) }
         if hovered { return Color.primary.opacity(0.06) }
         return .clear
     }
 }
 
+/// A horizontal divider sized for menu use: edge-to-edge (no horizontal
+/// padding from container), with vertical padding that matches the popover's
+/// menu inset so spacing reads consistent throughout.
+struct MenuDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Theme.hairline)
+            .frame(height: 0.5)
+            .padding(.vertical, Theme.Spacing.menuInset)
+    }
+}
+
 /// Standard container for a popover-style menu. Wrap a `VStack` of Buttons in
 /// this and they'll get full-width rows with inset spacing concentric to the
-/// popover's outer radius.
+/// popover's outer radius. Vertical padding only — rows handle their own
+/// horizontal inset so dividers can extend edge-to-edge.
 extension View {
     func menuPopoverContainer(minWidth: CGFloat = 220) -> some View {
         self
             .buttonStyle(MenuRowStyle())
-            .padding(Theme.Spacing.menuInset)
+            .padding(.vertical, Theme.Spacing.menuInset)
             .frame(minWidth: minWidth)
             .background(Theme.canvas)
     }

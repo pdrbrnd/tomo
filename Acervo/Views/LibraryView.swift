@@ -275,7 +275,7 @@ struct LibraryView: View {
             NSWorkspace.shared.activateFileViewerSelecting([book.fileURL])
         }
         if let device = state.device, device.canAccept(book) {
-            Divider()
+            MenuDivider()
             if isOnDevice(book) {
                 bookMenuItem("Remove from \(device.displayName)", icon: .deviceTablet, destructive: true) {
                     Task { await state.removeFromDevice(book: book) }
@@ -286,7 +286,7 @@ struct LibraryView: View {
                 }
             }
         }
-        Divider()
+        MenuDivider()
         bookMenuItem("Move to Trash…", icon: .trash, destructive: true) {
             bookPendingDelete = book
         }
