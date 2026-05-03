@@ -1,11 +1,16 @@
 import Foundation
 import os
 
-private nonisolated let logger = Logger(subsystem: "com.pdrbrnd.tinta", category: "library")
-
-enum LibraryImporterError: Error {
+enum LibraryImporterError: LocalizedError {
     case parsingFailed
     case destinationExists
+
+    var errorDescription: String? {
+        switch self {
+        case .parsingFailed: "Could not read EPUB metadata."
+        case .destinationExists: "A book with this title and author is already in the library."
+        }
+    }
 }
 
 actor LibraryImporter {
@@ -16,13 +21,13 @@ actor LibraryImporter {
     }
 
     func importBook(from sourceURL: URL, into libraryFolder: URL) async throws -> Book {
-        logger.info("importing \(sourceURL.lastPathComponent, privacy: .public)")
+        libraryLogger.info("importing \(sourceURL.lastPathComponent, privacy: .public)")
 
         let metadata: EPUBMetadata
         do {
             metadata = try EPUBMetadata.read(from: sourceURL)
         } catch {
-            logger.error("metadata parse failed: \(error.localizedDescription, privacy: .public)")
+            libraryLogger.error("metadata parse failed: \(error.localizedDescription, privacy: .public)")
             throw LibraryImporterError.parsingFailed
         }
 
@@ -36,17 +41,7 @@ actor LibraryImporter {
         try FileManager.default.createDirectory(at: bookFolder, withIntermediateDirectories: true)
         try FileManager.default.copyItem(at: sourceURL, to: destFile)
 
-        let coverFileName: String? = {
-            guard let cover = metadata.coverImage else { return nil }
-            let name = "cover.\(cover.pathExtension)"
-            do {
-                try cover.data.write(to: bookFolder.appending(component: name), options: .atomic)
-                return name
-            } catch {
-                logger.error("cover write failed: \(error.localizedDescription, privacy: .public)")
-                return nil
-            }
-        }()
+        let coverFileName = writeCover(metadata.coverImage, in: bookFolder)
 
         let book = Book(
             id: UUID(),
@@ -63,8 +58,20 @@ actor LibraryImporter {
         try MetadataSidecar.write(book, to: bookFolder)
         try await index.add(book)
 
-        logger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
+        libraryLogger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
         return book
+    }
+}
+
+private nonisolated func writeCover(_ cover: EPUBMetadata.CoverImage?, in bookFolder: URL) -> String? {
+    guard let cover else { return nil }
+    let name = "cover.\(cover.pathExtension)"
+    do {
+        try cover.data.write(to: bookFolder.appending(component: name), options: .atomic)
+        return name
+    } catch {
+        libraryLogger.error("cover write failed: \(error.localizedDescription, privacy: .public)")
+        return nil
     }
 }
 

@@ -2,14 +2,12 @@ import Foundation
 import GRDB
 import os
 
-private nonisolated let logger = Logger(subsystem: "com.pdrbrnd.tinta", category: "index")
-
 actor BookIndex {
     private let pool: DatabasePool
 
     init() throws {
         let url = try Self.databaseURL()
-        logger.info("opening index at \(url.path(percentEncoded: false), privacy: .public)")
+        indexLogger.info("opening index at \(url.path(percentEncoded: false), privacy: .public)")
         let pool = try DatabasePool(path: url.path(percentEncoded: false))
         try Self.migrator.migrate(pool)
         self.pool = pool
@@ -19,7 +17,7 @@ actor BookIndex {
         do {
             return try BookIndex()
         } catch {
-            logger.error("failed to open index: \(error.localizedDescription, privacy: .public)")
+            indexLogger.error("failed to open index: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -116,6 +114,7 @@ actor BookIndex {
             let originJson,
             let origin = decodeJSON(originJson, as: BookOrigin.self)
         else {
+            indexLogger.error("dropping malformed row id=\(idString ?? "?", privacy: .public)")
             return nil
         }
 

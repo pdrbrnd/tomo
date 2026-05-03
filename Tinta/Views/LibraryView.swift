@@ -2,17 +2,20 @@ import SwiftUI
 
 struct LibraryView: View {
     let state: AppState
+    @State private var selectedBookID: Book.ID?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            bookList
+        NavigationSplitView {
+            sidebar
+        } detail: {
+            detail
         }
-        .frame(minWidth: 520, minHeight: 420)
+        .frame(minWidth: 720, minHeight: 480)
         .dropDestination(for: URL.self) { urls, _ in
+            let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
+            guard !epubs.isEmpty else { return false }
             Task {
-                for url in urls where url.pathExtension.lowercased() == "epub" {
+                for url in epubs {
                     await state.importBook(from: url)
                 }
             }
@@ -21,40 +24,47 @@ struct LibraryView: View {
         .task { await state.loadBooks() }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Tinta")
-                .font(.largeTitle)
-
-            if let folder = state.libraryFolder {
-                Text("Library: \(folder.path(percentEncoded: false))")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } else {
-                Text("No library folder set. Open Settings (⌘,) to choose one.")
-                    .foregroundStyle(.secondary)
+    @ViewBuilder
+    private var sidebar: some View {
+        if state.books.isEmpty {
+            ContentUnavailableView(
+                "No books yet",
+                systemImage: "books.vertical",
+                description: Text("Drop EPUB files anywhere in the window to import.")
+            )
+            .navigationTitle("Tinta")
+        } else {
+            List(state.books, selection: $selectedBookID) { book in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(book.title)
+                        .lineLimit(1)
+                    Text(book.authors.first ?? "Unknown")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .tag(book.id)
             }
-
-            Text("Drop EPUB files anywhere in the window to import.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+            .navigationTitle("Tinta")
+            .navigationSplitViewColumnWidth(min: 240, ideal: 300)
         }
-        .padding()
     }
 
     @ViewBuilder
-    private var bookList: some View {
-        if state.books.isEmpty {
-            Text("No books yet.")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private var detail: some View {
+        if let id = selectedBookID, let book = state.books.first(where: { $0.id == id }) {
+            BookDetailView(book: book)
+        } else if state.libraryFolder == nil {
+            ContentUnavailableView(
+                "No library folder",
+                systemImage: "folder.badge.questionmark",
+                description: Text("Open Settings (⌘,) to choose a folder.")
+            )
         } else {
-            List(state.books) { book in
-                Text("\(book.title) — \(book.authors.first ?? "Unknown")")
-            }
-            .listStyle(.inset)
+            ContentUnavailableView(
+                "Select a book",
+                systemImage: "book"
+            )
         }
     }
 }

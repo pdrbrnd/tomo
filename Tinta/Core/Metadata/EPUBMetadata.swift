@@ -1,5 +1,6 @@
 import Foundation
 import ZIPFoundation
+import os
 
 struct EPUBMetadata: Sendable {
     let title: String
@@ -14,13 +15,24 @@ struct EPUBMetadata: Sendable {
     }
 }
 
-enum EPUBMetadataError: Error {
+enum EPUBMetadataError: LocalizedError {
     case cannotOpenArchive
     case missingContainer
     case missingOPFPath
     case missingOPF
     case missingTitle
     case malformedXML
+
+    var errorDescription: String? {
+        switch self {
+        case .cannotOpenArchive: "Could not open the EPUB archive."
+        case .missingContainer: "EPUB is missing META-INF/container.xml."
+        case .missingOPFPath: "EPUB container.xml does not point to an OPF file."
+        case .missingOPF: "EPUB OPF file is missing."
+        case .missingTitle: "EPUB does not declare a title."
+        case .malformedXML: "EPUB metadata XML is malformed."
+        }
+    }
 }
 
 extension EPUBMetadata {
@@ -127,11 +139,15 @@ private nonisolated func readCover(from archive: Archive, opfPath: String, cover
     guard let coverHref else { return nil }
     let opfDir = (opfPath as NSString).deletingLastPathComponent
     let coverPath = opfDir.isEmpty ? coverHref : "\(opfDir)/\(coverHref)"
-    guard let entry = archive[coverPath] else { return nil }
+    guard let entry = archive[coverPath] else {
+        metadataLogger.error("cover entry not found at path: \(coverPath, privacy: .public)")
+        return nil
+    }
     var data = Data()
     do {
         _ = try archive.extract(entry) { data.append($0) }
     } catch {
+        metadataLogger.error("cover extract failed: \(error.localizedDescription, privacy: .public)")
         return nil
     }
     return EPUBMetadata.CoverImage(
