@@ -28,14 +28,16 @@ actor BookIndex {
         try await pool.write { db in
             try db.execute(
                 sql: """
-                INSERT INTO books (id, title, authors_json, language_code, year, file_path, cover_path, date_added, origin)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO books (id, title, authors_json, language_code, language_profile_id, language_confidence, year, file_path, cover_path, date_added, origin)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 arguments: [
                     book.id.uuidString,
                     book.title,
                     authorsJson,
                     book.languageCode,
+                    book.languageProfileId,
+                    book.languageConfidence,
                     book.year,
                     book.fileURL.path(percentEncoded: false),
                     book.coverPath,
@@ -97,6 +99,13 @@ actor BookIndex {
             }
         }
 
+        m.registerMigration("v2_language_profile") { db in
+            try db.alter(table: "books") { t in
+                t.add(column: "language_profile_id", .text)
+                t.add(column: "language_confidence", .double)
+            }
+        }
+
         return m
     }
 
@@ -136,6 +145,8 @@ actor BookIndex {
         let languageCode: String = row["language_code"] ?? "und"
         let year: Int? = row["year"]
         let coverPath: String? = row["cover_path"]
+        let languageProfileId: String? = row["language_profile_id"]
+        let languageConfidence: Double? = row["language_confidence"]
 
         return Book(
             id: id,
@@ -143,6 +154,8 @@ actor BookIndex {
             authors: authors,
             year: year,
             languageCode: languageCode,
+            languageProfileId: languageProfileId,
+            languageConfidence: languageConfidence,
             coverPath: coverPath,
             dateAdded: dateAdded,
             fileURL: URL(fileURLWithPath: filePath),

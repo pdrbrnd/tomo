@@ -27,6 +27,8 @@ private nonisolated struct SidecarPayload: Codable {
     var authors: [String]
     var year: Int?
     var languageCode: String
+    var languageProfileId: String?
+    var languageConfidence: Double?
     var coverPath: String?
     var dateAdded: Date
     var fileName: String
@@ -37,6 +39,8 @@ private nonisolated struct SidecarPayload: Codable {
         self.authors = book.authors
         self.year = book.year
         self.languageCode = book.languageCode
+        self.languageProfileId = book.languageProfileId
+        self.languageConfidence = book.languageConfidence
         self.coverPath = book.coverPath
         self.dateAdded = book.dateAdded
         self.fileName = book.fileURL.lastPathComponent
@@ -50,6 +54,8 @@ private nonisolated struct SidecarPayload: Codable {
             authors: authors,
             year: year,
             languageCode: languageCode,
+            languageProfileId: languageProfileId,
+            languageConfidence: languageConfidence,
             coverPath: coverPath,
             dateAdded: dateAdded,
             fileURL: folder.appending(component: fileName),

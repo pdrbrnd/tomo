@@ -2,6 +2,12 @@ import SwiftUI
 
 struct BookDetailView: View {
     let book: Book
+    let state: AppState
+
+    private var profile: LanguageProfile? {
+        guard let id = book.languageProfileId else { return nil }
+        return state.profiles.first { $0.id == id }
+    }
 
     var body: some View {
         ScrollView {
@@ -10,7 +16,7 @@ struct BookDetailView: View {
                 Divider()
                 Form {
                     Section {
-                        LabeledContent("Language", value: book.languageCode)
+                        languageRow
                         LabeledContent("Date added", value: book.dateAdded.formatted(.dateTime.year().month().day()))
                         LabeledContent("Origin", value: originLabel)
                     }
@@ -55,6 +61,22 @@ struct BookDetailView: View {
             }
 
             Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var languageRow: some View {
+        if let profile, let confidence = book.languageConfidence {
+            LabeledContent("Language") {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(profile.label)
+                    Text("\(profile.id) · \(Int((confidence * 100).rounded()))% confidence")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } else {
+            LabeledContent("Language", value: book.languageCode)
         }
     }
 

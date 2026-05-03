@@ -5,10 +5,12 @@ nonisolated struct Book: Sendable, Identifiable, Equatable {
     var title: String
     var authors: [String]
     var year: Int?
-    var languageCode: String       // "und" when unknown
-    var coverPath: String?         // relative to the book's folder
+    var languageCode: String           // base language declared by the EPUB; "und" when unknown
+    var languageProfileId: String?     // classifier verdict, e.g. "pt-PT"
+    var languageConfidence: Double?    // 0...1, normalized
+    var coverPath: String?             // relative to the book's folder
     var dateAdded: Date
-    var fileURL: URL               // absolute path to primary file
+    var fileURL: URL                   // absolute path to primary file
     var origin: BookOrigin
 
     var coverURL: URL? {

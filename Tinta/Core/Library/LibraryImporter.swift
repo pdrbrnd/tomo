@@ -46,6 +46,7 @@ actor LibraryImporter {
         // Past this point, any failure must roll back the partially-created folder.
         do {
             let coverFileName = writeCover(metadata.coverImage, in: bookFolder)
+            let classification = classify(at: destFile)
 
             let book = Book(
                 id: UUID(),
@@ -53,6 +54,8 @@ actor LibraryImporter {
                 authors: metadata.authors,
                 year: metadata.year,
                 languageCode: metadata.language ?? "und",
+                languageProfileId: classification?.profileId,
+                languageConfidence: classification?.confidence,
                 coverPath: coverFileName,
                 dateAdded: .now,
                 fileURL: destFile,
@@ -63,7 +66,6 @@ actor LibraryImporter {
             try await index.add(book)
 
             libraryLogger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
-            classify(at: destFile)
             return book
         } catch {
             do {
@@ -76,32 +78,33 @@ actor LibraryImporter {
         }
     }
 
-    private func classify(at fileURL: URL) {
+    private func classify(at fileURL: URL) -> Classification? {
         let text: String
         do {
             text = try EPUBText.extract(from: fileURL)
         } catch {
             classifierLogger.error("text extract failed: \(error.localizedDescription, privacy: .public)")
-            return
+            return nil
         }
         guard !text.isEmpty else {
             classifierLogger.info("empty extracted text — skipping classification")
-            return
+            return nil
         }
         guard let baseLang = BaseLanguage.detect(in: text) else {
             classifierLogger.info("could not detect base language")
-            return
+            return nil
         }
         let candidates = profiles.filter { $0.baseLanguage == baseLang }
         guard !candidates.isEmpty else {
             classifierLogger.info("no profiles for base language \(baseLang, privacy: .public)")
-            return
+            return nil
         }
-        if let result = ProfileClassifier.classify(text: text, profiles: candidates) {
-            classifierLogger.info("classified: base=\(baseLang, privacy: .public) profile=\(result.profileId, privacy: .public) confidence=\(result.confidence, format: .fixed(precision: 2))")
-        } else {
+        guard let result = ProfileClassifier.classify(text: text, profiles: candidates) else {
             classifierLogger.info("base=\(baseLang, privacy: .public) but no marker matches")
+            return nil
         }
+        classifierLogger.info("classified: base=\(baseLang, privacy: .public) profile=\(result.profileId, privacy: .public) confidence=\(result.confidence, format: .fixed(precision: 2))")
+        return result
     }
 }
 

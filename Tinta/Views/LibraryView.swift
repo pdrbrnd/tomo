@@ -96,10 +96,21 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(book.title)
                     .lineLimit(1)
-                Text(book.authors.first ?? "Unknown")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(book.authors.first ?? "Unknown")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if let id = book.languageProfileId {
+                        Text(id)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.quaternary, in: Capsule())
+                    }
+                }
             }
         }
         .contextMenu {
@@ -112,7 +123,7 @@ struct LibraryView: View {
     @ViewBuilder
     private var detail: some View {
         if let id = selectedBookID, let book = state.books.first(where: { $0.id == id }) {
-            BookDetailView(book: book)
+            BookDetailView(book: book, state: state)
         } else if state.libraryFolder == nil {
             ContentUnavailableView(
                 "No library folder",
