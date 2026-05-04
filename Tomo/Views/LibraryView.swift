@@ -13,6 +13,7 @@ struct LibraryView: View {
     @State private var selectedCollection: UUID?
     @State private var booksPendingDelete: [Book] = []
     @State private var collectionPendingDelete: Collection?
+    @State private var coverGalleryBook: Book?
     @State private var externalDropTargeted = false
     @State private var marquee: MarqueeState = .inactive
     @State private var cardFrames: [Book.ID: CGRect] = [:]
@@ -238,6 +239,16 @@ struct LibraryView: View {
             }
         } message: {
             Text("Books in this collection are kept; only the grouping is removed.")
+        }
+        .sheet(item: $coverGalleryBook) { book in
+            CoverGallerySheet(
+                book: book,
+                onPick: { image in
+                    Task { await state.setCover(for: book, image: image) }
+                    coverGalleryBook = nil
+                },
+                onCancel: { coverGalleryBook = nil }
+            )
         }
     }
 
@@ -823,6 +834,11 @@ struct LibraryView: View {
             onRemoveCover: {
                 if let book = inspectorBook {
                     Task { await state.removeCover(for: book) }
+                }
+            },
+            onChooseFromOpenLibrary: {
+                if let book = inspectorBook {
+                    coverGalleryBook = book
                 }
             },
             onAddToCollection: { collectionID in

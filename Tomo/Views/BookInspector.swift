@@ -31,6 +31,7 @@ struct BookInspector: View {
     let onSetCoverFromFile: (URL) -> Void
     let onSetCoverFromImage: (NSImage) -> Void
     let onRemoveCover: () -> Void
+    let onChooseFromOpenLibrary: () -> Void
     let onAddToCollection: (UUID) -> Void
     let onRemoveFromCollection: (UUID) -> Void
     let onCreateCollectionAndAdd: (String) -> Void
@@ -173,7 +174,8 @@ struct BookInspector: View {
                 book: book,
                 onSetCoverFromFile: onSetCoverFromFile,
                 onSetCoverFromImage: onSetCoverFromImage,
-                onRemoveCover: onRemoveCover
+                onRemoveCover: onRemoveCover,
+                onChooseFromOpenLibrary: onChooseFromOpenLibrary
             )
             Spacer()
         }
