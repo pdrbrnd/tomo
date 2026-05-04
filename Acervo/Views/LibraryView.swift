@@ -753,7 +753,7 @@ struct LibraryView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
-        .softShadow(elevated: true)
+        .paneShadow()
         .padding(Self.paneInset)
     }
 
@@ -773,6 +773,7 @@ struct LibraryView: View {
             multiBooks: inspectorBooks.count > 1 ? inspectorBooks : nil,
             multiDeviceInfo: inspectorBooks.count > 1 ? multiDeviceInfo(for: inspectorBooks) : nil,
             profiles: state.profiles,
+            allCollections: state.collections,
             onUpdate: { updated in
                 Task { await state.updateBook(updated) }
             },
@@ -797,6 +798,24 @@ struct LibraryView: View {
             onRemoveCover: {
                 if let book = inspectorBook {
                     Task { await state.removeCover(for: book) }
+                }
+            },
+            onAddToCollection: { collectionID in
+                if let book = inspectorBook {
+                    Task { await state.addBook(book, to: collectionID) }
+                }
+            },
+            onRemoveFromCollection: { collectionID in
+                if let book = inspectorBook {
+                    Task { await state.removeBook(book, from: collectionID) }
+                }
+            },
+            onCreateCollectionAndAdd: { name in
+                guard let book = inspectorBook else { return }
+                Task {
+                    if let collection = await state.createCollection(named: name) {
+                        await state.addBook(book, to: collection.id)
+                    }
                 }
             },
             onShowInFinder: {
@@ -824,7 +843,7 @@ struct LibraryView: View {
             RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
-        .softShadow(elevated: true)
+        .paneShadow()
         .padding(Self.paneInset)
     }
 

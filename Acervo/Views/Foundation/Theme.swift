@@ -110,4 +110,15 @@ extension View {
                 y: elevated ? 12 : 6
             )
     }
+
+    /// Softer two-layer shadow for the big floating panes (sidebar,
+    /// inspector). The elevated `softShadow` reads as too heavy on a
+    /// full-height panel — its weight is calibrated for ~card-sized
+    /// surfaces. This trims opacity and radius so the seam between pane
+    /// and canvas reads as subtle elevation, not a dropped-in card.
+    func paneShadow() -> some View {
+        self
+            .shadow(color: .black.opacity(0.04), radius: 1, x: 0, y: 1)
+            .shadow(color: .black.opacity(0.10), radius: 16, x: 0, y: 8)
+    }
 }

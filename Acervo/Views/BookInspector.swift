@@ -20,6 +20,9 @@ struct BookInspector: View {
 
     /// Profiles available to the locale Picker. Plain data, OK to pass in.
     let profiles: [LanguageProfile]
+    /// Every collection in the library. Used to render chips for the
+    /// book's memberships and to populate the "add to collection" popover.
+    let allCollections: [Collection]
 
     let onUpdate: (Book) -> Void
     /// Runs the classifier on the inspector's book. Returns the classifier
@@ -29,6 +32,9 @@ struct BookInspector: View {
     let onSetCoverFromFile: (URL) -> Void
     let onSetCoverFromImage: (NSImage) -> Void
     let onRemoveCover: () -> Void
+    let onAddToCollection: (UUID) -> Void
+    let onRemoveFromCollection: (UUID) -> Void
+    let onCreateCollectionAndAdd: (String) -> Void
     let onShowInFinder: () -> Void
     let onSendToDevice: () -> Void
     let onRequestDelete: () -> Void
@@ -146,6 +152,10 @@ struct BookInspector: View {
                     .padding(.horizontal, Theme.Spacing.xl)
                     .padding(.bottom, Theme.Spacing.xl)
 
+                collectionsSection(for: book)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.xl)
+
                 actions(for: book)
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.bottom, 64) // clear bottom-chrome toggle
@@ -233,7 +243,6 @@ struct BookInspector: View {
             metaRow("Format", value: book.fileURL.pathExtension.uppercased())
             metaRow("Added", value: book.dateAdded.formatted(.dateTime.year().month(.abbreviated).day()))
             metaRow("Origin", value: originLabel(for: book))
-            metaRow("File", value: book.fileURL.lastPathComponent, monospaced: true)
         }
     }
 
@@ -255,13 +264,16 @@ struct BookInspector: View {
             if let result = transientClassification {
                 let display = Locale.current.localizedString(forIdentifier: result.profileId) ?? result.profileId
                 let pct = Int((result.confidence * 100).rounded())
-                Text("Detected: \(display) · \(pct)% confidence")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 76)
-                    .padding(.vertical, 4)
-                    .transition(.opacity)
+                HStack(alignment: .firstTextBaseline) {
+                    rowLabel("")
+                    Text("Detected: \(display) · \(pct)% confidence")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, 4)
+                .transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.18), value: transientClassification)
@@ -286,7 +298,7 @@ struct BookInspector: View {
         }
         .pickerStyle(.menu)
         .labelsHidden()
-        .controlSize(.small)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func pickerSelection(for book: Book) -> Binding<String> {
@@ -327,6 +339,36 @@ struct BookInspector: View {
                 transientClassification = nil
             }
         }
+    }
+
+    // MARK: - Collections
+
+    @ViewBuilder
+    private func collectionsSection(for book: Book) -> some View {
+        let memberships = allCollections.filter { book.collectionIDs.contains($0.id) }
+        let available = allCollections.filter { !book.collectionIDs.contains($0.id) }
+
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("Collections")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.55))
+                .tracking(0.2)
+                .textCase(.uppercase)
+
+            FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
+                ForEach(memberships) { collection in
+                    CollectionChip(name: collection.name) {
+                        onRemoveFromCollection(collection.id)
+                    }
+                }
+                AddCollectionChip(
+                    available: available,
+                    onAdd: onAddToCollection,
+                    onCreateAndAdd: onCreateCollectionAndAdd
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// One row in a metaRow-styled section, with an editable value column
@@ -413,5 +455,155 @@ struct BookInspector: View {
         case .manualImport: "Manual import"
         case .source(let id, _): "Source: \(id)"
         }
+    }
+}
+
+/// A removable pill showing the book's membership in one collection.
+/// X is hover-revealed on mouse-over so an idle inspector reads cleanly;
+/// tapping it removes the book from the collection without confirmation
+/// (it's reversible from the same chip's "+" picker).
+private struct CollectionChip: View {
+    let name: String
+    let onRemove: () -> Void
+
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(name)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(.primary.opacity(0.85))
+                .lineLimit(1)
+
+            Button(action: onRemove) {
+                Icon(symbol: .x, weight: .bold, size: 9)
+                    .foregroundStyle(.primary.opacity(hovered ? 0.85 : 0.4))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+        .overlay(Capsule(style: .continuous).stroke(Theme.hairline, lineWidth: 0.5))
+        .onHover { hovered = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovered)
+    }
+}
+
+/// "+" pill that opens a popover listing the collections this book *isn't*
+/// in yet, plus a "New Collection…" inline-create option. Selecting an
+/// existing collection adds the book to it; submitting a new name creates
+/// the collection and adds the book in one step.
+private struct AddCollectionChip: View {
+    let available: [Collection]
+    let onAdd: (UUID) -> Void
+    let onCreateAndAdd: (String) -> Void
+
+    @State private var showPopover = false
+
+    var body: some View {
+        Button {
+            showPopover = true
+        } label: {
+            HStack(spacing: 4) {
+                Icon(symbol: .plus, weight: .bold, size: 9)
+                    .foregroundStyle(.primary.opacity(0.55))
+                Text("Add")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.primary.opacity(0.55))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule(style: .continuous).fill(Color.clear))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Theme.hairline, style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+            )
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showPopover, arrowEdge: .bottom) {
+            AddCollectionPopover(
+                available: available,
+                onAdd: { id in
+                    onAdd(id)
+                    showPopover = false
+                },
+                onCreateAndAdd: { name in
+                    onCreateAndAdd(name)
+                    showPopover = false
+                }
+            )
+        }
+    }
+}
+
+/// Popover content for the "+" chip: a flat list of collections the book
+/// isn't in, plus an inline-create entry that turns into a TextField on tap.
+private struct AddCollectionPopover: View {
+    let available: [Collection]
+    let onAdd: (UUID) -> Void
+    let onCreateAndAdd: (String) -> Void
+
+    @State private var creating = false
+    @State private var newName = ""
+    @FocusState private var newFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(available) { collection in
+                Button {
+                    onAdd(collection.id)
+                } label: {
+                    // Existing collections render as plain rows — no icon —
+                    // so the "New Collection…" entry's "+" reads as the
+                    // distinct *create* action, not a generic bullet.
+                    Text(collection.name)
+                }
+            }
+
+            if !available.isEmpty {
+                MenuDivider()
+            }
+
+            if creating {
+                TextField("Collection name", text: $newName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($newFocused)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.menuItem, style: .continuous)
+                            .fill(Color.primary.opacity(0.05))
+                    )
+                    .padding(.horizontal, Theme.Spacing.menuInset)
+                    .onSubmit { commitCreate() }
+                    .onAppear { newFocused = true }
+                    .onChange(of: newFocused) { _, focused in
+                        if !focused, !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            commitCreate()
+                        }
+                    }
+            } else {
+                Button {
+                    creating = true
+                } label: {
+                    HStack(spacing: 9) {
+                        Icon(symbol: .plus, weight: .regular, size: 11)
+                            .frame(width: 14)
+                        Text("New Collection…")
+                    }
+                }
+            }
+        }
+        .menuPopoverContainer(minWidth: 220)
+    }
+
+    private func commitCreate() {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        onCreateAndAdd(trimmed)
+        newName = ""
+        creating = false
     }
 }
