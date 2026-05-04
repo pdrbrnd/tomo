@@ -72,10 +72,9 @@ struct DeviceTile: View {
         )
         .overlay(progressBar)
         .clipShape(Capsule(style: .continuous))
-        // Scale from the bottom-right so the tile grows up-and-leftward —
-        // it sits in the bottom-right corner of the window, so center-scaling
-        // would push it past the right edge.
-        .scaleEffect(scaleAmount, anchor: .bottomTrailing)
+        // The tile floats top-center as a Dynamic-Island-style notch, so it
+        // grows symmetrically outward.
+        .scaleEffect(scaleAmount, anchor: .center)
         .softShadow(elevated: visual != .idle)
         .animation(stateAnimation, value: visual)
         .contextMenu {

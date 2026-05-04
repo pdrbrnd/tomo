@@ -8,10 +8,12 @@ struct LibraryView: View {
     @State private var selectedBookIDs: Set<Book.ID> = []
     @State private var selectionAnchor: Book.ID?
     @State private var inspectorOpen = false
+    @AppStorage("sidebar.open") private var sidebarOpen = false
     @State private var searchText = ""
-    @State private var languageFilter: String?
+    @State private var selectedLanguage: String?
+    @State private var selectedCollection: UUID?
     @State private var booksPendingDelete: [Book] = []
-    @State private var editingBook: Book?
+    @State private var collectionPendingDelete: Collection?
     @State private var externalDropTargeted = false
     @State private var marquee: MarqueeState = .inactive
     @State private var cardFrames: [Book.ID: CGRect] = [:]
@@ -22,9 +24,17 @@ struct LibraryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let inspectorWidth: CGFloat = 332
-    private static let inspectorInset: CGFloat = 8
-    private static let inspectorPaneWidth: CGFloat = inspectorWidth + inspectorInset * 2
+    /// Concentric corners: window radius (28) − pane inset (8) = 20 (panel
+    /// radius). 8pt gap reads as a comfortable, intentional inset.
+    private static let paneInset: CGFloat = 8
+    private static let inspectorPaneWidth: CGFloat = inspectorWidth + paneInset * 2
 
+    private static let sidebarWidth: CGFloat = 232
+    private static let sidebarPaneWidth: CGFloat = sidebarWidth + paneInset * 2
+
+    /// Collection + language are independent axes AND'd with each other and
+    /// with the search query. Standard "OR within an axis, AND between axes"
+    /// — degenerate to single-select since each axis only holds one value.
     private var filteredBooks: [Book] {
         let bySearch: [Book]
         if searchText.isEmpty {
@@ -36,8 +46,35 @@ struct LibraryView: View {
                 book.authors.contains { $0.lowercased().contains(needle) }
             }
         }
-        guard let lang = languageFilter else { return bySearch }
-        return bySearch.filter { $0.locale == lang }
+        return bySearch.filter { book in
+            (selectedCollection.map { book.collectionIDs.contains($0) } ?? true) &&
+            (selectedLanguage.map { book.locale == $0 } ?? true)
+        }
+    }
+
+    /// "Search" → "Search Sci-Fi" / "Search Portuguese" when a scope is
+    /// active. Collection wins over language when both are set, since the
+    /// collection is the more specific scope.
+    private var searchPlaceholder: String {
+        if let id = selectedCollection,
+           let collection = state.collections.first(where: { $0.id == id }) {
+            return "Search \(collection.name)"
+        }
+        if let lang = selectedLanguage {
+            let display = Locale.current.localizedString(forIdentifier: lang) ?? lang
+            return "Search \(display)"
+        }
+        return "Search"
+    }
+
+    private var collectionCounts: [UUID: Int] {
+        var dict: [UUID: Int] = [:]
+        for book in state.books {
+            for cid in book.collectionIDs {
+                dict[cid, default: 0] += 1
+            }
+        }
+        return dict
     }
 
     /// Selection resolved against the full library, not the filtered grid.
@@ -84,6 +121,17 @@ struct LibraryView: View {
 
     var body: some View {
         HStack(spacing: 0) {
+            if sidebarOpen {
+                sidebarPane
+                    .frame(width: Self.sidebarPaneWidth)
+                    .transition(sidebarTransition)
+                    // Render above mainPane so the pane's drop-shadow
+                    // extends *over* the canvas instead of being covered by
+                    // mainPane's opaque background (which produced a hard
+                    // cutoff at the seam).
+                    .zIndex(1)
+            }
+
             mainPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -91,18 +139,30 @@ struct LibraryView: View {
                 inspectorPane
                     .frame(width: Self.inspectorPaneWidth)
                     .transition(inspectorTransition)
+                    .zIndex(1)
             }
         }
         .ignoresSafeArea(.all)
+        .overlay(alignment: .bottom) {
+            // Window-level chrome floats above the panes so the toggle
+            // buttons stay in the same screen position whether or not the
+            // sidebar / inspector are open. Tapping the same spot toggles
+            // open/closed — no separate "close X" inside each pane.
+            BottomChrome(
+                searchText: $searchText,
+                searchFocused: $searchFocused,
+                searchPlaceholder: searchPlaceholder,
+                sidebarOpen: sidebarOpen,
+                inspectorOpen: inspectorOpen,
+                onToggleSidebar: { sidebarOpen.toggle() },
+                onToggleInspector: { inspectorOpen.toggle() }
+            )
+        }
         .background(WindowCustomizer(cornerRadius: Theme.Radius.window))
         .frame(minWidth: 880, minHeight: 600)
-        .animation(inspectorAnimation, value: inspectorOpen)
+        .animation(paneAnimation, value: inspectorOpen)
+        .animation(paneAnimation, value: sidebarOpen)
         .task { await state.loadBooks() }
-        .sheet(item: $editingBook) { book in
-            EditBookView(book: book, state: state) { updated in
-                Task { await state.updateBook(updated) }
-            }
-        }
         .confirmationDialog(
             deleteDialogTitle,
             isPresented: Binding(
@@ -131,6 +191,29 @@ struct LibraryView: View {
                 : "These books and their metadata will be moved to the Trash."
             )
         }
+        .confirmationDialog(
+            collectionPendingDelete.map { "Delete \"\($0.name)\"?" } ?? "",
+            isPresented: Binding(
+                get: { collectionPendingDelete != nil },
+                set: { if !$0 { collectionPendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let collection = collectionPendingDelete {
+                    Task { await state.deleteCollection(id: collection.id) }
+                    if selectedCollection == collection.id {
+                        selectedCollection = nil
+                    }
+                }
+                collectionPendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                collectionPendingDelete = nil
+            }
+        } message: {
+            Text("Books in this collection are kept; only the grouping is removed.")
+        }
     }
 
     private var deleteDialogTitle: String {
@@ -143,49 +226,36 @@ struct LibraryView: View {
     // MARK: - Main pane
 
     private var mainPane: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             Theme.canvas
                 .ignoresSafeArea()
 
             gridArea
-                .ignoresSafeArea(.all, edges: .top)
+                .ignoresSafeArea(.all)
 
-            TopChrome(
-                searchText: $searchText,
-                searchFocused: $searchFocused,
-                isFilterActive: languageFilter != nil
-            ) {
-                LanguageFilterPopover(
-                    counts: languageCounts,
-                    total: state.books.count,
-                    selected: $languageFilter,
-                    onSelect: {}
-                )
-            }
-
+            // Top chrome: device tile at top-center ("the notch"). Floats
+            // over the grid; the grid scrolls under it.
             if let device = state.device {
                 VStack {
+                    DeviceTile(
+                        displayName: device.displayName,
+                        bookCount: state.deviceFilenames.count,
+                        inAppDragCount: state.inAppDragCount,
+                        sendState: state.deviceSendState,
+                        onEject: { Task { await state.ejectDevice() } },
+                        onDrop: { drag in
+                            let books = drag.bookIDs
+                                .compactMap { id in state.books.first(where: { $0.id == id }) }
+                            guard !books.isEmpty else { return false }
+                            Task { await state.sendBooksToDevice(books) }
+                            return true
+                        }
+                    )
+                    .padding(.top, Theme.Spacing.lg)
                     Spacer()
-                    HStack {
-                        Spacer()
-                        DeviceTile(
-                            displayName: device.displayName,
-                            bookCount: state.deviceFilenames.count,
-                            inAppDragCount: state.inAppDragCount,
-                            sendState: state.deviceSendState,
-                            onEject: { Task { await state.ejectDevice() } },
-                            onDrop: { drag in
-                                let books = drag.bookIDs
-                                    .compactMap { id in state.books.first(where: { $0.id == id }) }
-                                guard !books.isEmpty else { return false }
-                                Task { await state.sendBooksToDevice(books) }
-                                return true
-                            }
-                        )
-                        .padding(.trailing, Theme.Spacing.lg)
-                        .padding(.bottom, Theme.Spacing.lg)
-                    }
                 }
+                .frame(maxWidth: .infinity)
+                .transition(deviceTileTransition)
             }
 
             if externalDropTargeted {
@@ -196,6 +266,7 @@ struct LibraryView: View {
 
             keyboardShortcuts
         }
+        .animation(deviceTileAnimation, value: state.device?.displayName)
         .dropDestination(for: URL.self) { urls, _ in
             let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
             guard !epubs.isEmpty else { return false }
@@ -221,19 +292,37 @@ struct LibraryView: View {
         } else if state.books.isEmpty {
             placeholderText("Drop a book to begin.")
         } else if filteredBooks.isEmpty {
-            placeholderText("Nothing matches “\(searchText)”.")
+            placeholderText(emptyFilteredMessage)
         } else {
             grid
         }
     }
 
+    private var emptyFilteredMessage: String {
+        if !searchText.isEmpty {
+            return "Nothing matches “\(searchText)”."
+        }
+        if let id = selectedCollection,
+           let collection = state.collections.first(where: { $0.id == id }) {
+            return "No books in “\(collection.name)” yet."
+        }
+        if let lang = selectedLanguage {
+            let display = Locale.current.localizedString(forIdentifier: lang) ?? lang
+            return "No books in \(display)."
+        }
+        return "No books match the current filters."
+    }
+
     private var grid: some View {
         GeometryReader { proxy in
-            let margin: CGFloat = Theme.Spacing.xxl
+            // Bigger than the rest of the spacing scale on purpose: gives the
+            // floating chrome (top-center notch, bottom toggles, traffic
+            // lights) room to breathe over the canvas without crowding the
+            // first/last cards.
+            let margin: CGFloat = 62
             let gutter: CGFloat = Theme.Spacing.xxl
             let minCardWidth: CGFloat = 168
             let maxCardWidth: CGFloat = 224
-            let topClearance: CGFloat = Theme.Spacing.xxl
 
             let availableWidth = proxy.size.width - 2 * margin
             let cols = max(1, Int((availableWidth + gutter) / (minCardWidth + gutter)))
@@ -265,9 +354,11 @@ struct LibraryView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, margin)
-                    .padding(.top, topClearance + margin)
-                    .padding(.bottom, margin)
+                    // Equal margin on all four sides — the chrome floats over
+                    // the canvas and cards scroll under it at the top and
+                    // bottom. The chrome's shadow + opaque pill give natural
+                    // separation, no extra reserve needed.
+                    .padding(margin)
 
                     if let rect = marquee.rect {
                         SelectionRectangle()
@@ -513,10 +604,6 @@ struct LibraryView: View {
             NSWorkspace.shared.open(book.fileURL)
             dismiss()
         }
-        bookMenuItem("Edit…", icon: .pencilSimple) {
-            editingBook = book
-            dismiss()
-        }
         bookMenuItem("Show in Finder", icon: .folderOpen) {
             NSWorkspace.shared.activateFileViewerSelecting([book.fileURL])
             dismiss()
@@ -542,6 +629,19 @@ struct LibraryView: View {
                 }
             }
         }
+        // Surface "Remove from <Collection>" only when a collection is the
+        // active scope and the book is in it — that's the moment the user
+        // is most likely to want to remove it from there. Removing from
+        // arbitrary collections is done via drag-out / inspector.
+        if let collectionID = selectedCollection,
+           let collection = state.collections.first(where: { $0.id == collectionID }),
+           book.collectionIDs.contains(collectionID) {
+            MenuDivider()
+            bookMenuItem("Remove from \(collection.name)", icon: .minus, destructive: true) {
+                Task { await state.removeBook(book, from: collectionID) }
+                dismiss()
+            }
+        }
         MenuDivider()
         bookMenuItem("Move to Trash…", icon: .trash, destructive: true) {
             booksPendingDelete = [book]
@@ -565,6 +665,21 @@ struct LibraryView: View {
                 Icon(symbol: .share, weight: .regular, size: 13)
                     .frame(width: 14)
                 Text("Share \(books.count)…")
+            }
+        }
+        if let collectionID = selectedCollection,
+           let collection = state.collections.first(where: { $0.id == collectionID }) {
+            let inCollection = books.filter { $0.collectionIDs.contains(collectionID) }
+            if !inCollection.isEmpty {
+                MenuDivider()
+                bookMenuItem("Remove \(inCollection.count) from \(collection.name)", icon: .minus, destructive: true) {
+                    Task {
+                        for book in inCollection {
+                            await state.removeBook(book, from: collectionID)
+                        }
+                    }
+                    dismiss()
+                }
             }
         }
         MenuDivider()
@@ -600,6 +715,55 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Sidebar
+
+    private var sidebarPane: some View {
+        LibrarySidebar(
+            selectedCollection: $selectedCollection,
+            selectedLanguage: $selectedLanguage,
+            totalBooks: state.books.count,
+            collections: state.collections,
+            collectionCounts: collectionCounts,
+            languageCounts: languageCounts,
+            onCreateCollection: { name in
+                Task { await state.createCollection(named: name) }
+            },
+            onRenameCollection: { id, newName in
+                Task { await state.renameCollection(id: id, to: newName) }
+            },
+            onRequestDeleteCollection: { collection in
+                collectionPendingDelete = collection
+            },
+            onDropOnCollection: { drag, collectionID in
+                let bookIDs = drag.bookIDs
+                let books = bookIDs.compactMap { id in state.books.first(where: { $0.id == id }) }
+                guard !books.isEmpty else { return false }
+                Task {
+                    for book in books {
+                        await state.addBook(book, to: collectionID)
+                    }
+                }
+                return true
+            }
+        )
+        .frame(width: Self.sidebarWidth)
+        .frame(maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.panel, style: .continuous)
+                .stroke(Theme.hairline, lineWidth: 0.5)
+        )
+        .softShadow(elevated: true)
+        .padding(Self.paneInset)
+    }
+
+    private var sidebarTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .move(edge: .leading).combined(with: .opacity)
+    }
+
     // MARK: - Inspector
 
     private var inspectorPane: some View {
@@ -608,8 +772,33 @@ struct LibraryView: View {
             device: inspectorBook.flatMap { deviceContext(for: $0) },
             multiBooks: inspectorBooks.count > 1 ? inspectorBooks : nil,
             multiDeviceInfo: inspectorBooks.count > 1 ? multiDeviceInfo(for: inspectorBooks) : nil,
-            onClose: { inspectorOpen = false },
-            onEdit: { if let book = inspectorBook { editingBook = book } },
+            profiles: state.profiles,
+            onUpdate: { updated in
+                Task { await state.updateBook(updated) }
+            },
+            onClassify: {
+                guard let book = inspectorBook else { return nil }
+                let url = book.fileURL
+                let profiles = state.profiles
+                return await Task.detached {
+                    Classifier.classifyEPUB(at: url, profiles: profiles)
+                }.value
+            },
+            onSetCoverFromFile: { url in
+                if let book = inspectorBook {
+                    Task { await state.setCover(for: book, fromFile: url) }
+                }
+            },
+            onSetCoverFromImage: { image in
+                if let book = inspectorBook {
+                    Task { await state.setCover(for: book, image: image) }
+                }
+            },
+            onRemoveCover: {
+                if let book = inspectorBook {
+                    Task { await state.removeCover(for: book) }
+                }
+            },
             onShowInFinder: {
                 if let book = inspectorBook {
                     NSWorkspace.shared.activateFileViewerSelecting([book.fileURL])
@@ -636,7 +825,7 @@ struct LibraryView: View {
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
         .softShadow(elevated: true)
-        .padding(Self.inspectorInset)
+        .padding(Self.paneInset)
     }
 
     private var inspectorTransition: AnyTransition {
@@ -646,11 +835,29 @@ struct LibraryView: View {
         return .move(edge: .trailing).combined(with: .opacity)
     }
 
-    private var inspectorAnimation: Animation {
+    /// Single animation curve shared by sidebar + inspector pane open/close.
+    private var paneAnimation: Animation {
         if reduceMotion {
             return .easeOut(duration: 0.18)
         }
         return .smooth(duration: 0.32, extraBounce: 0.10)
+    }
+
+    /// Notch-style device tile entrance: scales up from a thin sliver at
+    /// the top edge with a soft fade. Anchored to `.top` so the growth
+    /// reads as "revealing from above" rather than "expanding outward".
+    private var deviceTileTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+        return .scale(scale: 0.6, anchor: .top).combined(with: .opacity)
+    }
+
+    private var deviceTileAnimation: Animation {
+        if reduceMotion {
+            return .easeOut(duration: 0.18)
+        }
+        return .spring(duration: 0.36, bounce: 0.10)
     }
 
     private func isOnDevice(_ book: Book) -> Bool {
@@ -671,6 +878,8 @@ struct LibraryView: View {
         ZStack {
             Button("") { inspectorOpen.toggle() }
                 .keyboardShortcut("i", modifiers: .command)
+            Button("") { sidebarOpen.toggle() }
+                .keyboardShortcut("s", modifiers: [.control, .command])
             Button("") { searchFocused = true }
                 .keyboardShortcut("f", modifiers: .command)
             Button("") { handleSelectAll() }
@@ -711,7 +920,8 @@ struct LibraryView: View {
         if searchFocused { searchFocused = false; return }
         if !searchText.isEmpty { searchText = ""; return }
         if !selectedBookIDs.isEmpty { clearSelection(); return }
-        if inspectorOpen { inspectorOpen = false }
+        if inspectorOpen { inspectorOpen = false; return }
+        if sidebarOpen { sidebarOpen = false }
     }
 }
 

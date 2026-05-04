@@ -1,24 +1,36 @@
 import Foundation
 
+/// Result of reading a sidecar — the book metadata plus its collection
+/// memberships *by name*. Names not IDs because the index is disposable
+/// but names are the stable identity users see and edit. On rebuild,
+/// names get resolved (or get-or-created) into actual `Collection` rows.
+nonisolated struct LoadedSidecar: Sendable {
+    let book: Book
+    let collectionNames: [String]
+}
+
 nonisolated enum MetadataSidecar {
     static let filename = "metadata.json"
 
-    static func write(_ book: Book, to bookFolder: URL) throws {
+    static func write(_ book: Book, collectionNames: [String], to bookFolder: URL) throws {
         let url = bookFolder.appending(component: filename)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(SidecarPayload(book: book))
+        let data = try encoder.encode(SidecarPayload(book: book, collectionNames: collectionNames))
         try data.write(to: url, options: .atomic)
     }
 
-    static func read(from bookFolder: URL) throws -> Book {
+    static func read(from bookFolder: URL) throws -> LoadedSidecar {
         let url = bookFolder.appending(component: filename)
         let data = try Data(contentsOf: url)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let payload = try decoder.decode(SidecarPayload.self, from: data)
-        return payload.book(in: bookFolder)
+        return LoadedSidecar(
+            book: payload.book(in: bookFolder),
+            collectionNames: payload.collections
+        )
     }
 }
 
@@ -31,8 +43,9 @@ private nonisolated struct SidecarPayload: Codable {
     var dateAdded: Date
     var fileName: String
     var origin: BookOrigin
+    var collections: [String]
 
-    init(book: Book) {
+    init(book: Book, collectionNames: [String]) {
         self.title = book.title
         self.authors = book.authors
         self.year = book.year
@@ -41,6 +54,7 @@ private nonisolated struct SidecarPayload: Codable {
         self.dateAdded = book.dateAdded
         self.fileName = book.fileURL.lastPathComponent
         self.origin = book.origin
+        self.collections = collectionNames
     }
 
     func book(in folder: URL) -> Book {
@@ -58,7 +72,7 @@ private nonisolated struct SidecarPayload: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case title, authors, year, locale, coverPath, dateAdded, fileName, origin
+        case title, authors, year, locale, coverPath, dateAdded, fileName, origin, collections
         // Legacy keys (sidecars written before the unified-locale refactor):
         case languageCode, languageProfileId
     }
@@ -72,6 +86,7 @@ private nonisolated struct SidecarPayload: Codable {
         self.dateAdded = try c.decode(Date.self, forKey: .dateAdded)
         self.fileName = try c.decode(String.self, forKey: .fileName)
         self.origin = try c.decode(BookOrigin.self, forKey: .origin)
+        self.collections = try c.decodeIfPresent([String].self, forKey: .collections) ?? []
 
         if let new = try c.decodeIfPresent(String.self, forKey: .locale) {
             self.locale = new
@@ -93,5 +108,10 @@ private nonisolated struct SidecarPayload: Codable {
         try c.encode(dateAdded, forKey: .dateAdded)
         try c.encode(fileName, forKey: .fileName)
         try c.encode(origin, forKey: .origin)
+        // Only emit collections if non-empty — keeps existing single-book
+        // sidecars terse.
+        if !collections.isEmpty {
+            try c.encode(collections, forKey: .collections)
+        }
     }
 }

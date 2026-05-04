@@ -27,6 +27,16 @@
 		EB4E9A582FA6F23B0015E496 /* Acervo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Acervo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EB4E9A5B2FA6F23B0015E496 /* Exceptions for "Acervo" folder in "Acervo" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EB4E9A572FA6F23B0015E496 /* Acervo */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EB2319052FA766F800EC4BCD /* AcervoTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -36,22 +46,12 @@
 		EB4E9A5A2FA6F23B0015E496 /* Acervo */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				EB4E9A5B2FA6F23B0015E496 /* Acervo Info.plist exception */,
+				EB4E9A5B2FA6F23B0015E496 /* Exceptions for "Acervo" folder in "Acervo" target */,
 			);
 			path = Acervo;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EB4E9A5B2FA6F23B0015E496 /* Acervo Info.plist exception */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = EB4E9A572FA6F23B0015E496 /* Acervo */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		EB2319012FA766F800EC4BCD /* Frameworks */ = {

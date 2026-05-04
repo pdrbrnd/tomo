@@ -29,6 +29,7 @@ final class AppState {
     private(set) var importer: LibraryImporter?
     let profiles: [LanguageProfile]
     var books: [Book] = []
+    var collections: [Collection] = []
     private(set) var device: (any BookDevice)?
     private(set) var deviceFilenames: Set<String> = []
 
@@ -164,10 +165,22 @@ final class AppState {
         await openIndexIfNeeded()
         guard let index else { return }
         do {
-            self.books = try await index.all()
+            async let booksTask = index.all()
+            async let collectionsTask = index.collections()
+            self.books = try await booksTask
+            self.collections = try await collectionsTask
         } catch {
             libraryLogger.error("load books failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Maps `Book.collectionIDs` to the collection *names* — what the sidecar
+    /// stores. Sorted for stable serialisation.
+    private func collectionNames(for ids: Set<UUID>) -> [String] {
+        collections
+            .filter { ids.contains($0.id) }
+            .map(\.name)
+            .sorted()
     }
 
     func importBook(from url: URL) async {
@@ -196,15 +209,118 @@ final class AppState {
         }
         let bookFolder = book.fileURL.deletingLastPathComponent()
         let bookForSidecar = book
+        let names = collectionNames(for: book.collectionIDs)
         do {
             try await Task.detached {
-                try MetadataSidecar.write(bookForSidecar, to: bookFolder)
+                try MetadataSidecar.write(bookForSidecar, collectionNames: names, to: bookFolder)
             }.value
             try await index.update(book)
             await loadBooks()
             libraryLogger.info("updated: \(book.title, privacy: .public)")
         } catch {
             libraryLogger.error("update failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - Collections
+
+    @discardableResult
+    func createCollection(named name: String) async -> Collection? {
+        await openIndexIfNeeded()
+        guard let index else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        do {
+            let collection = try await index.createCollection(named: trimmed)
+            await loadBooks()
+            libraryLogger.info("created collection: \(trimmed, privacy: .public)")
+            return collection
+        } catch {
+            libraryLogger.error("create collection failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    func renameCollection(id: UUID, to newName: String) async {
+        await openIndexIfNeeded()
+        guard let index else { return }
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try await index.renameCollection(id: id, to: trimmed)
+            // Sidecars store the old name; re-write each affected book so the
+            // on-disk truth follows the rename.
+            let affectedBooks = books.filter { $0.collectionIDs.contains(id) }
+            for book in affectedBooks {
+                await rewriteSidecar(for: book, newCollectionIDs: book.collectionIDs)
+            }
+            await loadBooks()
+        } catch {
+            libraryLogger.error("rename collection failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func deleteCollection(id: UUID) async {
+        await openIndexIfNeeded()
+        guard let index else { return }
+        // Books that lose membership need their sidecars rewritten.
+        let affectedBooks = books.filter { $0.collectionIDs.contains(id) }
+        do {
+            try await index.deleteCollection(id: id)
+            for book in affectedBooks {
+                var remaining = book.collectionIDs
+                remaining.remove(id)
+                await rewriteSidecar(for: book, newCollectionIDs: remaining)
+            }
+            await loadBooks()
+        } catch {
+            libraryLogger.error("delete collection failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func addBook(_ book: Book, to collectionID: UUID) async {
+        await openIndexIfNeeded()
+        guard let index else { return }
+        guard !book.collectionIDs.contains(collectionID) else { return }
+        do {
+            try await index.addBook(book.id, to: collectionID)
+            var newIDs = book.collectionIDs
+            newIDs.insert(collectionID)
+            await rewriteSidecar(for: book, newCollectionIDs: newIDs)
+            await loadBooks()
+        } catch {
+            libraryLogger.error("add to collection failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func removeBook(_ book: Book, from collectionID: UUID) async {
+        await openIndexIfNeeded()
+        guard let index else { return }
+        guard book.collectionIDs.contains(collectionID) else { return }
+        do {
+            try await index.removeBook(book.id, from: collectionID)
+            var newIDs = book.collectionIDs
+            newIDs.remove(collectionID)
+            await rewriteSidecar(for: book, newCollectionIDs: newIDs)
+            await loadBooks()
+        } catch {
+            libraryLogger.error("remove from collection failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Re-writes a book's sidecar with an updated collection-membership set.
+    /// Membership is mirrored to disk so a rebuild from sidecars reconstructs
+    /// the same groupings.
+    private func rewriteSidecar(for book: Book, newCollectionIDs: Set<UUID>) async {
+        let bookFolder = book.fileURL.deletingLastPathComponent()
+        let names = collectionNames(for: newCollectionIDs)
+        let bookForSidecar = book
+        do {
+            try await Task.detached {
+                try MetadataSidecar.write(bookForSidecar, collectionNames: names, to: bookFolder)
+            }.value
+        } catch {
+            libraryLogger.error("sidecar rewrite failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -308,8 +424,15 @@ final class AppState {
             var imported = 0
             for folder in folders {
                 do {
-                    let book = try MetadataSidecar.read(from: folder)
-                    try await index.add(book)
+                    let loaded = try MetadataSidecar.read(from: folder)
+                    try await index.add(loaded.book)
+                    // Resolve collection names from the sidecar — get-or-create
+                    // lets a rebuild reconstruct collections by name without
+                    // any pre-seeding step.
+                    for name in loaded.collectionNames {
+                        let collection = try await index.getOrCreateCollection(named: name)
+                        try await index.addBook(loaded.book.id, to: collection.id)
+                    }
                     imported += 1
                 } catch {
                     libraryLogger.error("rebuild: skipped \(folder.path(percentEncoded: false), privacy: .public) - \(error.localizedDescription, privacy: .public)")

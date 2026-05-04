@@ -60,7 +60,9 @@ actor LibraryImporter {
                 origin: .manualImport
             )
 
-            try MetadataSidecar.write(book, to: bookFolder)
+            // Fresh import: no collections yet. Membership is added later
+            // from the inspector / drag-to-sidebar.
+            try MetadataSidecar.write(book, collectionNames: [], to: bookFolder)
             try await index.add(book)
 
             libraryLogger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
