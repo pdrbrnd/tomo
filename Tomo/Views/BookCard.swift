@@ -83,9 +83,9 @@ struct BookCard: View {
 
             Color.black.opacity(0.30)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(book.title)
-                    .font(.system(size: cardWidth < 170 ? 13 : 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.white)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -94,8 +94,8 @@ struct BookCard: View {
                     .foregroundStyle(Color.white.opacity(0.78))
                     .lineLimit(1)
             }
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.bottom, Theme.Spacing.md)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

@@ -11,16 +11,28 @@ struct LocalCoverImage: View {
     @State private var image: NSImage?
 
     var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                placeholder
+        // `Color.clear` is the load-bearing primitive: flexible, always
+        // reports the proposed size to its parent, never propagates inner
+        // content size up. Putting the image inside `.overlay` means its
+        // `.aspectRatio(.fill)` overflow is visual-only — it does NOT
+        // propagate as an intrinsic frame back to the parent. `.frame`
+        // alone wouldn't be enough; that modifier caps but doesn't force,
+        // so an oversized child still bubbles up. Without this, non-2:3
+        // covers (common from Google Books) push `BookCard`'s
+        // selected-state overlay against the overflow's bounds and the
+        // bottom-aligned title/author drops below the visible card.
+        Color.clear
+            .overlay {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    placeholder
+                }
             }
-        }
-        .task(id: url) { await load() }
+            .clipped()
+            .task(id: url) { await load() }
     }
 
     @ViewBuilder

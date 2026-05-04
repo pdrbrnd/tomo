@@ -358,6 +358,16 @@ final class AppState {
     await writeCover(data, ext: "png", for: book)
   }
 
+  /// Direct write path for cover bytes we already hold (e.g. JPEG fetched
+  /// from Open Library / Google Books). Skips the NSImage→PNG round-trip
+  /// — both because it preserves the source's quality and because
+  /// `NSImage(data:)` from a JPEG often surfaces no `tiffRepresentation`
+  /// until forced, which makes `pngData` silently nil.
+  func setCover(for book: Book, fromData data: Data, ext: String) async {
+    let normalised = ext.lowercased().isEmpty ? "jpg" : ext.lowercased()
+    await writeCover(data, ext: normalised, for: book)
+  }
+
   func removeCover(for book: Book) async {
     if let coverURL = book.coverURL {
       try? await Task.detached {
@@ -371,13 +381,20 @@ final class AppState {
 
   private func writeCover(_ data: Data, ext: String, for book: Book) async {
     let bookFolder = book.fileURL.deletingLastPathComponent()
-    let newFileName = "cover.\(ext)"
+    // Unique-per-save filename. Same path + same name = identical `URL`,
+    // and SwiftUI's view diffing then skips re-evaluating any
+    // `LocalCoverImage` body — so the cached `@State image` would stay
+    // even though the bytes on disk just changed. A unique URL per save
+    // is the natural change-signal that propagates through the parent
+    // view tree without bespoke notifications.
+    let suffix = String(UUID().uuidString.prefix(6).lowercased())
+    let newFileName = "cover-\(suffix).\(ext)"
     let newURL = bookFolder.appending(component: newFileName)
     let oldCoverURL = book.coverURL
 
     do {
       try await Task.detached {
-        if let oldCoverURL, oldCoverURL.lastPathComponent != newFileName {
+        if let oldCoverURL {
           try? FileManager.default.removeItem(at: oldCoverURL)
         }
         try data.write(to: newURL, options: .atomic)

@@ -243,8 +243,8 @@ struct LibraryView: View {
         .sheet(item: $coverGalleryBook) { book in
             CoverGallerySheet(
                 book: book,
-                onPick: { image in
-                    Task { await state.setCover(for: book, image: image) }
+                onPick: { data in
+                    Task { await state.setCover(for: book, fromData: data, ext: "jpg") }
                     coverGalleryBook = nil
                 },
                 onCancel: { coverGalleryBook = nil }
