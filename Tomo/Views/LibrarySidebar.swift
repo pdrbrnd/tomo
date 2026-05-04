@@ -104,13 +104,18 @@ struct LibrarySidebar: View {
         Button {
             beginCreate()
         } label: {
-            Icon(symbol: "plus", weight: .bold, size: 11)
+            Icon(symbol: "plus", weight: .medium, size: 11)
                 .foregroundStyle(.primary.opacity(Theme.Text.secondary))
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("New collection")
+        // Match the section header's vertical padding so the `+` sits at
+        // the same visual center as the COLLECTIONS letters rather than
+        // floating above them.
+        .padding(.top, Theme.Spacing.xs)
+        .padding(.bottom, Theme.Spacing.sm)
     }
 
     private func collectionRow(_ collection: Collection) -> some View {

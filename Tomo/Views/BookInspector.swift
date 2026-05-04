@@ -76,6 +76,11 @@ struct BookInspector: View {
                 emptyState
             }
         }
+        // Snap-replace on book change — the FlowLayout in the collections
+        // section otherwise animates chips (and the `Add` chip) into their
+        // new positions, which reads as the inspector "morphing" rather
+        // than switching books.
+        .transaction(value: book?.id) { $0.animation = nil }
         .onChange(of: book?.id) { _, _ in
             classifyingTask?.cancel()
             clearConfidenceTask?.cancel()
@@ -523,7 +528,7 @@ private struct AddCollectionChip: View {
             .background(Capsule(style: .continuous).fill(Color.clear))
             .overlay(
                 Capsule(style: .continuous)
-                    .strokeBorder(Theme.hairline, style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                    .strokeBorder(.primary.opacity(Theme.Surface.dropTarget), lineWidth: 0.5)
             )
         }
         .buttonStyle(.plain)
