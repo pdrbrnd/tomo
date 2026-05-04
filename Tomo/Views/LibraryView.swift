@@ -159,7 +159,19 @@ struct LibraryView: View {
         .frame(minWidth: 880, minHeight: 600)
         .animation(paneAnimation, value: inspectorOpen)
         .animation(paneAnimation, value: sidebarOpen)
-        .task { await state.loadBooks() }
+        .task(id: state.libraryFolder) { await state.syncWithDisk() }
+        .alert(
+            "Couldn't import book",
+            isPresented: Binding(
+                get: { state.lastImportError != nil },
+                set: { if !$0 { state.lastImportError = nil } }
+            ),
+            presenting: state.lastImportError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { detail in
+            Text(detail)
+        }
         .confirmationDialog(
             deleteDialogTitle,
             isPresented: Binding(

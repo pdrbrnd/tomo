@@ -156,24 +156,25 @@ actor BookIndex {
     }
   }
 
-  func wipeAll() async throws {
-    try await pool.write { db in
-      // Clear collections too — `book_collections` cascades, but the
-      // `collections` rows themselves would survive otherwise, leaving
-      // zombie collections after a rebuild and corrupting the
-      // case-insensitive name match in `getOrCreateCollection`.
-      try db.execute(sql: "DELETE FROM book_collections")
-      try db.execute(sql: "DELETE FROM collections")
-      try db.execute(sql: "DELETE FROM books")
-    }
+  func delete(_ book: Book) async throws {
+    try await delete(id: book.id)
   }
 
-  func delete(_ book: Book) async throws {
+  func delete(id: UUID) async throws {
     try await pool.write { db in
       try db.execute(
         sql: "DELETE FROM books WHERE id = ?",
-        arguments: [book.id.uuidString]
+        arguments: [id.uuidString]
       )
+    }
+  }
+
+  /// Slim variant of `all()` for reconciliation — avoids decoding rows when
+  /// we only need to diff identity sets.
+  func allIDs() async throws -> Set<UUID> {
+    try await pool.read { db in
+      let strings = try String.fetchAll(db, sql: "SELECT id FROM books")
+      return Set(strings.compactMap(UUID.init))
     }
   }
 

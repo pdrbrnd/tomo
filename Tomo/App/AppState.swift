@@ -43,6 +43,11 @@ final class AppState {
   /// idle after a brief display.
   var deviceSendState: DeviceSendState = .idle
 
+  /// User-facing error from the most recent import attempt. Surfaced as an
+  /// alert in `LibraryView` and cleared on dismiss. Logged-only failures
+  /// (programmer errors) don't write here.
+  var lastImportError: String?
+
   private var mountObserver: NSObjectProtocol?
   private var unmountObserver: NSObjectProtocol?
   private var sendStateResetTask: Task<Void, Never>?
@@ -189,16 +194,20 @@ final class AppState {
     await openIndexIfNeeded()
     guard let importer else {
       libraryLogger.error("import called without index/importer")
+      lastImportError = "Library is not ready yet."
       return
     }
     guard let libraryFolder else {
       libraryLogger.error("import called without library folder")
+      lastImportError = "Choose a library folder before importing."
       return
     }
     do {
       _ = try await importer.importBook(from: url, into: libraryFolder)
       await loadBooks()
     } catch {
+      let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+      lastImportError = "\(url.lastPathComponent): \(message)"
       libraryLogger.error("import failed: \(error.localizedDescription, privacy: .public)")
     }
   }
@@ -417,42 +426,61 @@ final class AppState {
     }
   }
 
-  func rebuildIndex() async {
+  /// Reconciles the index with the on-disk library: adds sidecars not yet
+  /// indexed, removes index rows whose folders are gone, resolves collection
+  /// memberships from sidecars. Idempotent and additive — safe to call on
+  /// every appear and every library-folder change.
+  ///
+  /// This is how the disk-truth principle is enforced at runtime. The index
+  /// is disposable; the library is the source of truth. A second machine
+  /// pointed at the same iCloud folder, a fresh install, a deleted DB —
+  /// they all rebuild themselves through here without user action.
+  func syncWithDisk() async {
     await openIndexIfNeeded()
-    guard let index else {
-      libraryLogger.error("rebuild: no index")
-      return
-    }
+    guard let index else { return }
     guard let libraryFolder else {
-      libraryLogger.error("rebuild: no library folder")
+      // No folder set: just refresh the UI from whatever's in the index.
+      // The grid placeholder ("Open Settings…") handles the empty case.
+      await loadBooks()
       return
     }
     do {
-      try await index.wipeAll()
       let folders = try await LibraryFolder.bookFolders(in: libraryFolder)
-      var imported = 0
+      var sidecars: [LoadedSidecar] = []
       for folder in folders {
+        try Task.checkCancellation()
         do {
-          let loaded = try MetadataSidecar.read(from: folder)
-          try await index.add(loaded.book)
-          // Resolve collection names from the sidecar — get-or-create
-          // lets a rebuild reconstruct collections by name without
-          // any pre-seeding step.
-          for name in loaded.collectionNames {
-            let collection = try await index.getOrCreateCollection(named: name)
-            try await index.addBook(loaded.book.id, to: collection.id)
-          }
-          imported += 1
+          sidecars.append(try MetadataSidecar.read(from: folder))
         } catch {
           libraryLogger.error(
-            "rebuild: skipped \(folder.path(percentEncoded: false), privacy: .public) - \(error.localizedDescription, privacy: .public)"
+            "sync: skipped \(folder.path(percentEncoded: false), privacy: .public): \(error.localizedDescription, privacy: .public)"
           )
         }
       }
-      libraryLogger.info("rebuild: indexed \(imported) of \(folders.count) folders")
+      let onDisk = Set(sidecars.map(\.book.id))
+      let inIndex = try await index.allIDs()
+      let toAdd = onDisk.subtracting(inIndex)
+      let orphans = inIndex.subtracting(onDisk)
+
+      for id in orphans {
+        try Task.checkCancellation()
+        try await index.delete(id: id)
+      }
+      for sidecar in sidecars where toAdd.contains(sidecar.book.id) {
+        try Task.checkCancellation()
+        try await index.add(sidecar.book)
+        for name in sidecar.collectionNames {
+          let collection = try await index.getOrCreateCollection(named: name)
+          try await index.addBook(sidecar.book.id, to: collection.id)
+        }
+      }
+      libraryLogger.info(
+        "sync: \(sidecars.count) on disk, +\(toAdd.count) -\(orphans.count)")
       await loadBooks()
+    } catch is CancellationError {
+      libraryLogger.info("sync cancelled")
     } catch {
-      libraryLogger.error("rebuild failed: \(error.localizedDescription, privacy: .public)")
+      libraryLogger.error("sync failed: \(error.localizedDescription, privacy: .public)")
     }
   }
 
