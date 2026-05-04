@@ -15,11 +15,14 @@ struct BottomChrome: View {
     let onToggleSidebar: () -> Void
     let onToggleInspector: () -> Void
 
-    /// 12pt padding from the window edges so each toggle button's center
-    /// (16pt + 12pt = 28pt from corner) coincides with the window's and
-    /// panel's corner-curve centers — three concentric circles.
-    static var bottomPadding: CGFloat { 12 }
-    static var horizontalPadding: CGFloat { 12 }
+    /// 14pt padding from window edges + 16pt button radius (32pt diameter)
+    /// puts each toggle's center at (30, 30) from the corner — concentric
+    /// with the panel curve (also at (30, 30): paneInset 8 + R_panel 22)
+    /// and the window curve (R_window 30). Gap from button edge to panel
+    /// curve = R_panel − r_btn = 22 − 16 = 6pt of breathing room.
+    static var bottomPadding: CGFloat { 14 }
+    static var horizontalPadding: CGFloat { 14 }
+    static var buttonDiameter: CGFloat { 32 }
 
     var body: some View {
         ZStack {
@@ -73,7 +76,7 @@ struct BottomChrome: View {
             Icon(symbol: symbol, weight: active ? .fill : .regular, size: 14)
                 .foregroundStyle(.primary.opacity(active ? 0.92 : 0.62))
         }
-        .frame(width: 32, height: 32)
+        .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
         .softShadow(elevated: active)
     }
 }

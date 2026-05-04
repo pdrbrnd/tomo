@@ -1,23 +1,15 @@
 import SwiftUI
 import AppKit
 
-/// Bridges to the host NSWindow to set a custom corner radius on its content
-/// view. macOS draws windows with a fixed system corner radius (~10pt); this
-/// lets us go more rounded.
+/// Window-level chrome adjustments that need direct NSWindow access.
 ///
-/// Important: the window stays `isOpaque = false` so the system's standard
-/// window mask doesn't override our larger corner radius — but the
-/// `backgroundColor` is set to an opaque canvas color (NOT clear). That keeps
-/// the SwiftUI compositor opaque while allowing the custom shape. Setting
-/// `backgroundColor` to clear collapses opacity throughout the contentView.
-///
-/// Also nudges the traffic lights inward by `trafficLightInset` so they line
-/// up with the inner panes (which sit at the same inset from the window
-/// edge). The original positions are cached on the Coordinator so re-applies
-/// are idempotent. Window state-change notifications re-apply automatically
-/// because AppKit resets traffic lights on full-screen, resize, etc.
+/// The corner radius itself is *not* set here — AppKit's `NSThemeFrame` is
+/// swizzled at app launch by `WindowChromeOverride` so the system draws the
+/// frame, mask, and shadow at our preferred radius natively. This view only
+/// handles things that survive on the window proper: background colour
+/// (so the rounded mask is filled), shadow toggle, and traffic-light
+/// repositioning (with re-apply on AppKit-driven state changes).
 struct WindowCustomizer: NSViewRepresentable {
-    let cornerRadius: CGFloat
     var trafficLightInset: CGFloat = 10
 
     func makeCoordinator() -> Coordinator {
@@ -27,9 +19,6 @@ struct WindowCustomizer: NSViewRepresentable {
     final class Coordinator {
         var originalOrigins: [NSWindow.ButtonType: NSPoint] = [:]
         var hasRegisteredObservers = false
-        // Observers live for the window's lifetime — same as the
-        // Coordinator. NotificationCenter holds them; the closures capture
-        // `view` weakly so they don't keep dead references alive.
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -52,26 +41,10 @@ struct WindowCustomizer: NSViewRepresentable {
 
     private func apply(to view: NSView, coordinator: Coordinator) {
         guard let window = view.window else { return }
-        guard let contentView = window.contentView else { return }
 
-        applyCornerRadius(to: contentView)
-
-        // The content view's layer alone doesn't cover the window's actual
-        // on-screen mask: the system clips the window at its default ~10pt
-        // radius, which shows as a faint trace just outside our 28pt curve.
-        // Walk up the hierarchy and apply the corner radius to every
-        // ancestor so the entire visual stack — including the internal
-        // NSThemeFrame and any decoration views above it — clips to our
-        // shape.
-        var ancestor: NSView? = contentView.superview
-        while let current = ancestor {
-            applyCornerRadius(to: current)
-            // Drop any system-drawn 1pt border at the old radius.
-            current.layer?.borderWidth = 0
-            ancestor = current.superview
-        }
-
-        window.isOpaque = false
+        // Fill the rounded mask with our canvas colour. With NSThemeFrame
+        // returning our radius, the system clips this to the right shape —
+        // no contentView layer overrides or shadow invalidation needed.
         window.backgroundColor = NSColor(name: nil) { appearance in
             if isDarkAppearance(appearance) {
                 return NSColor(srgbRed: 0.062, green: 0.062, blue: 0.066, alpha: 1.0)
@@ -79,25 +52,15 @@ struct WindowCustomizer: NSViewRepresentable {
             return NSColor(srgbRed: 0.965, green: 0.961, blue: 0.953, alpha: 1.0)
         }
         window.hasShadow = true
-        // Recompute the system shadow against the new (rounder) shape so
-        // it doesn't trace the original ~10pt rectangle.
-        window.invalidateShadow()
 
         offsetTrafficLights(in: window, by: trafficLightInset, coordinator: coordinator)
         registerWindowObservers(window: window, view: view, coordinator: coordinator)
     }
 
-    private func applyCornerRadius(to view: NSView) {
-        view.wantsLayer = true
-        view.layer?.cornerRadius = cornerRadius
-        view.layer?.cornerCurve = .continuous
-        view.layer?.masksToBounds = true
-    }
-
-    /// Nudges the standard window buttons (close, minimize, zoom) toward the
-    /// content area by `inset` on both axes. Records each button's original
-    /// origin in the Coordinator on first call so subsequent applies are
-    /// idempotent rather than compounding.
+    /// Nudges the standard window buttons (close, minimize, zoom) toward
+    /// the content area by `inset` on both axes. Caches each button's
+    /// original origin so subsequent applies are idempotent rather than
+    /// compounding.
     private func offsetTrafficLights(in window: NSWindow, by inset: CGFloat, coordinator: Coordinator) {
         let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
@@ -110,13 +73,13 @@ struct WindowCustomizer: NSViewRepresentable {
                 original = button.frame.origin
                 coordinator.originalOrigins[type] = original
             }
-            // macOS title-bar coords aren't flipped: larger Y is higher on
-            // screen. Visually moving DOWN means decreasing Y.
+            // Title-bar coords aren't flipped — larger Y is higher on
+            // screen, so visually moving DOWN means decreasing Y.
             button.setFrameOrigin(NSPoint(
                 x: original.x + inset,
                 y: original.y - inset
             ))
-            // Pin the button so window resize/auto-layout can't move it.
+            // Pin the button so window resize / auto-layout can't drag it.
             button.autoresizingMask = []
         }
     }
@@ -144,9 +107,6 @@ struct WindowCustomizer: NSViewRepresentable {
                 object: window,
                 queue: .main
             ) { [weak view] _ in
-                // queue: .main runs the closure on the main thread, which
-                // is the MainActor — but Swift Concurrency doesn't infer
-                // that for NotificationCenter callbacks, so assert it.
                 MainActor.assumeIsolated {
                     guard let view else { return }
                     apply(to: view, coordinator: coordinator)

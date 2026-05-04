@@ -43,28 +43,29 @@ enum Theme {
     // Concentric corner radii. The rule everywhere: r_inner = r_outer − gap.
     // Tuned so the bottom-chrome 32pt buttons' centers coincide with both
     // the panel and the window corner-curve centers — three concentric
-    // circles at the corners.
+    // circles at the corners with 6pt of breathing room between the
+    // button edge and the panel curve.
     //
-    // Window (28) − pane inset (8)        = panel (20)
-    // Panel  (20) − menuInset (6)         = sidebarRow (14)
+    // Window (30) − pane inset (8)        = panel (22)
+    // Panel  (22) − menuInset (6)         = sidebarRow (16)
     // Menu   (18) − menuInset (6)         = menuItem (12)
     // Card    (8) − cover-content gap (4) = cover (4)
     //
-    // Bottom-chrome button: 32pt diameter, 12pt padding from window edges
-    // → center at (28, 28) from corner = panel curve center = window curve
-    // center.
+    // Bottom-chrome button: 32pt diameter (r=16), 14pt padding from window
+    // edges → center at (30, 30) from corner = panel curve center = window
+    // curve center. Button-to-panel gap = 22 − 16 = 6pt.
     enum Radius {
         static let cover: CGFloat = 4
         static let card: CGFloat = 8
-        static let panel: CGFloat = 20
+        static let panel: CGFloat = 22
 
         /// Row backgrounds inside a panel (sidebar rows). Concentric with
         /// the panel given the standard menuInset (6) padding.
-        static let sidebarRow: CGFloat = 14
+        static let sidebarRow: CGFloat = 16
 
         static let menu: CGFloat = 18
         static let menuItem: CGFloat = 12
-        static let window: CGFloat = 28
+        static let window: CGFloat = 30
     }
 
     // Spacing scale — every gap is one of these.

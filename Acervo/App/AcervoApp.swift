@@ -4,6 +4,13 @@ import SwiftUI
 struct AcervoApp: App {
     @State private var state = AppState()
 
+    init() {
+        // Must run before any window is shown so NSThemeFrame returns our
+        // value the first time it lays out. macOS Tahoe doesn't expose a
+        // public knob for window corner radius — see WindowChromeOverride.
+        WindowChromeOverride.install(cornerRadius: Theme.Radius.window)
+    }
+
     var body: some Scene {
         WindowGroup("Acervo") {
             LibraryView(state: state)
