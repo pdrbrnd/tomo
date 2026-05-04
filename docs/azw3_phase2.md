@@ -1,13 +1,13 @@
 # AZW3 Phase 2 — wrap-up
 
 Phase 1 + Phase 2 of the AZW3 writer are code-complete as of 2026-05-03.
-The writer ships in `Acervo/Core/Conversion/AZW3/` and is exercised by
+The writer ships in `Tomo/Core/Conversion/AZW3/` and is exercised by
 the EPUB→AZW3 path used at delivery time. Hardware validation runs from
 `docs/azw3_hardware_test.md`.
 
 ## What landed
 
-- Reader consolidation under `Acervo/Core/Metadata/EPUBArchive.swift`
+- Reader consolidation under `Tomo/Core/Metadata/EPUBArchive.swift`
 - Byte-faithful `<body>` extraction (no XMLDocument round-trip)
 - Cover image record + EXTH 201/203/125/129/202
 - TOC parsing (EPUB 3 nav.xhtml + EPUB 2 toc.ncx) → real NCX entries
@@ -25,7 +25,7 @@ the EPUB→AZW3 path used at delivery time. Hardware validation runs from
 - **Thumbnail-folder hack** (`/Volumes/Kindle/system/thumbnails/…`) —
   the FW 5.19.2 Paperwhite Signature surfaces covers via EXTH alone;
   add this only if older firmwares show up.
-- **EPUB-Subject (EXTH 105)** — needs the Acervo data model to grow
+- **EPUB-Subject (EXTH 105)** — needs the Tomo data model to grow
   tags first.
 - **Chunk-splitting for large spine items** — current writer emits
   one chunk per spine item with no size cap. Calibre splits at
@@ -39,12 +39,12 @@ the EPUB→AZW3 path used at delivery time. Hardware validation runs from
 
 ## Where things live
 
-- Writer entry point: `Acervo/Core/Conversion/AZW3/AZW3Writer.swift`
-- Public input contract: `Acervo/Core/Conversion/AZW3/BookManifest.swift`
+- Writer entry point: `Tomo/Core/Conversion/AZW3/AZW3Writer.swift`
+- Public input contract: `Tomo/Core/Conversion/AZW3/BookManifest.swift`
 - Per-record builders: same folder, one file per record type
-- EPUB → manifest bridge: `Acervo/Core/Conversion/EPUBToAZW3Converter.swift`
+- EPUB → manifest bridge: `Tomo/Core/Conversion/EPUBToAZW3Converter.swift`
 - Hardware test procedure: `docs/azw3_hardware_test.md`
-- Future package extraction: `Acervo/Core/Conversion/AZW3/README.md`
+- Future package extraction: `Tomo/Core/Conversion/AZW3/README.md`
 
 When `AZW3/` is finally extracted into its own Swift package, this
 doc dies with it.

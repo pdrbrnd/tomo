@@ -7,7 +7,7 @@ inspector that cover the same intent without the rough edges.
 
 ## What we want
 
-Drag one or more book cards out of the Acervo window into Finder (or any
+Drag one or more book cards out of the Tomo window into Finder (or any
 file-accepting destination — Mail, Messages, etc.) and get the actual book
 files copied. Single drag → one file. Multi-selection drag → N files,
 each with its real filename and extension.
@@ -17,7 +17,7 @@ each with its real filename and extension.
 1. `ProxyRepresentation { (drag: BookDrag) -> URL in ... }`
    Result: Finder picked our custom `DataRepresentation` (the JSON
    `BookDrag` payload) instead and wrote a 200-byte file named
-   "Acervo Book Drag" — because `ProxyRepresentation` to URL doesn't
+   "Tomo Book Drag" — because `ProxyRepresentation` to URL doesn't
    reliably register `public.file-url` on the underlying `NSItemProvider`
    in a way Finder selects.
 
@@ -61,9 +61,9 @@ Transferable system and work fine. Reverting drag-out doesn't touch that.
 
 ## Pointers when we pick this up
 
-- `Acervo/Core/Library/BookDrag.swift` — the in-app Transferable lives here
-- `Acervo/Views/LibraryView.swift` — `buildBookDrag(for:)` is where the
+- `Tomo/Core/Library/BookDrag.swift` — the in-app Transferable lives here
+- `Tomo/Views/LibraryView.swift` — `buildBookDrag(for:)` is where the
   drag-start side effects fire; that's where the AppKit drag source would
   also start
-- `Acervo/Info.plist` already declares `com.pdrbrnd.acervo.book-drag` —
+- `tomo/Info.plist` already declares `com.pdrbrnd.tomo.book-drag` —
   if we add public-facing UTIs for AZW3/MOBI, declare them here too

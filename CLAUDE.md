@@ -93,7 +93,7 @@ Fast and snappy is not negotiable:
 ## Folder layout (in-app)
 
 ```
-Acervo/
+Tomo/
   App/                    # @main, app lifecycle, settings
   Views/                  # SwiftUI views, one per file
   Models/                 # plain structs: Book, BookOrigin, LanguageProfile
@@ -111,11 +111,11 @@ Acervo/
 
 The `Conversion/AZW3/` subdirectory is destined for extraction into a
 standalone Swift package. Nothing in there may import or reference any
-Acervo type — see `Acervo/Core/Conversion/AZW3/README.md`.
+Tomo type — see `Tomo/Core/Conversion/AZW3/README.md`.
 
 ## Data model
 
-Models live in `Acervo/Models/`. Read those files for the current
+Models live in `Tomo/Models/`. Read those files for the current
 shapes (`Book.swift`, `LanguageProfile.swift`). The sidecar
 `metadata.json` mirrors `Book` minus `id` (id lives in the index).
 
@@ -125,14 +125,14 @@ Two intent notes the code can't express:
   book is `.manualImport`. This avoids a migration when sources ship.
 - `Book` has a single `fileURL` (primary file) — multi-format-per-book
   (`formats: [BookFormat]`) is deferred until v2 sources need it. The
-  `FileFormat` enum in `Acervo/Core/Conversion/` is unrelated; it's
+  `FileFormat` enum in `Tomo/Core/Conversion/` is unrelated; it's
   the conversion layer's format identifier, not a data-model type.
 
 ## Language profiles — intent
 
 Not "pt-PT detection." A general system: weighted-marker classifier per
 profile, profiles grouped by base language. Implementation lives in
-`Acervo/Core/Classifier/` — read `Classifier.swift` and the bundled
+`Tomo/Core/Classifier/` — read `Classifier.swift` and the bundled
 profiles in `Resources/Profiles/` for current shape.
 
 The principle to preserve: **manual user override is persisted and
@@ -206,7 +206,7 @@ later (rename folders to match new metadata on save).
 
 ## Conversion
 
-EPUB→AZW3 (KF8) is implemented in-app under `Acervo/Core/Conversion/`.
+EPUB→AZW3 (KF8) is implemented in-app under `Tomo/Core/Conversion/`.
 The writer half lives in `AZW3/` as a self-contained module ready for
 extraction into a standalone Swift package. Phase 1 hardware-validated
 2026-05-03; Phase 2 backlog (cover, TOC, CSS, image records, etc.) is
@@ -293,13 +293,13 @@ Worth flagging in code review:
 ## Build / run
 
 Single Xcode project, no Swift Package Manager wrapping. Source lives
-under `Acervo/`, the project file is `Acervo.xcodeproj/` at repo root.
-Tests live under `AcervoTests/`.
+under `Tomo/`, the project file is `Tomo.xcodeproj/` at repo root.
+Tests live under `TomoTests/`.
 
-- **Open in Xcode:** `open Acervo.xcodeproj` then `⌘R` to build and run.
-- **CLI build:** `xcodebuild -project Acervo.xcodeproj -scheme Acervo -configuration Debug build`
-- **CLI test:** `xcodebuild -project Acervo.xcodeproj -scheme Acervo -destination 'platform=macOS' test`
-- **Bundle ID:** `com.pdrbrnd.acervo` (used for `~/Library/Application Support/com.pdrbrnd.acervo/`).
+- **Open in Xcode:** `open Tomo.xcodeproj` then `⌘R` to build and run.
+- **CLI build:** `xcodebuild -project tomo.xcodeproj -scheme tomo -configuration Debug build`
+- **CLI test:** `xcodebuild -project tomo.xcodeproj -scheme tomo -destination 'platform=macOS' test`
+- **Bundle ID:** `com.pdrbrnd.tomo` (used for `~/Library/Application Support/com.pdrbrnd.tomo/`).
 - **Deployment target:** macOS 26.0.
 - **Swift language mode:** 6.0 (strict concurrency; types default to `MainActor` isolation).
 - **Sandbox:** off. Distribution path is Homebrew cask, not Mac App Store. Signing/notarization deferred until distribution is a concern.

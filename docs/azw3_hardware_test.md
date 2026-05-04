@@ -46,9 +46,9 @@ For each book:
 
 ```sh
 # 1. Plug Kindle in via USB. Wait for `/Volumes/Kindle` to mount.
-# 2. Convert and copy via Acervo's "Send to Kindle" UI.
+# 2. Convert and copy via Tomo's "Send to Kindle" UI.
 # 3. Wait for indexing — the cover may take 30s+ to appear.
-# 4. Eject from Acervo's UI (do not yank the cable).
+# 4. Eject from Tomo's UI (do not yank the cable).
 ```
 
 If a book fails to index, leave it on the Kindle and check
