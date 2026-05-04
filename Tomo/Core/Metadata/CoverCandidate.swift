@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// One cover hit returned by a search source (Open Library, Google Books,
 /// etc.). Source-agnostic — each provider precomputes thumbnail and full URLs
@@ -35,6 +36,29 @@ nonisolated enum CoverFetchError: LocalizedError {
 /// Pure HTTPS GET that returns the bytes at `url`. Shared by all cover
 /// sources for image downloads.
 nonisolated func fetchCoverBytes(from url: URL) async throws -> Data {
+    try await fetchData(from: url)
+}
+
+/// Shared HTTPS GET for cover-source JSON endpoints. Maps URL/HTTP/decode
+/// errors to `CoverFetchError`. The optional `sourceName` label only
+/// appears in the decode-failure log line.
+nonisolated func fetchJSON<T: Decodable>(
+    _ type: T.Type,
+    from url: URL,
+    sourceName: String
+) async throws -> T {
+    let data = try await fetchData(from: url)
+    do {
+        return try JSONDecoder().decode(T.self, from: data)
+    } catch {
+        metadataLogger.error(
+            "\(sourceName, privacy: .public) decode failed: \(error.localizedDescription, privacy: .public)"
+        )
+        throw CoverFetchError.decoding
+    }
+}
+
+private nonisolated func fetchData(from url: URL) async throws -> Data {
     do {
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {

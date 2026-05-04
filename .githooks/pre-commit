@@ -1,0 +1,26 @@
+#!/bin/sh
+# Lint Swift formatting on staged files.
+# Bypass (rare): git commit --no-verify
+
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.swift$' || true)
+[ -z "$staged" ] && exit 0
+
+fail=0
+for file in $staged; do
+    [ -f "$file" ] || continue
+    if ! xcrun swift-format lint --strict --configuration .swift-format "$file"; then
+        fail=1
+    fi
+done
+
+if [ "$fail" -ne 0 ]; then
+    cat <<EOF
+
+Swift formatting issues found. Fix with:
+    xcrun swift-format format -i -r --configuration .swift-format Tomo TomoTests
+
+EOF
+    exit 1
+fi

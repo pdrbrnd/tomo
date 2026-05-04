@@ -22,13 +22,7 @@ nonisolated enum EPUBText {
 }
 
 private nonisolated func stripMarkup(_ data: Data) -> String {
-    let doc: XMLDocument? = {
-        if let strict = try? XMLDocument(data: data, options: []) {
-            return strict
-        }
-        return try? XMLDocument(data: data, options: .documentTidyHTML)
-    }()
-    guard let doc, let root = doc.rootElement() else { return "" }
+    guard let doc = parseXHTMLOrTidy(data), let root = doc.rootElement() else { return "" }
     return collectText(from: root).joined(separator: " ")
 }
 

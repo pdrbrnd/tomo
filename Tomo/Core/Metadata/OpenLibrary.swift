@@ -26,30 +26,12 @@ nonisolated enum OpenLibrary {
 
         guard let url = components.url else { throw CoverFetchError.badResponse }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(from: url)
-        } catch let urlError as URLError {
-            throw CoverFetchError.network(urlError)
-        }
-
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw CoverFetchError.badResponse
-        }
-
-        let decoded: SearchResponse
-        do {
-            decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
-        } catch {
-            metadataLogger.error("OpenLibrary decode failed: \(error.localizedDescription, privacy: .public)")
-            throw CoverFetchError.decoding
-        }
+        let decoded = try await fetchJSON(SearchResponse.self, from: url, sourceName: "OpenLibrary")
 
         var seen: Set<Int> = []
         var results: [CoverCandidate] = []
         for doc in decoded.docs {
-            guard let coverID = doc.cover_i, !seen.contains(coverID) else { continue }
+            guard let coverID = doc.coverID, !seen.contains(coverID) else { continue }
             seen.insert(coverID)
             // Use the large size for thumbnails too — the medium variant is
             // ~180×270, which pixellates badly when scaled to retina cell
@@ -64,7 +46,7 @@ nonisolated enum OpenLibrary {
                 CoverCandidate(
                     id: "ol-\(coverID)",
                     title: doc.title ?? trimmedTitle,
-                    authors: doc.author_name ?? [],
+                    authors: doc.authorName ?? [],
                     thumbnailURL: large,
                     fullURL: large,
                     source: .openLibrary
@@ -79,9 +61,17 @@ nonisolated enum OpenLibrary {
 
     private struct Doc: Decodable, Sendable {
         let key: String?
-        let cover_i: Int?
+        let coverID: Int?
         let title: String?
-        let author_name: [String]?
-        let first_publish_year: Int?
+        let authorName: [String]?
+        let firstPublishYear: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case key
+            case coverID = "cover_i"
+            case title
+            case authorName = "author_name"
+            case firstPublishYear = "first_publish_year"
+        }
     }
 }

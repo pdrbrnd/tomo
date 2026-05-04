@@ -16,20 +16,16 @@ struct WindowCustomizer: NSViewRepresentable {
         Coordinator()
     }
 
-    /// `nonisolated` so `deinit` can clean up observers without crossing
-    /// actor boundaries — `NotificationCenter.removeObserver` is thread-
-    /// safe, and the Coordinator's other state is only ever touched by
-    /// SwiftUI on the main actor.
-    ///
-    /// `@unchecked Sendable` is safe because: (1) all property reads /
-    /// writes happen on MainActor (SwiftUI plumbing always invokes us
-    /// there), and (2) deinit only calls `NotificationCenter.removeObserver`,
-    /// which is itself thread-safe.
-    nonisolated final class Coordinator: @unchecked Sendable {
+    /// State holder for the AppKit bridge. `@MainActor` because every read /
+    /// write goes through SwiftUI's plumbing on the main actor; the `nonisolated
+    /// deinit` lets us tear down observers without hopping back even if the
+    /// last reference drops on a background thread (`NotificationCenter
+    /// .removeObserver` is itself thread-safe).
+    @MainActor final class Coordinator {
         var originalOrigins: [NSWindow.ButtonType: NSPoint] = [:]
-        var observers: [NSObjectProtocol] = []
+        nonisolated(unsafe) var observers: [NSObjectProtocol] = []
 
-        deinit {
+        nonisolated deinit {
             for token in observers {
                 NotificationCenter.default.removeObserver(token)
             }

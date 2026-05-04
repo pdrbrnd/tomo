@@ -2,23 +2,32 @@ import Foundation
 import GRDB
 import os
 
+enum BookIndexError: LocalizedError {
+    case open(underlying: Error)
+    case write(underlying: Error)
+    case read(underlying: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .open: "Couldn't open the library index."
+        case .write: "Couldn't save changes to the library index."
+        case .read: "Couldn't read from the library index."
+        }
+    }
+}
+
 actor BookIndex {
     private let pool: DatabasePool
 
-    init() throws {
-        let url = try Self.databaseURL()
-        indexLogger.info("opening index at \(url.path(percentEncoded: false), privacy: .public)")
-        let pool = try DatabasePool(path: url.path(percentEncoded: false))
-        try Self.migrator.migrate(pool)
-        self.pool = pool
-    }
-
-    static func open() -> BookIndex? {
+    init() throws(BookIndexError) {
         do {
-            return try BookIndex()
+            let url = try Self.databaseURL()
+            indexLogger.info("opening index at \(url.path(percentEncoded: false), privacy: .public)")
+            let pool = try DatabasePool(path: url.path(percentEncoded: false))
+            try Self.migrator.migrate(pool)
+            self.pool = pool
         } catch {
-            indexLogger.error("failed to open index: \(error.localizedDescription, privacy: .public)")
-            return nil
+            throw BookIndexError.open(underlying: error)
         }
     }
 
@@ -332,8 +341,9 @@ actor BookIndex {
     }
 
     private static func encodeJSON<T: Encodable>(_ value: T) throws -> String {
+        // UTF-8 decoding of JSONEncoder output cannot fail.
         let data = try JSONEncoder().encode(value)
-        return String(data: data, encoding: .utf8) ?? "null"
+        return String(decoding: data, as: UTF8.self)
     }
 
     private static func decodeJSON<T: Decodable>(_ string: String, as type: T.Type) -> T? {

@@ -20,15 +20,21 @@ extension EPUBMetadata {
         guard let title = epub.opf.title else {
             throw EPUBArchiveError.missingTitle
         }
-        let year = epub.opf.date.flatMap { Int($0.prefix(4)) }
         return EPUBMetadata(
             title: title,
             authors: epub.opf.authors,
             language: epub.opf.language,
-            year: year,
+            year: epub.opf.date.flatMap(yearFromEPUBDate),
             coverImage: readCover(from: epub)
         )
     }
+}
+
+private nonisolated func yearFromEPUBDate(_ raw: String) -> Int? {
+    if let date = parseEPUBDate(raw) {
+        return Calendar(identifier: .gregorian).component(.year, from: date)
+    }
+    return Int(raw.prefix(4))
 }
 
 private nonisolated func readCover(from epub: EPUBArchive) -> EPUBMetadata.CoverImage? {

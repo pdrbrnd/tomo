@@ -1,5 +1,6 @@
 import Foundation
 import ZIPFoundation
+import os
 
 /// Single-pass EPUB reader. Opens the archive, resolves the OPF, parses it,
 /// and exposes the parsed data plus convenience accessors for resource files.
@@ -44,16 +45,21 @@ nonisolated struct EPUBArchive {
     }
 
     /// Looks up a raw archive entry by its full ZIP path. Use for non-OPF
-    /// paths like `META-INF/encryption.xml`.
+    /// paths like `META-INF/encryption.xml`. Returns nil for both "entry
+    /// missing from archive" (silent — common; manifests over-list) and
+    /// "extraction failed" (logged at .error — corrupt archive).
     func data(at path: String) -> Data? {
         guard let entry = archive[path] else { return nil }
         var out = Data()
         do {
             _ = try archive.extract(entry) { out.append($0) }
+            return out
         } catch {
+            metadataLogger.error(
+                "extract failed at \(path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
             return nil
         }
-        return out
     }
 
     /// Resolves a relative href to an archive-absolute, normalised path.

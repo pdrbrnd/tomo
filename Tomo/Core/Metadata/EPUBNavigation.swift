@@ -32,11 +32,7 @@ nonisolated enum EPUBNavigation {
 
 private nonisolated func parseNav(_ navHref: String, in epub: EPUBArchive) -> [ParsedTOCEntry]? {
     guard let data = epub.data(forResourceHref: navHref) else { return nil }
-    let doc: XMLDocument? = {
-        if let strict = try? XMLDocument(data: data, options: []) { return strict }
-        return try? XMLDocument(data: data, options: .documentTidyHTML)
-    }()
-    guard let doc else { return nil }
+    guard let doc = parseXHTMLOrTidy(data) else { return nil }
 
     // Prefer <nav epub:type="toc">; some EPUBs omit the type attribute,
     // so fall back to the first <nav> in the document.

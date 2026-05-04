@@ -186,28 +186,6 @@ private nonisolated func rewriteAndCollectBodyImages(
     return (rewritten, bodyImages)
 }
 
-// MARK: - Date parsing
-
-/// EPUB `<dc:date>` ranges from "2023" to "2023-04-01T12:34:56Z" with
-/// many shapes in between. We try the most common formats and give up
-/// silently otherwise.
-private nonisolated func parseEPUBDate(_ raw: String) -> Date? {
-    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return nil }
-
-    let iso = ISO8601DateFormatter()
-    iso.formatOptions = [.withInternetDateTime]
-    if let date = iso.date(from: trimmed) { return date }
-    iso.formatOptions = [.withFullDate]
-    if let date = iso.date(from: trimmed) { return date }
-
-    let yearOnly = DateFormatter()
-    yearOnly.dateFormat = "yyyy"
-    yearOnly.locale = Locale(identifier: "en_US_POSIX")
-    yearOnly.timeZone = TimeZone(identifier: "UTC")
-    return yearOnly.date(from: trimmed)
-}
-
 // MARK: - Body inner HTML
 
 /// Extracts the inner HTML of the `<body>` element. Slices the raw bytes
@@ -224,14 +202,16 @@ private nonisolated func bodyInnerHTML(from data: Data) -> String? {
 private nonisolated func bodyInnerHTMLByByteSlice(_ data: Data) -> String? {
     let openMarker = Data("<body".utf8)
     let closeMarker = Data("</body".utf8)
+    let gtByte: UInt8 = 0x3E  // '>'
+    let slashByte: UInt8 = 0x2F  // '/'
 
     guard let openRange = data.firstRange(of: openMarker) else { return nil }
 
-    guard let gtIndex = data[openRange.upperBound...].firstIndex(of: 0x3E /* '>' */) else {
+    guard let gtIndex = data[openRange.upperBound...].firstIndex(of: gtByte) else {
         return nil
     }
 
-    if gtIndex > openRange.upperBound, data[gtIndex - 1] == 0x2F /* '/' */ {
+    if gtIndex > openRange.upperBound, data[gtIndex - 1] == slashByte {
         return ""
     }
 
@@ -244,13 +224,7 @@ private nonisolated func bodyInnerHTMLByByteSlice(_ data: Data) -> String? {
 }
 
 private nonisolated func bodyInnerHTMLByXMLDocument(_ data: Data) -> String? {
-    let doc: XMLDocument? = {
-        if let strict = try? XMLDocument(data: data, options: []) {
-            return strict
-        }
-        return try? XMLDocument(data: data, options: .documentTidyHTML)
-    }()
-    guard let doc, let root = doc.rootElement() else { return nil }
+    guard let doc = parseXHTMLOrTidy(data), let root = doc.rootElement() else { return nil }
     let bodies = (try? doc.nodes(forXPath: "//*[local-name()='body']")) ?? []
     let body = (bodies.first as? XMLElement) ?? findBody(in: root)
     guard let body else { return nil }

@@ -46,25 +46,7 @@ nonisolated enum GoogleBooks {
 
         guard let url = components.url else { throw CoverFetchError.badResponse }
 
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(from: url)
-        } catch let urlError as URLError {
-            throw CoverFetchError.network(urlError)
-        }
-
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw CoverFetchError.badResponse
-        }
-
-        let decoded: SearchResponse
-        do {
-            decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
-        } catch {
-            metadataLogger.error("GoogleBooks decode failed: \(error.localizedDescription, privacy: .public)")
-            throw CoverFetchError.decoding
-        }
+        let decoded = try await fetchJSON(SearchResponse.self, from: url, sourceName: "GoogleBooks")
 
         var seen: Set<String> = []
         var rawResults: [CoverCandidate] = []

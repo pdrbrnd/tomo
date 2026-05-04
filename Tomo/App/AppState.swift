@@ -48,8 +48,8 @@ final class AppState {
     /// (programmer errors) don't write here.
     var lastImportError: String?
 
-    private var mountObserver: NSObjectProtocol?
-    private var unmountObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var mountObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var unmountObserver: NSObjectProtocol?
     private var sendStateResetTask: Task<Void, Never>?
 
     init() {
@@ -59,6 +59,12 @@ final class AppState {
         self.device = detected
         self.deviceFilenames = detected?.filenames() ?? []
         startVolumeMonitoring()
+    }
+
+    nonisolated deinit {
+        let center = NSWorkspace.shared.notificationCenter
+        if let mountObserver { center.removeObserver(mountObserver) }
+        if let unmountObserver { center.removeObserver(unmountObserver) }
     }
 
     func sendToDevice(book: Book) async {
@@ -503,10 +509,13 @@ final class AppState {
 
     private func openIndexIfNeeded() async {
         guard index == nil else { return }
-        let opened = await Task.detached { BookIndex.open() }.value
-        self.index = opened
-        let bundledProfiles = self.profiles
-        self.importer = opened.map { LibraryImporter(index: $0, profiles: bundledProfiles) }
+        do {
+            let opened = try await Task.detached { try BookIndex() }.value
+            self.index = opened
+            self.importer = LibraryImporter(index: opened, profiles: self.profiles)
+        } catch {
+            indexLogger.error("failed to open index: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     #if DEBUG

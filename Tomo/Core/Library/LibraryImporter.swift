@@ -45,7 +45,7 @@ actor LibraryImporter {
 
         // Past this point, any failure must roll back the partially-created folder.
         do {
-            let coverFileName = writeCover(metadata.coverImage, in: bookFolder)
+            let coverFileName = writeCover(metadata.coverImage, for: metadata.title, in: bookFolder)
             let locale = resolveLocale(declared: metadata.language, file: destFile)
 
             let book = Book(
@@ -107,14 +107,21 @@ actor LibraryImporter {
     private static let classificationThreshold = 0.6
 }
 
-private nonisolated func writeCover(_ cover: EPUBMetadata.CoverImage?, in bookFolder: URL) -> String? {
+private nonisolated func writeCover(
+    _ cover: EPUBMetadata.CoverImage?,
+    for title: String,
+    in bookFolder: URL
+) -> String? {
     guard let cover else { return nil }
     let name = "cover.\(cover.pathExtension)"
     do {
         try cover.data.write(to: bookFolder.appending(component: name), options: .atomic)
         return name
     } catch {
-        libraryLogger.error("cover write failed: \(error.localizedDescription, privacy: .public)")
+        // Non-fatal: import proceeds with no cover, user can fetch one later.
+        libraryLogger.error(
+            "cover write failed for \(title, privacy: .public): \(error.localizedDescription, privacy: .public)"
+        )
         return nil
     }
 }
