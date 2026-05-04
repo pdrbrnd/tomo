@@ -23,9 +23,7 @@ struct LibraryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let inspectorWidth: CGFloat = 332
-    /// Concentric corners: window radius (30) − pane inset (8) = 22 (panel
-    /// radius). 8pt gap reads as a comfortable, intentional inset.
-    private static let paneInset: CGFloat = 8
+    private static let paneInset: CGFloat = Theme.Chrome.paneInset
     private static let inspectorPaneWidth: CGFloat = inspectorWidth + paneInset * 2
 
     private static let sidebarWidth: CGFloat = 232

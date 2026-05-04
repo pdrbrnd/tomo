@@ -153,6 +153,12 @@ actor BookIndex {
 
     func wipeAll() async throws {
         try await pool.write { db in
+            // Clear collections too — `book_collections` cascades, but the
+            // `collections` rows themselves would survive otherwise, leaving
+            // zombie collections after a rebuild and corrupting the
+            // case-insensitive name match in `getOrCreateCollection`.
+            try db.execute(sql: "DELETE FROM book_collections")
+            try db.execute(sql: "DELETE FROM collections")
             try db.execute(sql: "DELETE FROM books")
         }
     }

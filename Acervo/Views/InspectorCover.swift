@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import PhosphorSwift
 import UniformTypeIdentifiers
 
 /// Cover image inside the inspector with editing affordances.

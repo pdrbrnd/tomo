@@ -78,6 +78,40 @@ enum Theme {
         static let xxl: CGFloat = 32
         static let menuInset: CGFloat = 6
     }
+
+    /// Window-level chrome geometry. Pulled out of view files so the
+    /// concentric-circles math (window curve / panel curve / toggle
+    /// button at the corners) stays consistent — change one number here
+    /// and every dependent inset moves with it.
+    enum Chrome {
+        /// How far the traffic lights are nudged inward from their
+        /// default positions to align with the inner pane edges.
+        static let trafficLightInset: CGFloat = 10
+
+        /// Diameter of the bottom-floating toggle buttons (sidebar +
+        /// inspector). Combined with `toggleEdgeInset`, places each
+        /// button's center at (28, 28) from the corner — concentric
+        /// with `Radius.window` (28) and `Radius.panel + paneInset`.
+        static let toggleDiameter: CGFloat = 32
+
+        /// Padding from window edge to the toggle button. button center
+        /// = `toggleEdgeInset + toggleDiameter/2` = 30 → matches
+        /// `Radius.window` (30) for concentric circles at the corners.
+        static let toggleEdgeInset: CGFloat = 14
+
+        /// Gap between each pane and the window edge.
+        static let paneInset: CGFloat = 8
+
+        /// Top reserve inside a pane to clear the traffic lights at
+        /// rest. Traffic-light max y ≈ 14 + `trafficLightInset` + 14;
+        /// this value is that plus a small breathing room.
+        static let paneTopReserve: CGFloat = 48
+
+        /// Bottom reserve inside a pane to clear the floating bottom-
+        /// chrome toggle. ≈ `toggleEdgeInset + toggleDiameter` plus
+        /// breathing room.
+        static let paneBottomReserve: CGFloat = 64
+    }
 }
 
 func isDarkAppearance(_ appearance: NSAppearance) -> Bool {

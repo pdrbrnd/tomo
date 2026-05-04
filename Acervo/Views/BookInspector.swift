@@ -108,7 +108,7 @@ struct BookInspector: View {
 
                 multiActions(books: books)
                     .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.bottom, 64) // clear bottom-chrome toggle
+                    .padding(.bottom, Theme.Chrome.paneBottomReserve)
             }
             .frame(maxWidth: .infinity)
         }
@@ -157,7 +157,7 @@ struct BookInspector: View {
 
                 actions(for: book)
                     .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.bottom, 64) // clear bottom-chrome toggle
+                    .padding(.bottom, Theme.Chrome.paneBottomReserve)
             }
             .frame(maxWidth: .infinity)
         }
@@ -326,6 +326,11 @@ struct BookInspector: View {
         let bookID = book.id
         classifyingTask = Task { @MainActor in
             let result = await onClassify()
+            // Cancellation can have arrived during the await; check
+            // explicitly before applying state. (Same-book guard below
+            // covers a related case but doesn't see the new task that
+            // cancelled this one.)
+            guard !Task.isCancelled else { return }
             guard let currentID = self.book?.id, currentID == bookID else { return }
             guard let result else { return }
             transientClassification = result
@@ -578,11 +583,10 @@ private struct AddCollectionPopover: View {
                     .padding(.horizontal, Theme.Spacing.menuInset)
                     .onSubmit { commitCreate() }
                     .onAppear { newFocused = true }
-                    .onChange(of: newFocused) { _, focused in
-                        if !focused, !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            commitCreate()
-                        }
-                    }
+                // No commit-on-blur: when the popover dismisses by
+                // outside-click, the popover removal and focus-loss
+                // notification race; the typed name can be lost. Enter
+                // commits, click-away cancels.
             } else {
                 Button {
                     creating = true

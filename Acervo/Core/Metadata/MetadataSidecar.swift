@@ -35,6 +35,7 @@ nonisolated enum MetadataSidecar {
 }
 
 private nonisolated struct SidecarPayload: Codable {
+    var id: UUID
     var title: String
     var authors: [String]
     var year: Int?
@@ -46,6 +47,7 @@ private nonisolated struct SidecarPayload: Codable {
     var collections: [String]
 
     init(book: Book, collectionNames: [String]) {
+        self.id = book.id
         self.title = book.title
         self.authors = book.authors
         self.year = book.year
@@ -59,7 +61,7 @@ private nonisolated struct SidecarPayload: Codable {
 
     func book(in folder: URL) -> Book {
         Book(
-            id: UUID(),
+            id: id,
             title: title,
             authors: authors,
             year: year,
@@ -72,13 +74,18 @@ private nonisolated struct SidecarPayload: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case title, authors, year, locale, coverPath, dateAdded, fileName, origin, collections
+        case id, title, authors, year, locale, coverPath, dateAdded, fileName, origin, collections
         // Legacy keys (sidecars written before the unified-locale refactor):
         case languageCode, languageProfileId
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Old sidecars (pre-2026-05) didn't persist the book id. Mint one
+        // for them — it'll be stable from this read forward because the
+        // re-write will include it. Identity is only "lost" for the first
+        // post-upgrade rebuild.
+        self.id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         self.title = try c.decode(String.self, forKey: .title)
         self.authors = try c.decode([String].self, forKey: .authors)
         self.year = try c.decodeIfPresent(Int.self, forKey: .year)
@@ -100,6 +107,7 @@ private nonisolated struct SidecarPayload: Codable {
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
         try c.encode(title, forKey: .title)
         try c.encode(authors, forKey: .authors)
         try c.encodeIfPresent(year, forKey: .year)

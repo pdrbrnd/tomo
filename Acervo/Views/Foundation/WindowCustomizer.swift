@@ -10,15 +10,30 @@ import AppKit
 /// (so the rounded mask is filled), shadow toggle, and traffic-light
 /// repositioning (with re-apply on AppKit-driven state changes).
 struct WindowCustomizer: NSViewRepresentable {
-    var trafficLightInset: CGFloat = 10
+    var trafficLightInset: CGFloat = Theme.Chrome.trafficLightInset
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
-    final class Coordinator {
+    /// `nonisolated` so `deinit` can clean up observers without crossing
+    /// actor boundaries — `NotificationCenter.removeObserver` is thread-
+    /// safe, and the Coordinator's other state is only ever touched by
+    /// SwiftUI on the main actor.
+    ///
+    /// `@unchecked Sendable` is safe because: (1) all property reads /
+    /// writes happen on MainActor (SwiftUI plumbing always invokes us
+    /// there), and (2) deinit only calls `NotificationCenter.removeObserver`,
+    /// which is itself thread-safe.
+    nonisolated final class Coordinator: @unchecked Sendable {
         var originalOrigins: [NSWindow.ButtonType: NSPoint] = [:]
-        var hasRegisteredObservers = false
+        var observers: [NSObjectProtocol] = []
+
+        deinit {
+            for token in observers {
+                NotificationCenter.default.removeObserver(token)
+            }
+        }
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -88,8 +103,7 @@ struct WindowCustomizer: NSViewRepresentable {
     /// transitions (full-screen, mini, key changes). Observe those and
     /// re-apply our offsets so the buttons stay where we put them.
     private func registerWindowObservers(window: NSWindow, view: NSView, coordinator: Coordinator) {
-        guard !coordinator.hasRegisteredObservers else { return }
-        coordinator.hasRegisteredObservers = true
+        guard coordinator.observers.isEmpty else { return }
 
         let nc = NotificationCenter.default
         let names: [Notification.Name] = [
@@ -102,16 +116,20 @@ struct WindowCustomizer: NSViewRepresentable {
             NSWindow.didChangeBackingPropertiesNotification,
         ]
         for name in names {
-            nc.addObserver(
+            let token = nc.addObserver(
                 forName: name,
                 object: window,
                 queue: .main
             ) { [weak view] _ in
-                MainActor.assumeIsolated {
+                // Hop onto MainActor explicitly rather than asserting the
+                // queue's isolation — robust against later refactors that
+                // might change `queue:` or this struct's isolation.
+                Task { @MainActor in
                     guard let view else { return }
                     apply(to: view, coordinator: coordinator)
                 }
             }
+            coordinator.observers.append(token)
         }
     }
 }

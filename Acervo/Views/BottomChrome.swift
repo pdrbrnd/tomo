@@ -14,14 +14,13 @@ struct BottomChrome: View {
     let onToggleSidebar: () -> Void
     let onToggleInspector: () -> Void
 
-    /// 14pt padding from window edges + 16pt button radius (32pt diameter)
-    /// puts each toggle's center at (30, 30) from the corner — concentric
-    /// with the panel curve (also at (30, 30): paneInset 8 + R_panel 22)
-    /// and the window curve (R_window 30). Gap from button edge to panel
-    /// curve = R_panel − r_btn = 22 − 16 = 6pt of breathing room.
-    static var bottomPadding: CGFloat { 14 }
-    static var horizontalPadding: CGFloat { 14 }
-    static var buttonDiameter: CGFloat { 32 }
+    /// Concentric-circles math lives in `Theme.Chrome`. Toggle center =
+    /// `toggleEdgeInset + toggleDiameter/2` matches both the panel curve
+    /// center (`paneInset + Radius.panel`) and the window curve center
+    /// (`Radius.window`).
+    static var bottomPadding: CGFloat { Theme.Chrome.toggleEdgeInset }
+    static var horizontalPadding: CGFloat { Theme.Chrome.toggleEdgeInset }
+    static var buttonDiameter: CGFloat { Theme.Chrome.toggleDiameter }
 
     var body: some View {
         ZStack {

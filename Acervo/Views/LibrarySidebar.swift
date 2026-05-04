@@ -27,6 +27,10 @@ struct LibrarySidebar: View {
     /// Collection that just received a drop — gets a brief accent flash so
     /// the user sees the items landed somewhere even though we don't navigate.
     @State private var recentlyDroppedCollectionID: UUID?
+    /// Tracks the in-flight clear-flash task so a second drop on the same
+    /// row resets the timer instead of letting the first task race in and
+    /// clear the new flash early.
+    @State private var flashClearTask: Task<Void, Never>?
     @FocusState private var newCollectionFocused: Bool
     @FocusState private var renameFocused: Bool
 
@@ -40,11 +44,7 @@ struct LibrarySidebar: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                         allBooksSection
-                            // Clears the traffic lights — they sit at
-                            // ~y=24-38 from window top after the inset; the
-                            // sidebar pane starts at paneInset (8), so 48pt
-                            // here puts the first row well below them.
-                            .padding(.top, 48)
+                            .padding(.top, Theme.Chrome.paneTopReserve)
 
                         collectionsSection
 
@@ -53,9 +53,7 @@ struct LibrarySidebar: View {
                         }
                     }
                     .padding(.horizontal, Theme.Spacing.menuInset)
-                    // Reserve space at the bottom so content doesn't sit
-                    // under the floating bottom-chrome toggle button.
-                    .padding(.bottom, 64)
+                    .padding(.bottom, Theme.Chrome.paneBottomReserve)
                 }
             }
     }
@@ -157,12 +155,15 @@ struct LibrarySidebar: View {
     }
 
     private func flashRecentDrop(on collectionID: UUID) {
+        // Cancel any in-flight clear so a second drop in quick succession
+        // resets the timer rather than getting cleared early by the first
+        // task.
+        flashClearTask?.cancel()
         recentlyDroppedCollectionID = collectionID
-        Task { @MainActor in
+        flashClearTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(550))
-            if recentlyDroppedCollectionID == collectionID {
-                recentlyDroppedCollectionID = nil
-            }
+            guard !Task.isCancelled else { return }
+            recentlyDroppedCollectionID = nil
         }
     }
 
