@@ -1,59 +1,89 @@
 import SwiftUI
 
-/// Book card: cover at rest, backdrop-blurred dark overlay with title +
-/// author when selected. Pure presentation — the parent wires single/double
-/// tap and the right-click menu.
+/// Card body shared by library books and source-search results. Pure
+/// presentation — the parent wires gestures, drag, context menu, and
+/// selection state.
 ///
-/// Tri-state device relation for a card. Mutually exclusive: a book on
-/// the device gets the check badge, one missing gets the cover dim, and
-/// without a device neither applies.
+/// One body, two kinds of items:
+/// - `.book(_)` cards optionally render an on-device check badge and dim
+///   when the book is missing from the connected device.
+/// - `.source(_)` cards render an idle cloud-download badge at rest, and a
+///   floating state capsule (DeviceTile-shaped) while a download is in
+///   flight.
+///
+/// Selected overlay, scale-up, fallback typography are identical across
+/// both kinds.
 enum BookCardDeviceStatus {
     case noDevice
     case onDevice
     case missingFromDevice
 }
 
+/// Per-source-card download state. Drives the in-place capsule morph.
+/// Book cards always get `.idle`.
+enum CardDownloadState: Equatable {
+    case idle
+    case downloading(progress: Double?)
+    case importing
+    case added
+    case error
+}
+
 struct BookCard: View {
-    let book: Book
+    let item: LibraryItem
     let isSelected: Bool
-    /// See `BookCardDeviceStatus`. Dim is applied surgically to the cover —
-    /// `.opacity()` on the whole card breaks the selection overlay's
-    /// `.ultraThinMaterial` backdrop blur (the modifier rasterizes the
-    /// layer and kills Material's window-backdrop sampling).
     var deviceStatus: BookCardDeviceStatus = .noDevice
+    var downloadState: CardDownloadState = .idle
     let cardWidth: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var cardHeight: CGFloat { cardWidth * Theme.Library.bookHeightMultiplier }
     private var isDimmed: Bool { deviceStatus == .missingFromDevice }
-    private var showsOnDeviceBadge: Bool { deviceStatus == .onDevice }
+    private var showsOnDeviceBadge: Bool {
+        if case .book = item { return deviceStatus == .onDevice }
+        return false
+    }
+    private var showsIdleSourceBadge: Bool {
+        item.isSource && downloadState == .idle
+    }
+    private var coverDimmed: Bool {
+        if isDimmed { return true }
+        if item.isSource && downloadState != .idle { return true }
+        return false
+    }
 
     var body: some View {
         ZStack {
             LocalCoverImage(
-                url: book.coverURL,
-                fallbackTitle: book.title,
-                fallbackAuthor: book.authors.first
+                url: item.coverURL,
+                fallbackTitle: item.title,
+                fallbackAuthor: item.firstAuthor
             )
-            .opacity(isDimmed ? 0.45 : 1.0)
-            .animation(.easeInOut(duration: 0.18), value: isDimmed)
+            .opacity(coverDimmed ? 0.45 : 1.0)
+            .animation(.easeInOut(duration: 0.18), value: coverDimmed)
 
             if isSelected {
-                overlay
+                selectedOverlay
                     .transition(.opacity)
             }
 
+            // Top-left badge slot. Mutually exclusive: on-device check for
+            // library books on the device, or idle cloud for source items
+            // at rest.
             if showsOnDeviceBadge {
-                VStack {
-                    HStack {
-                        onDeviceBadge
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .padding(Theme.Spacing.sm + 2)
-                .transition(.opacity)
+                topLeadingBadge { onDeviceBadge }
+            } else if showsIdleSourceBadge {
+                topLeadingBadge { idleSourceBadge }
+            }
+
+            if item.isSource && downloadState != .idle {
+                stateCapsule
+                    .transition(
+                        .move(edge: .bottom)
+                            .combined(with: .opacity)
+                            .combined(with: .scale(scale: 0.92))
+                    )
             }
         }
         .frame(width: cardWidth, height: cardHeight)
@@ -62,9 +92,10 @@ struct BookCard: View {
             RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
-        .softShadow(elevated: isSelected)
+        .softShadow(elevated: isSelected || downloadState != .idle)
         .scaleEffect(scaleAmount)
         .animation(reduceMotion ? .easeOut(duration: 0.16) : .spring(duration: 0.32, bounce: 0.20), value: isSelected)
+        .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.32), value: downloadState)
     }
 
     private var scaleAmount: CGFloat {
@@ -76,28 +107,48 @@ struct BookCard: View {
     //
     // Backdrop-blur of the cover + dark tint. White typography always.
     // Readability is guaranteed by the tint, not by adapting to the cover.
-    private var overlay: some View {
+    // Author treatment matches the rest-state coverless fallback (uppercase,
+    // tracked, 10pt) so the card reads consistent across all four cells of
+    // the {cover, no-cover} × {selected, rest} matrix.
+    private var selectedOverlay: some View {
         ZStack(alignment: .bottomLeading) {
             Rectangle()
                 .fill(.ultraThinMaterial)
 
             Color.black.opacity(0.30)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(book.title)
-                    .font(.system(size: 13, weight: .semibold))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.white)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                Text(book.authors.first ?? "Unknown")
-                    .font(.system(size: cardWidth < 170 ? 11 : 12, weight: .regular))
+                Text(item.firstAuthor ?? "Unknown")
+                    .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(Color.white.opacity(0.78))
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .tracking(0.1)
+                    .textCase(.uppercase)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: - Badges
+
+    @ViewBuilder
+    private func topLeadingBadge<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack {
+            HStack {
+                content()
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(Theme.Spacing.sm + 2)
+        .transition(.opacity)
     }
 
     /// Subtle blurred check pill at the top-left of cards whose book is on
@@ -112,5 +163,86 @@ struct BookCard: View {
         }
         .frame(width: 18, height: 18)
         .help("On device")
+    }
+
+    /// Idle source-result badge: same pill shape as `onDeviceBadge` so the
+    /// visual language stays consistent — different glyph, same placement.
+    private var idleSourceBadge: some View {
+        ZStack {
+            Circle().fill(.ultraThinMaterial)
+            Circle().fill(Color.black.opacity(0.62))
+            Icon(symbol: "icloud.and.arrow.down", weight: .bold, size: 9)
+                .foregroundStyle(Color.white)
+        }
+        .frame(width: 18, height: 18)
+        .help("From source — double-click to download")
+    }
+
+    // MARK: - Source state capsule
+    //
+    // DeviceTile-shaped morph. Capsule body stays constant across states so
+    // SwiftUI can interpolate label, fill, and progress rather than swap.
+
+    private var stateCapsule: some View {
+        HStack(spacing: 6) {
+            Image(systemName: capsuleSymbol)
+                .font(.system(size: 10, weight: .semibold))
+            Text(capsuleLabel)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+                .contentTransition(.numericText())
+                .id(capsuleLabel)
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule(style: .continuous).fill(capsuleFill))
+        .overlay(progressBar)
+        .clipShape(Capsule(style: .continuous))
+        .softShadow(elevated: true)
+        .padding(.horizontal, Theme.Spacing.sm)
+    }
+
+    private var capsuleSymbol: String {
+        switch downloadState {
+        case .idle: return "icloud.and.arrow.down"
+        case .downloading: return "arrow.down"
+        case .importing: return "checkmark"
+        case .added: return "checkmark"
+        case .error: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var capsuleLabel: String {
+        switch downloadState {
+        case .idle: return ""
+        case .downloading(let progress):
+            if let progress { return "Downloading \(Int(progress * 100))%" }
+            return "Downloading"
+        case .importing: return "Adding to library"
+        case .added: return "Added to library"
+        case .error: return "Failed"
+        }
+    }
+
+    private var capsuleFill: Color {
+        switch downloadState {
+        case .idle, .downloading, .importing, .added:
+            return Color(white: 0.16, opacity: 0.92)
+        case .error:
+            return Color(red: 0.78, green: 0.22, blue: 0.18)
+        }
+    }
+
+    @ViewBuilder
+    private var progressBar: some View {
+        if case .downloading(let progress) = downloadState, let progress {
+            GeometryReader { geo in
+                Capsule(style: .continuous)
+                    .fill(Color.white.opacity(0.32))
+                    .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)), height: 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+        }
     }
 }

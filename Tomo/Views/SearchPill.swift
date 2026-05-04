@@ -6,25 +6,26 @@ import SwiftUI
 /// computed property doesn't reliably animate when the source is `@FocusState`.
 /// The fix: keep the width in `@State`, drive its updates with explicit
 /// `withAnimation` blocks via `onChange`.
-struct SearchPill: View {
+struct SearchPill<Trailing: View>: View {
     @Binding var text: String
     var placeholder: String = "Search"
+    @ViewBuilder var trailing: () -> Trailing
     @FocusState private var focused: Bool
 
     @State private var pillWidth: CGFloat = SearchPill.minCollapsedWidth
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let minCollapsedWidth: CGFloat = 132
-    private static let minExpandedWidth: CGFloat = 320
-    private static let maxWidth: CGFloat = 440
-    private static let clearButtonSlot: CGFloat = 18
+    private static var minCollapsedWidth: CGFloat { 132 }
+    private static var minExpandedWidth: CGFloat { 320 }
+    private static var maxWidth: CGFloat { 440 }
+    private static var trailingSlot: CGFloat { 22 }
 
     /// Approximate non-text chrome inside the pill: outer h-padding (13×2),
-    /// icon (13) + icon-to-text spacing (8), text-to-clear-button spacing (4),
-    /// clear-button slot (18), and a small visual buffer so descenders /
-    /// pixel-rounding don't clip.
-    private static let chromeWidth: CGFloat = 13 + 13 + 13 + 8 + 4 + 18 + 6
+    /// search icon (13) + icon-to-text spacing (8), text-to-trailing spacing (4),
+    /// trailing slot (22), and a small visual buffer so descenders / pixel-
+    /// rounding don't clip.
+    private static var chromeWidth: CGFloat { 13 + 13 + 13 + 8 + 4 + 22 + 6 }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -40,16 +41,8 @@ struct SearchPill: View {
                     .focused($focused)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button {
-                    text = ""
-                } label: {
-                    Icon(symbol: "xmark.circle.fill", weight: .regular, size: 13)
-                        .foregroundStyle(.primary.opacity(Theme.Text.placeholder))
-                }
-                .buttonStyle(.plain)
-                .frame(width: Self.clearButtonSlot)
-                .opacity(text.isEmpty ? 0 : 1)
-                .allowsHitTesting(!text.isEmpty)
+                trailing()
+                    .frame(width: Self.trailingSlot)
             }
         }
         .padding(.horizontal, 13)
@@ -105,5 +98,11 @@ struct SearchPill: View {
 
     private var prompt: Text {
         Text(placeholder).foregroundStyle(.primary.opacity(Theme.Text.placeholder))
+    }
+}
+
+extension SearchPill where Trailing == EmptyView {
+    init(text: Binding<String>, placeholder: String = "Search") {
+        self.init(text: text, placeholder: placeholder, trailing: { EmptyView() })
     }
 }

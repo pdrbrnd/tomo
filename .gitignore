@@ -19,6 +19,7 @@ Package.pins
 *.ipa
 *.dSYM.zip
 *.dSYM
+*.profraw
 
 # macOS
 .DS_Store

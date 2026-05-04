@@ -66,13 +66,12 @@ struct LocalCoverImage: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.primary.opacity(Theme.Text.primary))
-                    .lineLimit(5)
+                    .lineLimit(3)
                     .multilineTextAlignment(.leading)
-                Spacer(minLength: 4)
                 if let author, !author.isEmpty {
                     Text(author)
                         .font(.system(size: 10, weight: .regular))
@@ -82,7 +81,7 @@ struct LocalCoverImage: View {
                         .textCase(.uppercase)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             .padding(14)
         }
     }

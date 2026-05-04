@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */; };
+		EB5500A1FA6F644000455500 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = EB5500A2FA6F644000455500 /* SwiftSoup */; };
 		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -66,6 +67,7 @@
 			files = (
 				EBF14F862FA6F64400045D30 /* GRDB in Frameworks */,
 				EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */,
+				EB5500A1FA6F644000455500 /* SwiftSoup in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,6 +137,7 @@
 			packageProductDependencies = (
 				EBF14F852FA6F64400045D30 /* GRDB */,
 				EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */,
+				EB5500A2FA6F644000455500 /* SwiftSoup */,
 			);
 			productName = Tomo;
 			productReference = EB4E9A582FA6F23B0015E496 /* Tomo.app */;
@@ -171,6 +174,7 @@
 			packageReferences = (
 				EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */,
 				EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;
@@ -387,8 +391,9 @@
 		EB4E9A642FA6F23C0015E496 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Tomo.icon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -415,8 +420,9 @@
 		EB4E9A652FA6F23C0015E496 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Tomo.icon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -481,6 +487,14 @@
 				minimumVersion = 0.9.19;
 			};
 		};
+		EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.0;
+			};
+		};
 		EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
@@ -496,6 +510,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
 			productName = ZIPFoundation;
+		};
+		EB5500A2FA6F644000455500 /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
 		};
 		EBF14F852FA6F64400045D30 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;

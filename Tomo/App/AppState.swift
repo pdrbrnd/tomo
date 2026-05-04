@@ -68,9 +68,25 @@ final class AppState {
     /// (programmer errors) don't write here.
     var lastImportError: String?
 
+    /// Currently visible toast, or nil when nothing is shown. Replaced on
+    /// every `showToast` call (no stacking). Auto-dismissed by a task; the
+    /// task is cancelled when superseded by a new toast.
+    var currentToast: Toast?
+
+    /// User-loaded JS plugin used as a search source. Single-plugin in the
+    /// spike — multi-plugin merging is productionisation work. nil until
+    /// `loadPluginsIfPresent()` succeeds, or if no plugin file exists.
+    private(set) var pluginSource: PluginSource?
+
+    /// User-toggleable on/off for plugin search. Survives in-app for the
+    /// session; persistence is productionisation work. When false,
+    /// `schedulePluginSearch` returns nothing regardless of input.
+    var sourceSearchEnabled: Bool = true
+
     private nonisolated(unsafe) var mountTask: Task<Void, Never>?
     private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
     private var sendStateResetTask: Task<Void, Never>?
+    private var toastDismissTask: Task<Void, Never>?
 
     init() {
         self.libraryFolder = LibraryFolder.load()
@@ -79,6 +95,82 @@ final class AppState {
         self.device = detected
         self.deviceFilenames = detected?.filenames() ?? []
         startVolumeMonitoring()
+        loadPluginsIfPresent()
+    }
+
+    /// Loads whichever plugin is in the plugins directory (folder is source
+    /// of truth — rename or delete on disk takes effect on the next reload).
+    /// Silent no-op when empty. Surfaces a toast on parse / contract failures
+    /// so the user knows their plugin is broken without opening the console.
+    ///
+    /// Note: replacing `pluginSource` doesn't actively cancel in-flight
+    /// `fetch` Tasks owned by the prior `PluginHost`. Those Tasks hop back
+    /// to MainActor and call `resolve`/`reject` on a JSValue whose context
+    /// has been replaced — harmless (the resolved value is discarded by an
+    /// abandoned Promise) but worth knowing. Productionisation should track
+    /// in-flight tasks per host and cancel on reload.
+    private func loadPluginsIfPresent() {
+        do {
+            self.pluginSource = try PluginDirectory.loadFirstPlugin()
+            if let source = pluginSource {
+                pluginLogger.info("loaded plugin: \(source.displayName, privacy: .public)")
+            } else {
+                pluginLogger.info("no plugins in directory")
+            }
+        } catch {
+            self.pluginSource = nil
+            pluginLogger.error("plugin load failed: \(error.localizedDescription, privacy: .public)")
+            showToast(.error("Plugin failed to load: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Re-runs plugin loading. Call after the user adds or removes a plugin
+    /// file in the plugins directory.
+    func reloadPluginSource() {
+        loadPluginsIfPresent()
+    }
+
+    /// Copies a user-chosen `.js` into the plugins directory, preserving the
+    /// source filename. Existing files of the same name are overwritten.
+    /// Reloads after copying so the new plugin shows up immediately.
+    func installPlugin(from sourceURL: URL) async {
+        guard let dir = PluginDirectory.directoryURL() else {
+            showToast(.error("Couldn't locate plugins directory."))
+            return
+        }
+        let destURL = dir.appending(path: sourceURL.lastPathComponent)
+        do {
+            try await Task.detached {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                if FileManager.default.fileExists(atPath: destURL.path(percentEncoded: false)) {
+                    try FileManager.default.removeItem(at: destURL)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            }.value
+            reloadPluginSource()
+            if pluginSource != nil {
+                showToast(.info("Plugin installed."))
+            }
+        } catch {
+            pluginLogger.error("install plugin failed: \(error.localizedDescription, privacy: .public)")
+            showToast(.error("Couldn't install plugin: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Replaces any current toast with `toast` and schedules its auto-dismiss.
+    /// The previous dismiss task is cancelled so the new toast lives its full
+    /// duration, even if it arrives before the old one would have expired.
+    func showToast(_ toast: Toast) {
+        toastDismissTask?.cancel()
+        currentToast = toast
+        toastDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: toast.dismissAfter)
+            guard !Task.isCancelled else { return }
+            // Only clear if this toast is still the active one.
+            if self?.currentToast?.id == toast.id {
+                self?.currentToast = nil
+            }
+        }
     }
 
     nonisolated deinit {
@@ -207,25 +299,32 @@ final class AppState {
             .sorted()
     }
 
-    func importBook(from url: URL) async {
+    /// Imports a file into the library and returns the resulting `Book`.
+    /// Returns nil on failure (and writes a user-facing message to
+    /// `lastImportError`). Callers that don't need the imported book can
+    /// ignore the return value — the standard refresh still happens.
+    @discardableResult
+    func importBook(from url: URL) async -> Book? {
         await openIndexIfNeeded()
         guard let importer else {
             libraryLogger.error("import called without index/importer")
             lastImportError = "Library is not ready yet."
-            return
+            return nil
         }
         guard let libraryFolder else {
             libraryLogger.error("import called without library folder")
             lastImportError = "Choose a library folder before importing."
-            return
+            return nil
         }
         do {
-            _ = try await importer.importBook(from: url, into: libraryFolder)
+            let imported = try await importer.importBook(from: url, into: libraryFolder)
             await loadBooks()
+            return imported
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             lastImportError = "\(url.lastPathComponent): \(message)"
             libraryLogger.error("import failed: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 

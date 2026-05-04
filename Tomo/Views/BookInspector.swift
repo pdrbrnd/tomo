@@ -17,6 +17,14 @@ struct BookInspector: View {
     var multiBooks: [Book]? = nil
     var multiDeviceInfo: MultiDeviceInfo? = nil
 
+    /// When set, the inspector renders a source-result variant — same layout,
+    /// read-only rows, "Download to library" action. Takes precedence over
+    /// `book` and `multiBooks` when present.
+    var sourceResult: PluginResult? = nil
+    var sourceDownloadState: CardDownloadState = .idle
+    var sourcePluginName: String? = nil
+    var onSourceDownload: () -> Void = {}
+
     /// Profiles available to the locale Picker. Plain data, OK to pass in.
     let profiles: [LanguageProfile]
     /// Every collection in the library. Used to render chips for the
@@ -68,7 +76,9 @@ struct BookInspector: View {
         ZStack {
             Theme.panel
 
-            if let book {
+            if let sourceResult {
+                sourceContent(for: sourceResult)
+            } else if let book {
                 content(for: book)
             } else if let multiBooks, !multiBooks.isEmpty {
                 multiContent(books: multiBooks)
@@ -465,6 +475,117 @@ struct BookInspector: View {
         switch book.origin {
         case .manualImport: "Manual import"
         case .source(let id, _): "Source: \(id)"
+        }
+    }
+
+    // MARK: - Source mode
+
+    @ViewBuilder
+    private func sourceContent(for result: PluginResult) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                sourceCoverHeader(for: result)
+                    .padding(.top, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.xl)
+
+                sourceBibliographicSection(for: result)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.lg)
+
+                sourceMetadataSection(for: result)
+                    .padding(.horizontal, Theme.Spacing.xl)
+                    .padding(.bottom, Theme.Spacing.xl)
+
+                sourceActions(for: result)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.bottom, Theme.Chrome.paneBottomReserve)
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private func sourceCoverHeader(for result: PluginResult) -> some View {
+        HStack {
+            Spacer()
+            LocalCoverImage(
+                url: result.coverURL,
+                fallbackTitle: result.title,
+                fallbackAuthor: result.authors.first
+            )
+            .aspectRatio(1 / Theme.Library.bookHeightMultiplier, contentMode: .fit)
+            .frame(width: 160, height: 160 * Theme.Library.bookHeightMultiplier)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.hairline, lineWidth: 0.5)
+            )
+            .softShadow(elevated: false)
+            Spacer()
+        }
+    }
+
+    /// Same row treatment as `bibliographicSection(for:)` but read-only —
+    /// source results aren't editable. Visual parity is the goal so the
+    /// inspector reads as one consistent component, not two.
+    private func sourceBibliographicSection(for result: PluginResult) -> some View {
+        VStack(spacing: 0) {
+            metaRow("Title", value: result.title)
+            metaRow("Authors", value: result.authors.isEmpty ? "—" : result.authors.joined(separator: ", "))
+            metaRow("Year", value: result.year.map(String.init) ?? "—")
+        }
+    }
+
+    @ViewBuilder
+    private func sourceMetadataSection(for result: PluginResult) -> some View {
+        VStack(spacing: 0) {
+            metaRow("Format", value: result.format.uppercased())
+            if !result.language.isEmpty {
+                let display = Locale.current.localizedString(forIdentifier: result.language) ?? result.language
+                metaRow("Language", value: display)
+            }
+            if let bytes = result.sizeBytes {
+                metaRow("Size", value: ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+            }
+            metaRow("Source", value: sourcePluginName ?? "Plugin")
+        }
+    }
+
+    @ViewBuilder
+    private func sourceActions(for result: PluginResult) -> some View {
+        VStack(spacing: 0) {
+            Button(action: onSourceDownload) {
+                actionLabel(icon: sourceActionIcon, title: sourceActionTitle)
+            }
+            .disabled(sourceDownloadState != .idle && sourceDownloadState != .error)
+
+            if let url = result.detailURL {
+                Link(destination: url) {
+                    actionLabel(icon: "safari", title: "Open in browser")
+                }
+            }
+        }
+        .buttonStyle(MenuRowStyle())
+    }
+
+    private var sourceActionIcon: String {
+        switch sourceDownloadState {
+        case .idle: return "icloud.and.arrow.down"
+        case .downloading: return "arrow.down"
+        case .importing: return "checkmark"
+        case .added: return "checkmark"
+        case .error: return "exclamationmark.triangle"
+        }
+    }
+
+    private var sourceActionTitle: String {
+        switch sourceDownloadState {
+        case .idle: return "Download to library"
+        case .downloading(let progress):
+            if let progress { return "Downloading \(Int(progress * 100))%" }
+            return "Downloading…"
+        case .importing: return "Adding to library…"
+        case .added: return "Added to library"
+        case .error: return "Try again"
         }
     }
 }

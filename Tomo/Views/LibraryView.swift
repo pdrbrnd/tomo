@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import os
 
 struct LibraryView: View {
     let state: AppState
@@ -18,8 +19,29 @@ struct LibraryView: View {
     @State private var marquee: MarqueeState = .inactive
     @State private var cardFrames: [Book.ID: CGRect] = [:]
     @State private var contextMenuBookID: Book.ID?
+    @State private var contextMenuSourceID: String?
     @State private var dragEndPollingTask: Task<Void, Never>?
     @FocusState private var searchFocused: Bool
+
+    /// Results from the configured plugin source for the current `searchText`.
+    /// Populated by a debounced task; cleared when the search text is empty.
+    @State private var pluginResults: [PluginResult] = []
+    /// Cancellable handle to the in-flight plugin search. Replaced on every
+    /// keystroke so older queries can't clobber newer ones.
+    @State private var pluginSearchTask: Task<Void, Never>?
+    /// Per-source-card download state, keyed by `PluginResult.id`. Drives the
+    /// in-place card morph when downloading + importing.
+    @State private var downloadStates: [String: CardDownloadState] = [:]
+    /// Library books that just landed via a source download and whose source
+    /// card is still showing its "Added" celebration. The library card is
+    /// filtered out of the grid for the celebration window so the user sees
+    /// one card (the source celebrating) rather than two simultaneously.
+    @State private var celebratingBookIDs: Set<UUID> = []
+    /// Selection slot for source results — separate from `selectedBookIDs`
+    /// because source items aren't part of the multi-select model. Setting
+    /// this clears `selectedBookIDs` (and vice versa) so only one item can
+    /// be inspected at a time.
+    @State private var selectedSourceID: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -44,9 +66,38 @@ struct LibraryView: View {
             }
         }
         return bySearch.filter { book in
-            (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
+            !celebratingBookIDs.contains(book.id)
+                && (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
                 && (selectedLanguage.map { book.locale == $0 } ?? true)
         }
+    }
+
+    /// Library results first (full filter), then source results (dedup'd
+    /// against the library). Source results never appear without an active
+    /// search query.
+    private var gridItems: [LibraryItem] {
+        let libraryItems = filteredBooks.map(LibraryItem.book)
+        guard !searchText.isEmpty, !pluginResults.isEmpty else {
+            return libraryItems
+        }
+        // Dedup: case-insensitive title + first-author match against library.
+        // Productionisation will reuse the duplicate-detection logic from the
+        // import path; for the spike, exact-ish equality is enough.
+        let libraryFingerprints: Set<String> = Set(state.books.map(libraryFingerprint(forBook:)))
+        let sourceItems: [LibraryItem] =
+            pluginResults
+            .filter { !libraryFingerprints.contains(libraryFingerprint(forResult: $0)) }
+            .prefix(30)
+            .map(LibraryItem.source)
+        return libraryItems + sourceItems
+    }
+
+    private func libraryFingerprint(forBook book: Book) -> String {
+        "\(book.title.lowercased())|\(book.authors.first?.lowercased() ?? "")"
+    }
+
+    private func libraryFingerprint(forResult result: PluginResult) -> String {
+        "\(result.title.lowercased())|\(result.authors.first?.lowercased() ?? "")"
     }
 
     /// "Search" → "Search Sci-Fi" / "Search Portuguese" when a scope is
@@ -75,6 +126,13 @@ struct LibraryView: View {
     /// The book shown in the single-book inspector branch.
     private var inspectorBook: Book? {
         inspectorBooks.count == 1 ? inspectorBooks.first : nil
+    }
+
+    /// Source result currently selected, if any. Resolved against the live
+    /// `pluginResults` so a re-search invalidates a stale selection cleanly.
+    private var inspectedSource: PluginResult? {
+        guard let id = selectedSourceID else { return nil }
+        return pluginResults.first(where: { $0.id == id })
     }
 
     /// Selected books in the order they appear in the current filtered grid.
@@ -149,11 +207,13 @@ struct LibraryView: View {
             // sidebar / inspector are open. Tapping the same spot toggles
             // open/closed — no separate "close X" inside each pane.
             BottomChrome(
+                state: state,
                 searchText: $searchText,
                 searchFocused: $searchFocused,
                 searchPlaceholder: searchPlaceholder,
                 sidebarOpen: sidebarOpen,
                 inspectorOpen: inspectorOpen,
+                searchScopeRestricted: selectedCollection != nil || selectedLanguage != nil,
                 onToggleSidebar: { sidebarOpen.toggle() },
                 onToggleInspector: { inspectorOpen.toggle() }
             )
@@ -163,6 +223,18 @@ struct LibraryView: View {
         .animation(paneAnimation, value: inspectorOpen)
         .animation(paneAnimation, value: sidebarOpen)
         .task(id: state.libraryFolder) { await state.syncWithDisk() }
+        .onChange(of: searchText) { _, newValue in
+            schedulePluginSearch(for: newValue)
+        }
+        .onChange(of: state.sourceSearchEnabled) { _, enabled in
+            if !enabled {
+                pluginSearchTask?.cancel()
+                pluginResults = []
+                selectedSourceID = nil
+            } else {
+                schedulePluginSearch(for: searchText)
+            }
+        }
         .alert(
             "Couldn't import book",
             isPresented: Binding(
@@ -287,9 +359,28 @@ struct LibraryView: View {
                     .transition(.opacity)
             }
 
+            // Top-right toast surface. The bottom-center spot is occupied by
+            // the search chrome; top-right is empty and out of the device
+            // tile's lane (top-center).
+            if let toast = state.currentToast {
+                VStack {
+                    HStack {
+                        Spacer()
+                        ToastView(toast: toast)
+                            .padding(.top, Theme.Spacing.lg)
+                            .padding(.trailing, Theme.Spacing.lg)
+                    }
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .id(toast.id)
+            }
+
             keyboardShortcuts
         }
         .animation(deviceTileAnimation, value: state.device?.displayName)
+        .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.28), value: state.currentToast?.id)
         .dropDestination(for: URL.self) { urls, _ in
             let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
             guard !epubs.isEmpty else { return false }
@@ -312,9 +403,9 @@ struct LibraryView: View {
     private var gridArea: some View {
         if state.libraryFolder == nil {
             placeholderText("Choose a library folder to begin.")
-        } else if state.books.isEmpty {
+        } else if state.books.isEmpty && pluginResults.isEmpty {
             placeholderText("Drop a book to begin.")
-        } else if filteredBooks.isEmpty {
+        } else if gridItems.isEmpty {
             placeholderText(emptyFilteredMessage)
         } else {
             grid
@@ -369,8 +460,13 @@ struct LibraryView: View {
                         alignment: .center,
                         spacing: gutter
                     ) {
-                        ForEach(filteredBooks) { book in
-                            bookCell(book, cardWidth: cardWidth)
+                        ForEach(gridItems) { item in
+                            switch item {
+                            case .book(let book):
+                                bookCell(book, cardWidth: cardWidth)
+                            case .source(let result):
+                                sourceCell(result, cardWidth: cardWidth)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -399,10 +495,190 @@ struct LibraryView: View {
 
     private static let gridCoordinateSpace = "library.grid"
 
+    private func sourceCell(_ result: PluginResult, cardWidth: CGFloat) -> some View {
+        BookCard(
+            item: .source(result),
+            isSelected: selectedSourceID == result.id,
+            downloadState: downloadStates[result.id] ?? .idle,
+            cardWidth: cardWidth
+        )
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                let state = downloadStates[result.id] ?? .idle
+                guard state == .idle || state == .error else { return }
+                Task { await downloadAndImport(result) }
+            }
+        )
+        .simultaneousGesture(
+            TapGesture(count: 1).onEnded {
+                // Match library-book behaviour: click selects, ⌘I opens.
+                // Cross-clear the other selection so only one inspectable
+                // item exists at a time.
+                withAnimation(selectionAnimation) {
+                    selectedBookIDs = []
+                    selectionAnchor = nil
+                    selectedSourceID = result.id
+                }
+                searchFocused = false
+            }
+        )
+        .overlay(
+            RightClickCatcher {
+                selectedBookIDs = []
+                selectionAnchor = nil
+                selectedSourceID = result.id
+                contextMenuSourceID = result.id
+            }
+        )
+        .popover(
+            isPresented: Binding(
+                get: { contextMenuSourceID == result.id },
+                set: { if !$0 { contextMenuSourceID = nil } }
+            ),
+            arrowEdge: .top
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                sourceMenu(for: result) { contextMenuSourceID = nil }
+            }
+            .menuPopoverContainer()
+        }
+    }
+
+    @ViewBuilder
+    private func sourceMenu(for result: PluginResult, dismiss: @escaping () -> Void) -> some View {
+        bookMenuItem("Show Details", icon: "info.circle") {
+            selectedSourceID = result.id
+            inspectorOpen = true
+            dismiss()
+        }
+        let state = downloadStates[result.id] ?? .idle
+        bookMenuItem("Download to Library", icon: "icloud.and.arrow.down") {
+            if state == .idle || state == .error {
+                Task { await downloadAndImport(result) }
+            }
+            dismiss()
+        }
+        if let url = result.detailURL {
+            Link(destination: url) {
+                HStack(spacing: 9) {
+                    Icon(symbol: "safari", weight: .regular, size: 13)
+                        .frame(width: 14)
+                    Text("Open in Browser")
+                }
+            }
+        }
+    }
+
+    /// Debounces plugin search by 300ms. Cancels any in-flight task so older
+    /// queries can't overwrite newer results. Empty queries clear results.
+    private func schedulePluginSearch(for query: String) {
+        pluginSearchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            !trimmed.isEmpty,
+            state.sourceSearchEnabled,
+            let source = state.pluginSource
+        else {
+            pluginResults = []
+            return
+        }
+        pluginSearchTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            do {
+                let results = try await source.search(PluginQuery(text: trimmed))
+                guard !Task.isCancelled else { return }
+                pluginResults = results
+            } catch {
+                guard !Task.isCancelled else { return }
+                pluginResults = []
+                state.showToast(.error("Search failed: \(error.localizedDescription)"))
+                pluginLogger.error("plugin search failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    /// Click → inspect → download path and the double-click direct-download
+    /// path both funnel here. Drives the per-card morph and pipes the file
+    /// through the existing import pipeline so plugin-sourced books look
+    /// identical to manually-imported ones afterwards.
+    private func downloadAndImport(_ result: PluginResult) async {
+        guard let source = state.pluginSource else {
+            state.showToast(.error("No source plugin loaded."))
+            return
+        }
+        // Reentry guard. Two rapid double-clicks both schedule a Task before
+        // either runs — the gesture-side check can't see the in-flight state
+        // until the first Task's sync prefix executes. Without this guard,
+        // both Tasks proceed in parallel and the file gets written twice.
+        let existing = downloadStates[result.id] ?? .idle
+        guard existing == .idle || existing == .error else { return }
+        downloadStates[result.id] = .downloading(progress: nil)
+        defer {
+            // Idle reset happens in the success branch (after grid swaps the
+            // card for its library counterpart); error path resets here.
+        }
+        do {
+            let downloadURL = try await source.download(result)
+            let tempURL = try await fetchToTempFile(url: downloadURL, format: result.format)
+            downloadStates[result.id] = .importing
+            let importedBook = await state.importBook(from: tempURL)
+            try? FileManager.default.removeItem(at: tempURL)
+            // Hide the freshly-imported library card from the grid for the
+            // celebration window. Without this, the user sees the source
+            // card celebrating *and* the library card appearing in its
+            // sorted position simultaneously — reads like the source
+            // generated a separate book, not "the source became this
+            // library book". With it: source card celebrates alone, fades
+            // out, and the library card appears in its place once the
+            // window ends. One journey, not two.
+            if let importedBook {
+                celebratingBookIDs.insert(importedBook.id)
+            }
+            downloadStates[result.id] = .added
+            try? await Task.sleep(for: .milliseconds(700))
+            withAnimation(reduceMotion ? .easeOut(duration: 0.22) : .smooth(duration: 0.4)) {
+                pluginResults.removeAll { $0.id == result.id }
+                if let importedBook {
+                    celebratingBookIDs.remove(importedBook.id)
+                }
+            }
+            downloadStates[result.id] = nil
+            if selectedSourceID == result.id {
+                selectedSourceID = nil
+            }
+        } catch {
+            downloadStates[result.id] = .error
+            state.showToast(.error("Download failed: \(error.localizedDescription)"))
+            pluginLogger.error("download/import failed: \(error.localizedDescription, privacy: .public)")
+            // Reset to idle after a brief error display.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                if downloadStates[result.id] == .error {
+                    downloadStates[result.id] = nil
+                }
+            }
+        }
+    }
+
+    private func fetchToTempFile(url: URL, format: String) async throws -> URL {
+        let (tempLocation, response) = try await URLSession.shared.download(from: url)
+        defer { try? FileManager.default.removeItem(at: tempLocation) }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        let ext = format.lowercased().isEmpty ? "epub" : format.lowercased()
+        let dest = FileManager.default.temporaryDirectory
+            .appending(path: "tomo-source-\(UUID().uuidString.prefix(8)).\(ext)")
+        try FileManager.default.moveItem(at: tempLocation, to: dest)
+        return dest
+    }
+
     private func bookCell(_ book: Book, cardWidth: CGFloat) -> some View {
         let isSelected = selectedBookIDs.contains(book.id)
         return BookCard(
-            book: book,
+            item: .book(book),
             isSelected: isSelected,
             deviceStatus: deviceStatus(for: book),
             cardWidth: cardWidth
@@ -518,6 +794,7 @@ struct LibraryView: View {
         withAnimation(selectionAnimation) {
             selectedBookIDs = [book.id]
             selectionAnchor = book.id
+            selectedSourceID = nil
             searchFocused = false
         }
     }
@@ -531,6 +808,7 @@ struct LibraryView: View {
                 selectedBookIDs.insert(book.id)
                 selectionAnchor = book.id
             }
+            selectedSourceID = nil
             searchFocused = false
         }
     }
@@ -549,6 +827,7 @@ struct LibraryView: View {
             selectedBookIDs = Set(books[lower...upper].map(\.id))
             // Keep anchor stable so subsequent shift+clicks pivot from
             // the same starting point — matches Finder.
+            selectedSourceID = nil
             searchFocused = false
         }
     }
@@ -557,6 +836,7 @@ struct LibraryView: View {
         withAnimation(selectionAnimation) {
             selectedBookIDs.removeAll()
             selectionAnchor = nil
+            selectedSourceID = nil
         }
     }
 
@@ -798,6 +1078,14 @@ struct LibraryView: View {
             device: inspectorBook.flatMap { deviceContext(for: $0) },
             multiBooks: inspectorBooks.count > 1 ? inspectorBooks : nil,
             multiDeviceInfo: inspectorBooks.count > 1 ? multiDeviceInfo(for: inspectorBooks) : nil,
+            sourceResult: inspectedSource,
+            sourceDownloadState: inspectedSource.flatMap { downloadStates[$0.id] } ?? .idle,
+            sourcePluginName: state.pluginSource?.displayName,
+            onSourceDownload: {
+                if let source = inspectedSource {
+                    Task { await downloadAndImport(source) }
+                }
+            },
             profiles: state.profiles,
             allCollections: state.collections,
             onUpdate: { updated in

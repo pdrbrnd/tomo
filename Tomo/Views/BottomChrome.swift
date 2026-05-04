@@ -6,11 +6,16 @@ import SwiftUI
 /// stay in the same screen position. Tap the same spot to open *or* close
 /// each pane; the icon's filled state reflects whether the pane is open.
 struct BottomChrome: View {
+    let state: AppState
     @Binding var searchText: String
     var searchFocused: FocusState<Bool>.Binding
     let searchPlaceholder: String
     let sidebarOpen: Bool
     let inspectorOpen: Bool
+    /// True when a collection or language filter is active — search is
+    /// scoped to the library only, source plugins don't apply, so the
+    /// trailing settings affordance hides.
+    let searchScopeRestricted: Bool
     let onToggleSidebar: () -> Void
     let onToggleInspector: () -> Void
 
@@ -26,8 +31,17 @@ struct BottomChrome: View {
         ZStack {
             HStack {
                 Spacer()
-                SearchPill(text: $searchText, placeholder: searchPlaceholder)
-                    .focused(searchFocused)
+                SearchPill(text: $searchText, placeholder: searchPlaceholder) {
+                    if searchScopeRestricted {
+                        // Reserved-but-empty slot — keeps pill width math
+                        // constant across scope changes so the pill doesn't
+                        // shrink jarringly when entering / leaving a scope.
+                        Color.clear
+                    } else {
+                        SourcesSettingsButton(state: state)
+                    }
+                }
+                .focused(searchFocused)
                 Spacer()
             }
 
