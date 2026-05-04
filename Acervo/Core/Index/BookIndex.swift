@@ -48,13 +48,117 @@ actor BookIndex {
 
     func all() async throws -> [Book] {
         try await pool.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT * FROM books ORDER BY date_added DESC")
-            return rows.compactMap { Self.book(from: $0) }
+            let bookRows = try Row.fetchAll(db, sql: "SELECT * FROM books ORDER BY date_added DESC")
+            let memberships = try Row.fetchAll(db, sql: "SELECT book_id, collection_id FROM book_collections")
+            var byBook: [String: Set<UUID>] = [:]
+            for row in memberships {
+                guard
+                    let bookID: String = row["book_id"],
+                    let collIDStr: String = row["collection_id"],
+                    let collID = UUID(uuidString: collIDStr)
+                else { continue }
+                byBook[bookID, default: []].insert(collID)
+            }
+            return bookRows.compactMap { row in
+                guard var book = Self.book(from: row) else { return nil }
+                book.collectionIDs = byBook[book.id.uuidString] ?? []
+                return book
+            }
+        }
+    }
+
+    // MARK: - Collections
+
+    func collections() async throws -> [Collection] {
+        try await pool.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT * FROM collections ORDER BY sort_order ASC, date_created ASC")
+            return rows.compactMap { Self.collection(from: $0) }
+        }
+    }
+
+    /// Returns the existing collection with `name` (case-insensitive), or
+    /// creates one if none exists. Used by rebuild-from-sidecars.
+    func getOrCreateCollection(named name: String) async throws -> Collection {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await pool.write { db in
+            if let row = try Row.fetchOne(
+                db,
+                sql: "SELECT * FROM collections WHERE LOWER(name) = LOWER(?) LIMIT 1",
+                arguments: [trimmed]
+            ),
+               let existing = Self.collection(from: row) {
+                return existing
+            }
+            let nextSort = try Int.fetchOne(db, sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM collections") ?? 0
+            let collection = Collection(
+                id: UUID(),
+                name: trimmed,
+                sortOrder: nextSort,
+                dateCreated: Date()
+            )
+            try Self.insertCollection(collection, into: db)
+            return collection
+        }
+    }
+
+    func createCollection(named name: String) async throws -> Collection {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await pool.write { db in
+            let nextSort = try Int.fetchOne(db, sql: "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM collections") ?? 0
+            let collection = Collection(
+                id: UUID(),
+                name: trimmed,
+                sortOrder: nextSort,
+                dateCreated: Date()
+            )
+            try Self.insertCollection(collection, into: db)
+            return collection
+        }
+    }
+
+    func renameCollection(id: UUID, to newName: String) async throws {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await pool.write { db in
+            try db.execute(
+                sql: "UPDATE collections SET name = ? WHERE id = ?",
+                arguments: [trimmed, id.uuidString]
+            )
+        }
+    }
+
+    func deleteCollection(id: UUID) async throws {
+        try await pool.write { db in
+            try db.execute(sql: "DELETE FROM collections WHERE id = ?", arguments: [id.uuidString])
+            // book_collections rows cascade.
+        }
+    }
+
+    func addBook(_ bookID: UUID, to collectionID: UUID) async throws {
+        try await pool.write { db in
+            try db.execute(
+                sql: "INSERT OR IGNORE INTO book_collections (book_id, collection_id) VALUES (?, ?)",
+                arguments: [bookID.uuidString, collectionID.uuidString]
+            )
+        }
+    }
+
+    func removeBook(_ bookID: UUID, from collectionID: UUID) async throws {
+        try await pool.write { db in
+            try db.execute(
+                sql: "DELETE FROM book_collections WHERE book_id = ? AND collection_id = ?",
+                arguments: [bookID.uuidString, collectionID.uuidString]
+            )
         }
     }
 
     func wipeAll() async throws {
         try await pool.write { db in
+            // Clear collections too — `book_collections` cascades, but the
+            // `collections` rows themselves would survive otherwise, leaving
+            // zombie collections after a rebuild and corrupting the
+            // case-insensitive name match in `getOrCreateCollection`.
+            try db.execute(sql: "DELETE FROM book_collections")
+            try db.execute(sql: "DELETE FROM collections")
             try db.execute(sql: "DELETE FROM books")
         }
     }
@@ -162,7 +266,62 @@ actor BookIndex {
             }
         }
 
+        m.registerMigration("v5_collections") { db in
+            try db.create(table: "collections") { t in
+                t.primaryKey("id", .text)
+                t.column("name", .text).notNull()
+                t.column("sort_order", .integer).notNull()
+                t.column("date_created", .datetime).notNull()
+            }
+            try db.create(table: "book_collections") { t in
+                t.column("book_id", .text)
+                    .notNull()
+                    .references("books", column: "id", onDelete: .cascade)
+                t.column("collection_id", .text)
+                    .notNull()
+                    .references("collections", column: "id", onDelete: .cascade)
+                t.primaryKey(["book_id", "collection_id"])
+            }
+            try db.create(
+                index: "idx_book_collections_collection",
+                on: "book_collections",
+                columns: ["collection_id"]
+            )
+        }
+
         return m
+    }
+
+    private static func insertCollection(_ collection: Collection, into db: Database) throws {
+        try db.execute(
+            sql: """
+            INSERT INTO collections (id, name, sort_order, date_created)
+            VALUES (?, ?, ?, ?)
+            """,
+            arguments: [
+                collection.id.uuidString,
+                collection.name,
+                collection.sortOrder,
+                collection.dateCreated,
+            ]
+        )
+    }
+
+    private static func collection(from row: Row) -> Collection? {
+        let idString: String? = row["id"]
+        let name: String? = row["name"]
+        let sortOrder: Int? = row["sort_order"]
+        let dateCreated: Date? = row["date_created"]
+
+        guard
+            let idString,
+            let id = UUID(uuidString: idString),
+            let name,
+            let sortOrder,
+            let dateCreated
+        else { return nil }
+
+        return Collection(id: id, name: name, sortOrder: sortOrder, dateCreated: dateCreated)
     }
 
     private static func encodeJSON<T: Encodable>(_ value: T) throws -> String {
