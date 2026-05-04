@@ -139,6 +139,22 @@ struct LibraryView: View {
                     .zIndex(1)
             }
         }
+        .overlay(alignment: .topLeading) {
+            // Library folder pill — replaces the old Settings pane. Sits
+            // immediately to the right of the traffic lights at the same
+            // vertical center; floats over both panes so it stays put when
+            // the sidebar opens. Vertical center matches traffic-light
+            // center: lights are nudged down by `trafficLightInset` (10)
+            // from their default ~14pt; their visual center is therefore
+            // ~24pt from the window top. The pill is ~24pt tall, so
+            // top padding ≈ 24 − 12 ≈ 12pt aligns the centers.
+            LibraryFolderPicker(
+                folder: state.libraryFolder,
+                setFolder: { state.libraryFolder = $0 }
+            )
+            .padding(.leading, 90)
+            .padding(.top, 14)
+        }
         .ignoresSafeArea(.all)
         .overlay(alignment: .bottom) {
             // Window-level chrome floats above the panes so the toggle
@@ -297,7 +313,7 @@ struct LibraryView: View {
     @ViewBuilder
     private var gridArea: some View {
         if state.libraryFolder == nil {
-            placeholderText("Open Settings (⌘,) to choose a library folder.")
+            placeholderText("Choose a library folder to begin.")
         } else if state.books.isEmpty {
             placeholderText("Drop a book to begin.")
         } else if filteredBooks.isEmpty {

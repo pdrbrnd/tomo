@@ -171,7 +171,6 @@
 			packageReferences = (
 				EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */,
 				EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
-				EB0FBF412FA7C4D900EEC87C /* XCRemoteSwiftPackageReference "swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;

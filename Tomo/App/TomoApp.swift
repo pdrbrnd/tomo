@@ -33,9 +33,5 @@ struct TomoApp: App {
         }
       #endif
     }
-
-    Settings {
-      SettingsView(state: state)
-    }
   }
 }
