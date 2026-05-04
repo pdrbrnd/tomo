@@ -1,5 +1,4 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Search pill that grows on focus from a compact resting state.
 ///
@@ -29,7 +28,7 @@ struct SearchPill: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Icon(symbol: .magnifyingGlass, weight: .regular, size: 13)
+            Icon(symbol: "magnifyingglass", weight: .regular, size: 13)
                 .foregroundStyle(.primary.opacity(0.55))
 
             // Width-flexible cluster — always mounted so focus binds correctly.
@@ -44,7 +43,7 @@ struct SearchPill: View {
                 Button {
                     text = ""
                 } label: {
-                    Icon(symbol: .xCircle, weight: .fill, size: 13)
+                    Icon(symbol: "xmark.circle.fill", weight: .regular, size: 13)
                         .foregroundStyle(.primary.opacity(0.42))
                 }
                 .buttonStyle(.plain)

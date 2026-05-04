@@ -452,4 +452,45 @@ final class AppState {
         let bundledProfiles = self.profiles
         self.importer = opened.map { LibraryImporter(index: $0, profiles: bundledProfiles) }
     }
+
+    #if DEBUG
+    /// Toggles a `MockDevice` so the device tile UI can be exercised
+    /// without an e-reader plugged in. Wired to the Debug menu in
+    /// `AcervoApp`. The mock pretends a few books are already on the
+    /// device too, so the on-device check badge / dim states render.
+    func toggleFakeDevice() {
+        if device is MockDevice {
+            device = nil
+            deviceFilenames = []
+            deviceSendState = .idle
+        } else {
+            // Pretend the first ~half of the library is already on the
+            // device so card states (check badge + dimmed missing) read
+            // visibly differently.
+            let half = books.prefix(books.count / 2)
+            let pretendOnDevice = Set(half.map { fatSafeFilename($0.fileURL.lastPathComponent) })
+            let mock = MockDevice(mockFilenames: pretendOnDevice)
+            device = mock
+            deviceFilenames = pretendOnDevice
+        }
+    }
+
+    /// Cycles the device send state through its non-idle visuals so the
+    /// device tile's morph (sending → success → error) can be inspected
+    /// without actually copying files.
+    func cycleFakeSendState() {
+        switch deviceSendState {
+        case .idle:
+            deviceSendState = .sending(completed: 1, total: 3)
+        case .sending(let completed, let total) where completed < total:
+            deviceSendState = .sending(completed: completed + 1, total: total)
+        case .sending:
+            deviceSendState = .success(count: 3)
+        case .success:
+            deviceSendState = .error("Test error")
+        case .error:
+            deviceSendState = .idle
+        }
+    }
+    #endif
 }

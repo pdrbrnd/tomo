@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import PhosphorSwift
 
 /// Inspector that presents a single book and exposes actions as callbacks.
 ///
@@ -121,16 +120,16 @@ struct BookInspector: View {
             if let info = multiDeviceInfo, info.sendableCount > 0 {
                 Button(action: onSendMultiToDevice) {
                     actionLabel(
-                        icon: .deviceTablet,
+                        icon: "ipad",
                         title: "Send \(info.sendableCount) to \(info.displayName)"
                     )
                 }
             }
             ShareLink(items: books.map(\.fileURL)) {
-                actionLabel(icon: .share, title: "Share \(books.count)…")
+                actionLabel(icon: "square.and.arrow.up", title: "Share \(books.count)…")
             }
             Button(role: .destructive, action: onRequestDeleteMulti) {
-                actionLabel(icon: .trash, title: "Move \(books.count) to Trash…")
+                actionLabel(icon: "trash", title: "Move \(books.count) to Trash…")
             }
         }
         .buttonStyle(MenuRowStyle())
@@ -422,7 +421,7 @@ struct BookInspector: View {
             if let device, device.canSend {
                 Button(action: onSendToDevice) {
                     actionLabel(
-                        icon: device.isOnDevice ? .check : .deviceTablet,
+                        icon: device.isOnDevice ? "checkmark" : "ipad",
                         title: device.isOnDevice ? "On \(device.displayName)" : "Send to \(device.displayName)"
                     )
                 }
@@ -430,19 +429,19 @@ struct BookInspector: View {
                 .opacity(device.isOnDevice ? 0.5 : 1.0)
             }
             Button(action: onShowInFinder) {
-                actionLabel(icon: .folderOpen, title: "Show in Finder")
+                actionLabel(icon: "folder", title: "Show in Finder")
             }
             ShareLink(item: book.fileURL) {
-                actionLabel(icon: .share, title: "Share…")
+                actionLabel(icon: "square.and.arrow.up", title: "Share…")
             }
             Button(role: .destructive, action: onRequestDelete) {
-                actionLabel(icon: .trash, title: "Move to Trash…")
+                actionLabel(icon: "trash", title: "Move to Trash…")
             }
         }
         .buttonStyle(MenuRowStyle())
     }
 
-    private func actionLabel(icon: Ph, title: String) -> some View {
+    private func actionLabel(icon: String, title: String) -> some View {
         HStack(spacing: 9) {
             Icon(symbol: icon, weight: .regular, size: 13)
                 .frame(width: 14)
@@ -476,7 +475,7 @@ private struct CollectionChip: View {
                 .lineLimit(1)
 
             Button(action: onRemove) {
-                Icon(symbol: .x, weight: .bold, size: 9)
+                Icon(symbol: "xmark", weight: .bold, size: 9)
                     .foregroundStyle(.primary.opacity(hovered ? 0.85 : 0.4))
             }
             .buttonStyle(.plain)
@@ -506,7 +505,7 @@ private struct AddCollectionChip: View {
             showPopover = true
         } label: {
             HStack(spacing: 4) {
-                Icon(symbol: .plus, weight: .bold, size: 9)
+                Icon(symbol: "plus", weight: .bold, size: 9)
                     .foregroundStyle(.primary.opacity(0.55))
                 Text("Add")
                     .font(.system(size: 11, weight: .regular))
@@ -589,7 +588,7 @@ private struct AddCollectionPopover: View {
                     creating = true
                 } label: {
                     HStack(spacing: 9) {
-                        Icon(symbol: .plus, weight: .regular, size: 11)
+                        Icon(symbol: "plus", weight: .regular, size: 11)
                             .frame(width: 14)
                         Text("New Collection…")
                     }

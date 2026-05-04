@@ -1,25 +1,19 @@
 import SwiftUI
-import PhosphorSwift
 
-/// Thin wrapper around Phosphor icons.
+/// Thin wrapper around SF Symbols.
 ///
-/// Phosphor's asset catalog doesn't set `preserves-vector-representation`, so
-/// Xcode rasterizes the SVGs at intrinsic 256pt size at build. Displaying at
-/// small sizes (12-14pt) means a heavy downscale, which produces a soft /
-/// pixelated edge with the default interpolation. `.interpolation(.high)`
-/// nudges the resampler to a smoother kernel and reads cleaner at small
-/// sizes — close enough to crisp without patching the dependency.
+/// Centralises the size + weight treatment so every icon in the app stays
+/// visually consistent. SF Symbols are vectors at every render, so there's
+/// no rasterisation softness at small sizes — that's the reason this
+/// replaced the earlier Phosphor-based wrapper.
 struct Icon: View {
-    let symbol: Ph
-    var weight: Ph.IconWeight = .regular
+    let symbol: String
+    var weight: Font.Weight = .regular
     var size: CGFloat = 14
 
     var body: some View {
-        symbol.weight(weight)
-            .resizable()
-            .interpolation(.high)
-            .antialiased(true)
-            .aspectRatio(contentMode: .fit)
+        Image(systemName: symbol)
+            .font(.system(size: size, weight: weight))
             .frame(width: size, height: size)
     }
 }

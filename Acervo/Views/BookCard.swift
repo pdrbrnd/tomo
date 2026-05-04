@@ -1,5 +1,4 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Book card: cover at rest, backdrop-blurred dark overlay with title +
 /// author when selected. Pure presentation — the parent wires single/double
@@ -108,7 +107,7 @@ struct BookCard: View {
         ZStack {
             Circle().fill(.ultraThinMaterial)
             Circle().fill(Color.black.opacity(0.62))
-            Icon(symbol: .check, weight: .bold, size: 9)
+            Icon(symbol: "checkmark", weight: .bold, size: 9)
                 .foregroundStyle(Color.white)
         }
         .frame(width: 18, height: 18)

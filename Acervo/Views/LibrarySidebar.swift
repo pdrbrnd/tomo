@@ -1,5 +1,4 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Left-edge floating pane: organisation and filtering. Same shape language
 /// as the right inspector. Holds three sections:
@@ -107,7 +106,7 @@ struct LibrarySidebar: View {
         Button {
             beginCreate()
         } label: {
-            Icon(symbol: .plus, weight: .bold, size: 11)
+            Icon(symbol: "plus", weight: .bold, size: 11)
                 .foregroundStyle(.primary.opacity(0.55))
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())

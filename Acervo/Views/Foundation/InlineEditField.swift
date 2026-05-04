@@ -1,5 +1,4 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Hover-pencil text field — display mode shows the value with a pencil
 /// affordance on hover; click to enter edit mode. Edit mode commits on
@@ -36,7 +35,7 @@ struct InlineEditField: View {
                 .frame(maxWidth: .infinity, alignment: alignment)
 
             if hovered {
-                Icon(symbol: .pencilSimple, weight: .regular, size: 11)
+                Icon(symbol: "pencil", weight: .regular, size: 11)
                     .foregroundStyle(.primary.opacity(0.42))
                     .transition(.opacity)
             }

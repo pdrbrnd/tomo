@@ -18,6 +18,21 @@ struct AcervoApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1200, height: 820)
+        .commands {
+            #if DEBUG
+            CommandMenu("Debug") {
+                Button("Toggle Fake Device") {
+                    state.toggleFakeDevice()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .control])
+
+                Button("Cycle Fake Send State") {
+                    state.cycleFakeSendState()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .control, .shift])
+            }
+            #endif
+        }
 
         Settings {
             SettingsView(state: state)

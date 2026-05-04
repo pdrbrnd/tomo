@@ -1,5 +1,4 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Bottom-edge floating row: sidebar toggle (leading) + search pill (centered)
 /// + inspector toggle (trailing). Floats over the entire window — including
@@ -55,7 +54,7 @@ struct BottomChrome: View {
 
     private var sidebarButton: some View {
         Button(action: onToggleSidebar) {
-            chromeButtonLabel(symbol: .sidebar, active: sidebarOpen)
+            chromeButtonLabel(symbol: "sidebar.left", active: sidebarOpen)
         }
         .buttonStyle(.plain)
         .help(sidebarOpen ? "Hide sidebar (⌃⌘S)" : "Show sidebar (⌃⌘S)")
@@ -63,17 +62,19 @@ struct BottomChrome: View {
 
     private var inspectorButton: some View {
         Button(action: onToggleInspector) {
-            chromeButtonLabel(symbol: .squareHalf, active: inspectorOpen)
+            chromeButtonLabel(symbol: "sidebar.right", active: inspectorOpen)
         }
         .buttonStyle(.plain)
         .help(inspectorOpen ? "Hide details (⌘I)" : "Show details (⌘I)")
     }
 
-    private func chromeButtonLabel(symbol: Ph, active: Bool) -> some View {
+    private func chromeButtonLabel(symbol: String, active: Bool) -> some View {
         ZStack {
             Circle().fill(Theme.surface)
             Circle().stroke(Theme.hairline, lineWidth: 0.5)
-            Icon(symbol: symbol, weight: active ? .fill : .regular, size: 14)
+            // SF Symbols' sidebar.* don't ship a fill variant, so the
+            // active state shifts weight + opacity instead.
+            Icon(symbol: symbol, weight: active ? .semibold : .regular, size: 14)
                 .foregroundStyle(.primary.opacity(active ? 0.92 : 0.62))
         }
         .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)

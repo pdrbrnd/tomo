@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import PhosphorSwift
 
 struct LibraryView: View {
     let state: AppState
@@ -594,23 +593,23 @@ struct LibraryView: View {
 
     @ViewBuilder
     private func singleMenu(for book: Book, dismiss: @escaping () -> Void) -> some View {
-        bookMenuItem("Show Details", icon: .info) {
+        bookMenuItem("Show Details", icon: "info.circle") {
             selectedBookIDs = [book.id]
             selectionAnchor = book.id
             inspectorOpen = true
             dismiss()
         }
-        bookMenuItem("Open in Default App", icon: .arrowSquareOut) {
+        bookMenuItem("Open in Default App", icon: "arrow.up.right.square") {
             NSWorkspace.shared.open(book.fileURL)
             dismiss()
         }
-        bookMenuItem("Show in Finder", icon: .folderOpen) {
+        bookMenuItem("Show in Finder", icon: "folder") {
             NSWorkspace.shared.activateFileViewerSelecting([book.fileURL])
             dismiss()
         }
         ShareLink(item: book.fileURL) {
             HStack(spacing: 9) {
-                Icon(symbol: .share, weight: .regular, size: 13)
+                Icon(symbol: "square.and.arrow.up", weight: .regular, size: 13)
                     .frame(width: 14)
                 Text("Share…")
             }
@@ -618,12 +617,12 @@ struct LibraryView: View {
         if let device = state.device, device.canAccept(book) {
             MenuDivider()
             if isOnDevice(book) {
-                bookMenuItem("Remove from \(device.displayName)", icon: .deviceTablet, destructive: true) {
+                bookMenuItem("Remove from \(device.displayName)", icon: "ipad", destructive: true) {
                     Task { await state.removeFromDevice(book: book) }
                     dismiss()
                 }
             } else {
-                bookMenuItem("Send to \(device.displayName)", icon: .deviceTablet) {
+                bookMenuItem("Send to \(device.displayName)", icon: "ipad") {
                     Task { await state.sendToDevice(book: book) }
                     dismiss()
                 }
@@ -637,13 +636,13 @@ struct LibraryView: View {
            let collection = state.collections.first(where: { $0.id == collectionID }),
            book.collectionIDs.contains(collectionID) {
             MenuDivider()
-            bookMenuItem("Remove from \(collection.name)", icon: .minus, destructive: true) {
+            bookMenuItem("Remove from \(collection.name)", icon: "minus", destructive: true) {
                 Task { await state.removeBook(book, from: collectionID) }
                 dismiss()
             }
         }
         MenuDivider()
-        bookMenuItem("Move to Trash…", icon: .trash, destructive: true) {
+        bookMenuItem("Move to Trash…", icon: "trash", destructive: true) {
             booksPendingDelete = [book]
             dismiss()
         }
@@ -654,7 +653,7 @@ struct LibraryView: View {
         if let device = state.device {
             let sendable = books.filter { device.canAccept($0) }
             if !sendable.isEmpty {
-                bookMenuItem("Send \(sendable.count) to \(device.displayName)", icon: .deviceTablet) {
+                bookMenuItem("Send \(sendable.count) to \(device.displayName)", icon: "ipad") {
                     Task { await state.sendBooksToDevice(sendable) }
                     dismiss()
                 }
@@ -662,7 +661,7 @@ struct LibraryView: View {
         }
         ShareLink(items: books.map(\.fileURL)) {
             HStack(spacing: 9) {
-                Icon(symbol: .share, weight: .regular, size: 13)
+                Icon(symbol: "square.and.arrow.up", weight: .regular, size: 13)
                     .frame(width: 14)
                 Text("Share \(books.count)…")
             }
@@ -672,7 +671,7 @@ struct LibraryView: View {
             let inCollection = books.filter { $0.collectionIDs.contains(collectionID) }
             if !inCollection.isEmpty {
                 MenuDivider()
-                bookMenuItem("Remove \(inCollection.count) from \(collection.name)", icon: .minus, destructive: true) {
+                bookMenuItem("Remove \(inCollection.count) from \(collection.name)", icon: "minus", destructive: true) {
                     Task {
                         for book in inCollection {
                             await state.removeBook(book, from: collectionID)
@@ -683,7 +682,7 @@ struct LibraryView: View {
             }
         }
         MenuDivider()
-        bookMenuItem("Move \(books.count) to Trash…", icon: .trash, destructive: true) {
+        bookMenuItem("Move \(books.count) to Trash…", icon: "trash", destructive: true) {
             booksPendingDelete = books
             dismiss()
         }
@@ -691,7 +690,7 @@ struct LibraryView: View {
 
     private func bookMenuItem(
         _ title: String,
-        icon: Ph,
+        icon: String,
         destructive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {

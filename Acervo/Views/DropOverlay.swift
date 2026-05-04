@@ -1,5 +1,4 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Full-window drop indicator shown while the user is dragging external files
 /// over the library. The parent controls visibility; this view is purely
@@ -18,7 +17,7 @@ struct DropOverlay: View {
                 .stroke(.primary.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
                 .padding(gap)
             VStack(spacing: Theme.Spacing.sm) {
-                Icon(symbol: .boxArrowDown, weight: .light, size: 22)
+                Icon(symbol: "square.and.arrow.down", weight: .light, size: 22)
                     .foregroundStyle(.primary.opacity(0.55))
                 Text("Drop to add to library")
                     .font(.system(size: 14, weight: .medium))

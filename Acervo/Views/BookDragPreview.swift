@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import PhosphorSwift
 
 /// Drag preview rendered during in-app book drags.
 ///
@@ -122,7 +121,7 @@ private struct DragCover: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            Icon(symbol: .book, weight: .light, size: 22)
+            Icon(symbol: "book.closed", weight: .light, size: 22)
                 .foregroundStyle(.primary.opacity(0.4))
         }
     }

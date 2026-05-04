@@ -1,5 +1,4 @@
 import SwiftUI
-import PhosphorSwift
 
 /// Floating bottom-right tile shown when a device (Kindle, etc.) is connected.
 ///
@@ -117,10 +116,10 @@ struct DeviceTile: View {
     private var iconView: some View {
         switch visual {
         case .success:
-            Icon(symbol: .check, weight: .bold, size: 13)
+            Icon(symbol: "checkmark", weight: .bold, size: 13)
                 .transition(.opacity.combined(with: .scale))
         case .error:
-            Icon(symbol: .x, weight: .bold, size: 13)
+            Icon(symbol: "xmark", weight: .bold, size: 13)
                 .transition(.opacity.combined(with: .scale))
         case .sending:
             ProgressView()
@@ -129,7 +128,7 @@ struct DeviceTile: View {
                 .tint(.white)
                 .transition(.opacity)
         default:
-            Icon(symbol: .deviceTablet, weight: .regular, size: 13)
+            Icon(symbol: "ipad", weight: .regular, size: 13)
                 .transition(.opacity)
         }
     }
