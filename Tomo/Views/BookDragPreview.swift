@@ -14,8 +14,10 @@ import SwiftUI
 struct BookDragPreview: View {
     let books: [Book]
 
-    private static let cardWidth: CGFloat = 96
-    private static let cardHeight: CGFloat = 144
+    private static let cardWidth: CGFloat = Theme.Library.dragPreviewWidth
+    private static let cardHeight: CGFloat =
+        Theme.Library.dragPreviewWidth
+        * Theme.Library.bookHeightMultiplier
 
     var body: some View {
         let w = Self.cardWidth

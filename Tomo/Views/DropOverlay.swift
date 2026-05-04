@@ -18,7 +18,7 @@ struct DropOverlay: View {
                 .padding(gap)
             VStack(spacing: Theme.Spacing.sm) {
                 Icon(symbol: "square.and.arrow.down", weight: .light, size: 22)
-                    .foregroundStyle(.primary.opacity(0.55))
+                    .foregroundStyle(.primary.opacity(Theme.Text.secondary))
                 Text("Drop to add to library")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.85))

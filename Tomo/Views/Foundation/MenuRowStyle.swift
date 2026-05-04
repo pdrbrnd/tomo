@@ -40,18 +40,18 @@ private struct MenuRowBody: View {
     }
 
     private var foreground: Color {
-        if isDestructive { return Color.red.opacity(0.92) }
-        return Color.primary.opacity(0.92)
+        if isDestructive { return .red.opacity(Theme.Text.primary) }
+        return .primary.opacity(Theme.Text.primary)
     }
 
     private var highlight: Color {
         if isDestructive {
-            if configuration.isPressed { return Color.red.opacity(0.18) }
-            if hovered { return Color.red.opacity(0.10) }
+            if configuration.isPressed { return .red.opacity(Theme.Surface.dropTarget) }
+            if hovered { return .red.opacity(Theme.Surface.selected) }
             return .clear
         }
-        if configuration.isPressed { return Color.primary.opacity(0.12) }
-        if hovered { return Color.primary.opacity(0.06) }
+        if configuration.isPressed { return .primary.opacity(Theme.Surface.press) }
+        if hovered { return .primary.opacity(Theme.Surface.hover) }
         return .clear
     }
 }

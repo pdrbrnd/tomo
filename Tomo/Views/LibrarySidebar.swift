@@ -105,7 +105,7 @@ struct LibrarySidebar: View {
             beginCreate()
         } label: {
             Icon(symbol: "plus", weight: .bold, size: 11)
-                .foregroundStyle(.primary.opacity(0.55))
+                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())
         }
@@ -124,12 +124,12 @@ struct LibrarySidebar: View {
             HStack {
                 Text(collection.name)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(.primary.opacity(isSelected ? 0.95 : 0.78))
+                    .foregroundStyle(.primary.opacity(isSelected ? Theme.Text.emphatic : Theme.Text.muted))
                     .lineLimit(1)
                 Spacer()
                 Text("\(count)")
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.primary.opacity(0.45))
+                    .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
             }
         }
         .buttonStyle(
@@ -178,7 +178,7 @@ struct LibrarySidebar: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sidebarRow, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(.primary.opacity(Theme.Surface.hoverSoft))
             )
             .padding(.horizontal, Theme.Spacing.menuInset)
             .onSubmit { commitCreate() }
@@ -205,7 +205,7 @@ struct LibrarySidebar: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Radius.sidebarRow, style: .continuous)
-                    .fill(Color.primary.opacity(0.05))
+                    .fill(.primary.opacity(Theme.Surface.hoverSoft))
             )
             .padding(.horizontal, Theme.Spacing.menuInset)
             .onSubmit { commitRename(collection) }
@@ -295,7 +295,7 @@ struct LibrarySidebar: View {
     private func sectionHeader(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.primary.opacity(0.55))
+            .foregroundStyle(.primary.opacity(Theme.Text.secondary))
             .tracking(0.2)
             .textCase(.uppercase)
             .padding(.leading, Theme.Spacing.menuInset + Theme.Spacing.md)
@@ -313,12 +313,12 @@ struct LibrarySidebar: View {
             HStack {
                 Text(label)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(.primary.opacity(isSelected ? 0.95 : 0.78))
+                    .foregroundStyle(.primary.opacity(isSelected ? Theme.Text.emphatic : Theme.Text.muted))
                     .lineLimit(1)
                 Spacer()
                 Text("\(count)")
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.primary.opacity(0.45))
+                    .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
             }
         }
         .buttonStyle(SidebarRowStyle(isSelected: isSelected))
@@ -362,7 +362,7 @@ private struct SidebarRowBody: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.sidebarRow, style: .continuous)
-                    .fill(Color.primary.opacity(recentlyDropped ? 0.14 : 0))
+                    .fill(.primary.opacity(recentlyDropped ? Theme.Surface.dropFlash : 0))
                     .animation(.easeOut(duration: 0.45), value: recentlyDropped)
             )
             .padding(.horizontal, Theme.Spacing.menuInset)
@@ -374,10 +374,10 @@ private struct SidebarRowBody: View {
         // Drop-targeted is the strongest neutral fill; selection sits below
         // it; press + hover are progressively softer. All on .primary so
         // the colour stays neutral against accent-coloured content.
-        if isDropTargeted { return Color.primary.opacity(0.18) }
-        if isSelected { return Color.primary.opacity(0.10) }
-        if configuration.isPressed { return Color.primary.opacity(0.08) }
-        if hovered { return Color.primary.opacity(0.05) }
+        if isDropTargeted { return .primary.opacity(Theme.Surface.dropTarget) }
+        if isSelected { return .primary.opacity(Theme.Surface.selected) }
+        if configuration.isPressed { return .primary.opacity(Theme.Surface.pressSoft) }
+        if hovered { return .primary.opacity(Theme.Surface.hoverSoft) }
         return .clear
     }
 }

@@ -29,14 +29,14 @@ struct SearchPill: View {
     var body: some View {
         HStack(spacing: 8) {
             Icon(symbol: "magnifyingglass", weight: .regular, size: 13)
-                .foregroundStyle(.primary.opacity(0.55))
+                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
 
             // Width-flexible cluster — always mounted so focus binds correctly.
             HStack(spacing: 4) {
                 TextField("", text: $text, prompt: prompt)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5, weight: .regular))
-                    .foregroundStyle(.primary.opacity(0.92))
+                    .foregroundStyle(.primary.opacity(Theme.Text.primary))
                     .focused($focused)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -44,7 +44,7 @@ struct SearchPill: View {
                     text = ""
                 } label: {
                     Icon(symbol: "xmark.circle.fill", weight: .regular, size: 13)
-                        .foregroundStyle(.primary.opacity(0.42))
+                        .foregroundStyle(.primary.opacity(Theme.Text.placeholder))
                 }
                 .buttonStyle(.plain)
                 .frame(width: Self.clearButtonSlot)
@@ -104,6 +104,6 @@ struct SearchPill: View {
     }
 
     private var prompt: Text {
-        Text(placeholder).foregroundStyle(.primary.opacity(0.42))
+        Text(placeholder).foregroundStyle(.primary.opacity(Theme.Text.placeholder))
     }
 }

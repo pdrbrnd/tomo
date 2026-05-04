@@ -25,7 +25,7 @@ struct BookCard: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var cardHeight: CGFloat { cardWidth * 1.5 }
+    private var cardHeight: CGFloat { cardWidth * Theme.Library.bookHeightMultiplier }
     private var isDimmed: Bool { deviceStatus == .missingFromDevice }
     private var showsOnDeviceBadge: Bool { deviceStatus == .onDevice }
 

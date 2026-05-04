@@ -69,14 +69,14 @@ struct LocalCoverImage: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary.opacity(0.92))
+                    .foregroundStyle(.primary.opacity(Theme.Text.primary))
                     .lineLimit(5)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 4)
                 if let author, !author.isEmpty {
                     Text(author)
                         .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(.primary.opacity(0.55))
+                        .foregroundStyle(.primary.opacity(Theme.Text.secondary))
                         .lineLimit(2)
                         .tracking(0.1)
                         .textCase(.uppercase)

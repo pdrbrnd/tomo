@@ -88,7 +88,7 @@ struct BookInspector: View {
             Spacer()
             Text("Select a book")
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(.primary.opacity(0.42))
+                .foregroundStyle(.primary.opacity(Theme.Text.placeholder))
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -357,7 +357,7 @@ struct BookInspector: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Text("Collections")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.55))
+                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
                 .tracking(0.2)
                 .textCase(.uppercase)
 
@@ -418,7 +418,7 @@ struct BookInspector: View {
     private func rowLabel(_ label: String) -> some View {
         Text(label)
             .font(.system(size: 11, weight: .regular))
-            .foregroundStyle(.primary.opacity(0.42))
+            .foregroundStyle(.primary.opacity(Theme.Text.placeholder))
             .frame(width: 76, alignment: .leading)
     }
 
@@ -513,10 +513,10 @@ private struct AddCollectionChip: View {
         } label: {
             HStack(spacing: 4) {
                 Icon(symbol: "plus", weight: .bold, size: 9)
-                    .foregroundStyle(.primary.opacity(0.55))
+                    .foregroundStyle(.primary.opacity(Theme.Text.secondary))
                 Text("Add")
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.primary.opacity(0.55))
+                    .foregroundStyle(.primary.opacity(Theme.Text.secondary))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)

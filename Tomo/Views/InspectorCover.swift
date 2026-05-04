@@ -21,8 +21,10 @@ struct InspectorCover: View {
     @State private var hovered = false
     @FocusState private var coverFocused: Bool
 
-    private static let coverWidth: CGFloat = 132
-    private static let coverHeight: CGFloat = 198
+    private static let coverWidth: CGFloat = Theme.Library.inspectorCoverWidth
+    private static let coverHeight: CGFloat =
+        Theme.Library.inspectorCoverWidth
+        * Theme.Library.bookHeightMultiplier
 
     var body: some View {
         LocalCoverImage(url: book.coverURL, fallbackTitle: book.title)

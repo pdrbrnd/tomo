@@ -43,13 +43,13 @@ struct LibraryFolderPicker: View {
     private var pillLabel: some View {
         HStack(spacing: 6) {
             Icon(symbol: "folder", weight: .regular, size: 11)
-                .foregroundStyle(.primary.opacity(0.78))
+                .foregroundStyle(.primary.opacity(Theme.Text.muted))
             Text(folder?.lastPathComponent ?? "Choose Library…")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.92))
+                .foregroundStyle(.primary.opacity(Theme.Text.primary))
                 .lineLimit(1)
             Icon(symbol: "chevron.down", weight: .semibold, size: 8)
-                .foregroundStyle(.primary.opacity(0.45))
+                .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

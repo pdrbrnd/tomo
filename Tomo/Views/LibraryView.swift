@@ -65,16 +65,6 @@ struct LibraryView: View {
         return "Search"
     }
 
-    private var collectionCounts: [UUID: Int] {
-        var dict: [UUID: Int] = [:]
-        for book in state.books {
-            for cid in book.collectionIDs {
-                dict[cid, default: 0] += 1
-            }
-        }
-        return dict
-    }
-
     /// Selection resolved against the full library, not the filtered grid.
     /// Drives the inspector — a search/filter change must not make the
     /// inspector forget the user's selection.
@@ -90,10 +80,6 @@ struct LibraryView: View {
     /// Selected books in the order they appear in the current filtered grid.
     private var selectedBooksInOrder: [Book] {
         filteredBooks.filter { selectedBookIDs.contains($0.id) }
-    }
-
-    private var languageCounts: [String: Int] {
-        Dictionary(grouping: state.books, by: { $0.locale }).mapValues(\.count)
     }
 
     /// Resolves the current device into something the inspector can render
@@ -353,14 +339,10 @@ struct LibraryView: View {
 
     private var grid: some View {
         GeometryReader { proxy in
-            // Bigger than the rest of the spacing scale on purpose: gives the
-            // floating chrome (top-center notch, bottom toggles, traffic
-            // lights) room to breathe over the canvas without crowding the
-            // first/last cards.
-            let margin: CGFloat = 62
-            let gutter: CGFloat = Theme.Spacing.xxl
-            let minCardWidth: CGFloat = 168
-            let maxCardWidth: CGFloat = 224
+            let margin = Theme.Library.gridMargin
+            let gutter = Theme.Spacing.xxl
+            let minCardWidth = Theme.Library.minCardWidth
+            let maxCardWidth = Theme.Library.maxCardWidth
 
             let availableWidth = proxy.size.width - 2 * margin
             let cols = max(1, Int((availableWidth + gutter) / (minCardWidth + gutter)))
@@ -753,7 +735,7 @@ struct LibraryView: View {
             Spacer()
             Text(message)
                 .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(.primary.opacity(0.45))
+                .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -767,8 +749,8 @@ struct LibraryView: View {
             selectedLanguage: $selectedLanguage,
             totalBooks: state.books.count,
             collections: state.collections,
-            collectionCounts: collectionCounts,
-            languageCounts: languageCounts,
+            collectionCounts: state.collectionCounts,
+            languageCounts: state.languageCounts,
             onCreateCollection: { name in
                 Task { await state.createCollection(named: name) }
             },

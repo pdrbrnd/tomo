@@ -28,10 +28,30 @@ final class AppState {
     private(set) var index: BookIndex?
     private(set) var importer: LibraryImporter?
     let profiles: [LanguageProfile]
-    var books: [Book] = []
+    var books: [Book] = [] {
+        didSet { recomputeCounts() }
+    }
     var collections: [Collection] = []
     private(set) var device: (any BookDevice)?
     private(set) var deviceFilenames: Set<String> = []
+
+    /// Number of books in each collection. Cached from `books`; cheaper than
+    /// recomputing in every `LibrarySidebar` body evaluation.
+    private(set) var collectionCounts: [UUID: Int] = [:]
+
+    /// Number of books per locale tag. Same caching rationale as above.
+    private(set) var languageCounts: [String: Int] = [:]
+
+    private func recomputeCounts() {
+        var coll: [UUID: Int] = [:]
+        for book in books {
+            for cid in book.collectionIDs {
+                coll[cid, default: 0] += 1
+            }
+        }
+        collectionCounts = coll
+        languageCounts = Dictionary(grouping: books, by: \.locale).mapValues(\.count)
+    }
 
     /// Number of items currently being dragged inside the app. Zero when
     /// nothing is being dragged. The device tile reads this to scale up
@@ -48,8 +68,8 @@ final class AppState {
     /// (programmer errors) don't write here.
     var lastImportError: String?
 
-    private nonisolated(unsafe) var mountObserver: NSObjectProtocol?
-    private nonisolated(unsafe) var unmountObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var mountTask: Task<Void, Never>?
+    private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
     private var sendStateResetTask: Task<Void, Never>?
 
     init() {
@@ -62,9 +82,8 @@ final class AppState {
     }
 
     nonisolated deinit {
-        let center = NSWorkspace.shared.notificationCenter
-        if let mountObserver { center.removeObserver(mountObserver) }
-        if let unmountObserver { center.removeObserver(unmountObserver) }
+        mountTask?.cancel()
+        unmountTask?.cancel()
     }
 
     func sendToDevice(book: Book) async {
@@ -148,21 +167,13 @@ final class AppState {
 
     private func startVolumeMonitoring() {
         let center = NSWorkspace.shared.notificationCenter
-        mountObserver = center.addObserver(
-            forName: NSWorkspace.didMountNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        mountTask = Task { @MainActor [weak self] in
+            for await _ in center.notifications(named: NSWorkspace.didMountNotification) {
                 self?.refreshDeviceState()
             }
         }
-        unmountObserver = center.addObserver(
-            forName: NSWorkspace.didUnmountNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+        unmountTask = Task { @MainActor [weak self] in
+            for await _ in center.notifications(named: NSWorkspace.didUnmountNotification) {
                 self?.refreshDeviceState()
             }
         }

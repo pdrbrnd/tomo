@@ -145,7 +145,7 @@ struct CoverGallerySheet: View {
             // for the common case; the rare square/wide cover loses a sliver
             // — acceptable trade in a chooser.
             Color.clear
-                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .aspectRatio(Theme.Library.bookAspectRatio, contentMode: .fit)
                 .overlay {
                     AsyncImage(url: candidate.thumbnailURL) { phase in
                         switch phase {
@@ -290,10 +290,10 @@ private struct GalleryQueryField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(.primary.opacity(0.42)))
+        TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(.primary.opacity(Theme.Text.placeholder)))
             .textFieldStyle(.plain)
             .font(.system(size: 13, weight: .regular))
-            .foregroundStyle(.primary.opacity(0.92))
+            .foregroundStyle(.primary.opacity(Theme.Text.primary))
             .focused($focused)
             .onSubmit(onSubmit)
             .padding(.horizontal, 13)

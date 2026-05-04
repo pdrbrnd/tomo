@@ -34,7 +34,7 @@ struct InlineEditField: View {
 
             if hovered {
                 Icon(symbol: "pencil", weight: .regular, size: 11)
-                    .foregroundStyle(.primary.opacity(0.42))
+                    .foregroundStyle(.primary.opacity(Theme.Text.placeholder))
                     .transition(.opacity)
             }
         }

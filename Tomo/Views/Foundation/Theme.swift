@@ -116,6 +116,78 @@ enum Theme {
         /// breathing room.
         static let paneBottomReserve: CGFloat = 64
     }
+
+    /// Library-specific layout tokens. The aspect ratio is the keystone
+    /// — every cover surface in the app derives from it (grid cards,
+    /// drag preview, inspector cover, gallery thumbnails). Change this
+    /// one value and the whole library re-proportions consistently.
+    enum Library {
+        /// Book-cover aspect ratio (width : height). Real-world books
+        /// cluster between 1:1.4 and 1:1.6; 2:3 is the visual midpoint.
+        static let bookAspectRatio: CGFloat = 2.0 / 3.0
+
+        /// Multiplier from cover *width* to cover *height*. Equivalent
+        /// to `1 / bookAspectRatio`, precomputed.
+        static let bookHeightMultiplier: CGFloat = 1.5
+
+        /// Library grid card width — bounds for the per-column
+        /// computation in `LibraryView.grid`.
+        static let minCardWidth: CGFloat = 168
+        static let maxCardWidth: CGFloat = 224
+
+        /// Margin around the entire library grid, larger than
+        /// `Spacing.xxl` on purpose — gives the floating chrome (top
+        /// notch, bottom toggles, traffic lights) room to breathe.
+        static let gridMargin: CGFloat = 62
+
+        /// Drag preview cover width. Height = width × heightMultiplier.
+        static let dragPreviewWidth: CGFloat = 96
+
+        /// Inspector cover width. Height = width × heightMultiplier.
+        static let inspectorCoverWidth: CGFloat = 132
+    }
+
+    /// Text emphasis levels applied as `.primary.opacity(...)`. The
+    /// scale is hand-tuned — each step is visibly distinct at small
+    /// font sizes. Use the named token instead of a raw number so the
+    /// intent (`.secondary` vs `.tertiary`) is grep-able.
+    enum Text {
+        /// Selected / active title — slightly above plain primary so
+        /// the chosen state reads as more present.
+        static let emphatic: Double = 0.95
+        /// Body copy and primary value labels.
+        static let primary: Double = 0.92
+        /// Secondary list rows and metadata values.
+        static let muted: Double = 0.78
+        /// Section headers, subtle metadata, control-strip icons.
+        static let secondary: Double = 0.55
+        /// Counts, supporting numerals, dim chevrons.
+        static let tertiary: Double = 0.45
+        /// Disabled / placeholder text (and the pencil affordance on
+        /// `InlineEditField` hover).
+        static let placeholder: Double = 0.42
+    }
+
+    /// Neutral fill opacities applied to `.primary` for hover, press,
+    /// selection, drop-target, and dim states. Each token is a step on
+    /// the same hand-tuned scale; controls pick the level that matches
+    /// their visual weight.
+    enum Surface {
+        /// Strongest neutral — drop target with cargo hovering over it.
+        static let dropTarget: Double = 0.18
+        /// Brief flash after a drop lands.
+        static let dropFlash: Double = 0.14
+        /// Pressed (held) state on menu rows.
+        static let press: Double = 0.12
+        /// Sticky selection state on sidebar rows.
+        static let selected: Double = 0.10
+        /// Soft press on sidebar rows / pill buttons.
+        static let pressSoft: Double = 0.08
+        /// Hover state on menu rows.
+        static let hover: Double = 0.06
+        /// Soft hover on sidebar rows / pill buttons.
+        static let hoverSoft: Double = 0.05
+    }
 }
 
 func isDarkAppearance(_ appearance: NSAppearance) -> Bool {

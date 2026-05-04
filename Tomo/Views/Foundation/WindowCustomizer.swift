@@ -17,10 +17,16 @@ struct WindowCustomizer: NSViewRepresentable {
     }
 
     /// State holder for the AppKit bridge. `@MainActor` because every read /
-    /// write goes through SwiftUI's plumbing on the main actor; the `nonisolated
-    /// deinit` lets us tear down observers without hopping back even if the
-    /// last reference drops on a background thread (`NotificationCenter
-    /// .removeObserver` is itself thread-safe).
+    /// write goes through SwiftUI's plumbing on the main actor; the
+    /// `nonisolated deinit` lets us tear down observers without hopping
+    /// back even if the last reference drops on a background thread
+    /// (`NotificationCenter.removeObserver` is itself thread-safe).
+    ///
+    /// We deliberately stay on the callback API rather than the async-
+    /// sequence form — Swift 6's `sending` rules choke on capturing a
+    /// non-Sendable `NSView` across the implicit task hop, and the
+    /// workarounds (`WeakBox`, separate per-name tasks) cost more
+    /// clarity than they save.
     @MainActor final class Coordinator {
         var originalOrigins: [NSWindow.ButtonType: NSPoint] = [:]
         nonisolated(unsafe) var observers: [NSObjectProtocol] = []
