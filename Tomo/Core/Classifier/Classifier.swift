@@ -31,7 +31,9 @@ nonisolated enum Classifier {
             classifierLogger.info("base=\(baseLang, privacy: .public) but no marker matches")
             return nil
         }
-        classifierLogger.info("classified: base=\(baseLang, privacy: .public) profile=\(result.profileId, privacy: .public) confidence=\(result.confidence, format: .fixed(precision: 2))")
+        classifierLogger.info(
+            "classified: base=\(baseLang, privacy: .public) profile=\(result.profileId, privacy: .public) confidence=\(result.confidence, format: .fixed(precision: 2))"
+        )
         return result
     }
 }

@@ -13,7 +13,7 @@ nonisolated struct CoverCandidate: Sendable, Hashable, Identifiable {
 }
 
 nonisolated enum CoverSource: String, Sendable, Hashable {
-    case iTunes
+    case appleBooks
     case openLibrary
     case googleBooks
 }

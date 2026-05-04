@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Inspector that presents a single book and exposes actions as callbacks.
 ///
@@ -209,7 +209,8 @@ struct BookInspector: View {
                     font: .system(size: 12, weight: .regular),
                     color: .primary.opacity(0.92),
                     onCommit: { newValue in
-                        let parsed = newValue
+                        let parsed =
+                            newValue
                             .split(separator: ",")
                             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                             .filter { !$0.isEmpty }
@@ -318,8 +319,7 @@ struct BookInspector: View {
     }
 
     private func shouldShowDeclaredOption(for book: Book) -> Bool {
-        book.locale != "und" &&
-        !profiles.contains(where: { $0.id == book.locale })
+        book.locale != "und" && !profiles.contains(where: { $0.id == book.locale })
     }
 
     private func runAutoDetect(for book: Book) {

@@ -22,22 +22,22 @@ nonisolated struct INDXHeader: Sendable {
     func encoded() -> Data {
         var w = BinaryWriter(reservingCapacity: Self.length)
         w.writeMagic("INDX")
-        w.write(UInt32(Self.length))    // HeaderLength
-        w.writeZeros(4)                  // Unknown1
+        w.write(UInt32(Self.length))  // HeaderLength
+        w.writeZeros(4)  // Unknown1
         w.write(headerType)
         w.write(indexType)
         w.write(idxtStart)
         w.write(indexRecordCount)
-        w.write(UInt32(65001))           // IndexEncoding (UTF-8)
-        w.write(UInt32.max)              // IndexLanguage (none)
+        w.write(UInt32(65001))  // IndexEncoding (UTF-8)
+        w.write(UInt32.max)  // IndexLanguage (none)
         w.write(indexEntryCount)
-        w.write(UInt32(0))               // ORDTStart
-        w.write(UInt32(0))               // LIGTStart
-        w.write(UInt32(0))               // LIGTCount
+        w.write(UInt32(0))  // ORDTStart
+        w.write(UInt32(0))  // LIGTStart
+        w.write(UInt32(0))  // LIGTCount
         w.write(cncxCount)
-        w.writeZeros(124)                // Unknown2
+        w.writeZeros(124)  // Unknown2
         w.write(tagxOffset)
-        w.writeZeros(8)                  // Unknown3
+        w.writeZeros(8)  // Unknown3
         return w.data
     }
 }
@@ -108,12 +108,12 @@ nonisolated struct IndexRecord: PalmDB.Record {
         for entry in idxtEntries {
             w.write(entry)
         }
-        w.writeZeros(idxtLength % 4)         // Inner pad before IDXT
+        w.writeZeros(idxtLength % 4)  // Inner pad before IDXT
         w.writeMagic("IDXT")
         for offset in idxtOffsets {
             w.write(offset)
         }
-        w.writeZeros(lengthNoPadding % 4)    // Outer pad
+        w.writeZeros(lengthNoPadding % 4)  // Outer pad
         return w.data
     }
 
@@ -122,11 +122,12 @@ nonisolated struct IndexRecord: PalmDB.Record {
     /// `LengthNoPadding`).
     var lengthNoPadding: Int {
         let entriesLength = idxtEntries.reduce(0) { $0 + $1.count }
-        var length = INDXHeader.length
+        var length =
+            INDXHeader.length
             + Self.idxtMagicLength
             + idxtEntries.count * 2
             + entriesLength
-            + entriesLength % 4              // Inner pad
+            + entriesLength % 4  // Inner pad
         if !tagxTable.isEmpty {
             length += Self.tagxHeaderLength + tagxTable.count * Self.tagxTagLength
         }
@@ -138,8 +139,8 @@ nonisolated struct IndexRecord: PalmDB.Record {
         let total = Self.tagxHeaderLength + tagxTable.count * Self.tagxTagLength
         var w = BinaryWriter(reservingCapacity: total)
         w.writeMagic("TAGX")
-        w.write(UInt32(total))               // HeaderLength
-        w.write(UInt32(1))                   // ControlByteCount
+        w.write(UInt32(total))  // HeaderLength
+        w.write(UInt32(1))  // ControlByteCount
         for tag in tagxTable {
             w.write(tag.raw)
         }

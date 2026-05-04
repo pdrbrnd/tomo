@@ -10,13 +10,14 @@ nonisolated struct TextRecord: PalmDB.Record {
     /// Maximum decompressed bytes per record. The PalmDoc header's
     /// RecordSize field reports this; readers slice the byte stream
     /// at exactly this boundary.
-    static let maxSize = 0x1000   // 4096
+    static let maxSize = 0x1000  // 4096
 
     let data: Data
     let trail: Data
 
     init(text: Data, trail: TrailingData) {
-        precondition(text.count <= Self.maxSize,
+        precondition(
+            text.count <= Self.maxSize,
             "TextRecord payload is \(text.count) bytes, max is \(Self.maxSize)")
         self.data = text
         self.trail = trail.encoded()

@@ -45,8 +45,8 @@ nonisolated enum EPUBSource {
         // CSS flows in OPF manifest order.
         let cssFlows: [String] = epub.opf.manifest.compactMap { item in
             guard item.mediaType == "text/css",
-                  let data = epub.data(forResourceHref: item.href),
-                  let text = String(data: data, encoding: .utf8)
+                let data = epub.data(forResourceHref: item.href),
+                let text = String(data: data, encoding: .utf8)
             else { return nil }
             return text
         }
@@ -137,12 +137,13 @@ private nonisolated func rewriteAndCollectBodyImages(
     var seen: Set<String> = coverArchivePath.map { [$0] } ?? []
     for (chunk, spineDir) in zip(chunks, spineDirs) {
         for match in chunk.matches(of: imgSrcPattern) {
-            let url = match.output.1.map(String.init)
+            let url =
+                match.output.1.map(String.init)
                 ?? match.output.2.map(String.init)
                 ?? ""
             let resolved = EPUBArchive.resolvePath(url, baseDir: spineDir)
             guard imageItemByPath[resolved] != nil,
-                  seen.insert(resolved).inserted
+                seen.insert(resolved).inserted
             else { continue }
             bodyImagePaths.append(resolved)
         }
@@ -162,7 +163,8 @@ private nonisolated func rewriteAndCollectBodyImages(
     // Rewrite each chunk's src URLs.
     let rewritten = zip(chunks, spineDirs).map { (chunk, spineDir) -> String in
         chunk.replacing(imgSrcPattern) { match in
-            let url = match.output.1.map(String.init)
+            let url =
+                match.output.1.map(String.init)
                 ?? match.output.2.map(String.init)
                 ?? ""
             let resolved = EPUBArchive.resolvePath(url, baseDir: spineDir)
@@ -235,7 +237,7 @@ private nonisolated func bodyInnerHTMLByByteSlice(_ data: Data) -> String? {
 
     let innerStart = data.index(after: gtIndex)
     guard innerStart < data.endIndex,
-          let closeRange = data[innerStart...].lastRange(of: closeMarker)
+        let closeRange = data[innerStart...].lastRange(of: closeMarker)
     else { return nil }
 
     return String(data: data[innerStart..<closeRange.lowerBound], encoding: .utf8)

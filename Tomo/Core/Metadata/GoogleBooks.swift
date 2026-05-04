@@ -11,7 +11,7 @@ import os
 /// real covers, so we filter results post-search by decoding image dimensions
 /// (the placeholder is a fixed 128×192; real covers at `zoom=2` are
 /// 600×900-ish).
-nonisolated enum GoogleBooksService {
+nonisolated enum GoogleBooks {
     /// Minimum short-edge size in pixels. Google's "image not available"
     /// graphic is 128×192 regardless of `zoom` parameter; real publisher
     /// art is reliably ≥300px on the short edge. 200 leaves headroom while
@@ -41,7 +41,7 @@ nonisolated enum GoogleBooksService {
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "maxResults", value: "40"),
             URLQueryItem(name: "printType", value: "books"),
-            URLQueryItem(name: "fields", value: "items(id,volumeInfo(title,authors,imageLinks))")
+            URLQueryItem(name: "fields", value: "items(id,volumeInfo(title,authors,imageLinks))"),
         ]
 
         guard let url = components.url else { throw CoverFetchError.badResponse }
@@ -70,23 +70,26 @@ nonisolated enum GoogleBooksService {
         var rawResults: [CoverCandidate] = []
         for item in decoded.items ?? [] {
             guard let info = item.volumeInfo,
-                  let links = info.imageLinks,
-                  let raw = links.thumbnail ?? links.smallThumbnail else { continue }
+                let links = info.imageLinks,
+                let raw = links.thumbnail ?? links.smallThumbnail
+            else { continue }
             // Some legacy responses still return http://; Google serves https on
             // the same path so a literal swap is safe and avoids ATS blocks.
             let httpsRaw = raw.replacingOccurrences(of: "http://", with: "https://")
             guard let thumbURL = URL(string: httpsRaw),
-                  !seen.contains(item.id) else { continue }
+                !seen.contains(item.id)
+            else { continue }
             seen.insert(item.id)
             let upgraded = upgradeForFullSize(thumbURL)
-            rawResults.append(CoverCandidate(
-                id: "gb-\(item.id)",
-                title: info.title ?? trimmedTitle,
-                authors: info.authors ?? [],
-                thumbnailURL: upgraded,
-                fullURL: upgraded,
-                source: .googleBooks
-            ))
+            rawResults.append(
+                CoverCandidate(
+                    id: "gb-\(item.id)",
+                    title: info.title ?? trimmedTitle,
+                    authors: info.authors ?? [],
+                    thumbnailURL: upgraded,
+                    fullURL: upgraded,
+                    source: .googleBooks
+                ))
         }
 
         return await filterRealCovers(rawResults)
@@ -131,9 +134,10 @@ nonisolated enum GoogleBooksService {
     /// decoding pixels — fast (microseconds) for any common format.
     private static func imageDimensions(from data: Data) -> (width: Int, height: Int)? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-              let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight as String] as? Int else {
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
+            let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight as String] as? Int
+        else {
             return nil
         }
         return (width, height)

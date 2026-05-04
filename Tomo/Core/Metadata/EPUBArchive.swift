@@ -173,7 +173,8 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
 
     func all(_ xpath: String) -> [String] {
         let nodes = (try? doc.nodes(forXPath: xpath)) ?? []
-        return nodes
+        return
+            nodes
             .compactMap { $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }
@@ -187,7 +188,8 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
     let uniqueIDAttr = first("//*[local-name()='package']/@unique-identifier")
     let identifier: String? = {
         if let id = uniqueIDAttr, !id.isEmpty,
-           let value = first("//*[local-name()='identifier' and @id='\(id)']") {
+            let value = first("//*[local-name()='identifier' and @id='\(id)']")
+        {
             return value
         }
         return first("//*[local-name()='identifier']")
@@ -199,8 +201,8 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
     var hrefByID: [String: String] = [:]
     for node in itemNodes {
         guard let element = node as? XMLElement,
-              let id = element.attribute(forName: "id")?.stringValue,
-              let href = element.attribute(forName: "href")?.stringValue
+            let id = element.attribute(forName: "id")?.stringValue,
+            let href = element.attribute(forName: "href")?.stringValue
         else { continue }
         let mediaType = element.attribute(forName: "media-type")?.stringValue ?? ""
         let properties = element.attribute(forName: "properties")?.stringValue
@@ -213,8 +215,8 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
     var spineHrefs: [String] = []
     for ref in itemRefs {
         guard let element = ref as? XMLElement,
-              let idref = element.attribute(forName: "idref")?.stringValue,
-              let href = hrefByID[idref]
+            let idref = element.attribute(forName: "idref")?.stringValue,
+            let href = hrefByID[idref]
         else { continue }
         spineHrefs.append(href)
     }
@@ -225,8 +227,9 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
     // Cover: EPUB 3 properties="cover-image" first, then EPUB 2 <meta name="cover" content="ID">.
     let coverItem: ManifestItem? = {
         if let href = first("//*[local-name()='item' and contains(@properties, 'cover-image')]/@href"),
-           !href.isEmpty,
-           let item = itemByHref(href) {
+            !href.isEmpty,
+            let item = itemByHref(href)
+        {
             return item
         }
         guard let id = first("//*[local-name()='meta' and @name='cover']/@content"), !id.isEmpty else {
@@ -238,7 +241,8 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
     // Nav (EPUB 3): manifest item with properties containing "nav".
     let navItem: ManifestItem? = {
         guard let href = first("//*[local-name()='item' and contains(@properties, 'nav')]/@href"),
-              !href.isEmpty else { return nil }
+            !href.isEmpty
+        else { return nil }
         return itemByHref(href)
     }()
 

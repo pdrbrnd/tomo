@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 import os
 
 /// Sheet that surfaces cover candidates from Open Library + Google Books for
@@ -235,11 +235,11 @@ struct CoverGallerySheet: View {
         // dimension-filtered in the service to drop "image not available"
         // placeholders). Per-source failures don't poison the others — only
         // fail loud if all three error out.
-        async let iTunes = trySearch { try await iTunesSearchService.searchCovers(title: title, author: author) }
-        async let openLibrary = trySearch { try await OpenLibraryService.searchCovers(title: title, author: author) }
-        async let googleBooks = trySearch { try await GoogleBooksService.searchCovers(title: title, author: author) }
+        async let apple = trySearch { try await AppleBooks.searchCovers(title: title, author: author) }
+        async let openLibrary = trySearch { try await OpenLibrary.searchCovers(title: title, author: author) }
+        async let googleBooks = trySearch { try await GoogleBooks.searchCovers(title: title, author: author) }
 
-        let (it, ol, gb) = await (iTunes, openLibrary, googleBooks)
+        let (it, ol, gb) = await (apple, openLibrary, googleBooks)
         if Task.isCancelled { return }
         if it == nil && ol == nil && gb == nil {
             loadState = .error("Couldn't reach the cover sources.")
@@ -259,8 +259,9 @@ struct CoverGallerySheet: View {
 
     private func commit() async {
         guard let id = selectedCandidateID,
-              case .loaded(let candidates) = loadState,
-              let candidate = candidates.first(where: { $0.id == id }) else { return }
+            case .loaded(let candidates) = loadState,
+            let candidate = candidates.first(where: { $0.id == id })
+        else { return }
         fetching = true
         defer { fetching = false }
         do {

@@ -31,12 +31,13 @@ nonisolated enum Markup {
             let headBytes = Data(head.utf8)
             let bodyBytes = Data(chunkBody.utf8)
 
-            chunks.append(ChunkInfo(
-                preStart: text.count,
-                preLength: headBytes.count,
-                contentStart: text.count + headBytes.count,
-                contentLength: bodyBytes.count
-            ))
+            chunks.append(
+                ChunkInfo(
+                    preStart: text.count,
+                    preLength: headBytes.count,
+                    contentStart: text.count + headBytes.count,
+                    contentLength: bodyBytes.count
+                ))
 
             text.append(headBytes)
             text.append(bodyBytes)
@@ -95,14 +96,16 @@ private nonisolated func buildChapters(
     result.reserveCapacity(sorted.count)
     for (i, entry) in sorted.enumerated() {
         let start = i == 0 ? 0 : chunks[entry.chunkIndex].preStart
-        let nextStart = i + 1 < sorted.count
+        let nextStart =
+            i + 1 < sorted.count
             ? chunks[sorted[i + 1].chunkIndex].preStart
             : textLength
-        result.append(ChapterInfo(
-            title: entry.title,
-            start: start,
-            length: nextStart - start
-        ))
+        result.append(
+            ChapterInfo(
+                title: entry.title,
+                start: start,
+                length: nextStart - start
+            ))
     }
     return result
 }
@@ -126,14 +129,14 @@ private nonisolated func skeletonTemplate(
         links = "\n    " + tags.joined(separator: "\n    ")
     }
     return """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <html xmlns="http://www.w3.org/1999/xhtml">
-      <head>
-        <title>\(title)</title>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>\(links)
-      </head>
-      <body aid="\(to32(chunkAID))">
-      </body>
-    </html>
-    """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <html xmlns="http://www.w3.org/1999/xhtml">
+          <head>
+            <title>\(title)</title>
+            <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>\(links)
+          </head>
+          <body aid="\(to32(chunkAID))">
+          </body>
+        </html>
+        """
 }

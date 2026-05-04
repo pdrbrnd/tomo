@@ -15,14 +15,14 @@ nonisolated enum EPUBNavigation {
     /// Returns an empty array if neither is found or both fail to parse.
     static func parse(in epub: EPUBArchive) -> [ParsedTOCEntry] {
         if let nav = epub.opf.navItem,
-           let entries = parseNav(nav.href, in: epub),
-           !entries.isEmpty
+            let entries = parseNav(nav.href, in: epub),
+            !entries.isEmpty
         {
             return entries
         }
         if let ncx = epub.opf.ncxItem,
-           let entries = parseNCX(ncx.href, in: epub),
-           !entries.isEmpty
+            let entries = parseNCX(ncx.href, in: epub),
+            !entries.isEmpty
         {
             return entries
         }
@@ -51,16 +51,17 @@ private nonisolated func parseNav(_ navHref: String, in epub: EPUBArchive) -> [P
     var entries: [ParsedTOCEntry] = []
     for node in anchors {
         guard let element = node as? XMLElement,
-              let href = element.attribute(forName: "href")?.stringValue,
-              !href.isEmpty
+            let href = element.attribute(forName: "href")?.stringValue,
+            !href.isEmpty
         else { continue }
         let title = (element.stringValue ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { continue }
-        entries.append(ParsedTOCEntry(
-            title: title,
-            resourcePath: EPUBArchive.resolvePath(href, baseDir: baseDir)
-        ))
+        entries.append(
+            ParsedTOCEntry(
+                title: title,
+                resourcePath: EPUBArchive.resolvePath(href, baseDir: baseDir)
+            ))
     }
     return entries
 }
@@ -83,10 +84,11 @@ private nonisolated func parseNCX(_ ncxHref: String, in epub: EPUBArchive) -> [P
 
         let srcNodes = (try? element.nodes(forXPath: "./*[local-name()='content']/@src")) ?? []
         guard let href = srcNodes.first?.stringValue, !href.isEmpty else { continue }
-        entries.append(ParsedTOCEntry(
-            title: title,
-            resourcePath: EPUBArchive.resolvePath(href, baseDir: baseDir)
-        ))
+        entries.append(
+            ParsedTOCEntry(
+                title: title,
+                resourcePath: EPUBArchive.resolvePath(href, baseDir: baseDir)
+            ))
     }
     return entries
 }

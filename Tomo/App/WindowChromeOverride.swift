@@ -38,60 +38,58 @@ import os
 /// Wadham's writeup at https://markwadh.am/blog/macos-tahoe-rounded-corner-fix.html.
 @MainActor
 enum WindowChromeOverride {
-  private static let logger = Logger(subsystem: "com.pdrbrnd.tomo", category: "window-chrome")
-  private static var installed = false
+    private static let logger = Logger(subsystem: "com.pdrbrnd.tomo", category: "window-chrome")
+    private static var installed = false
 
-  /// Installs the override. Idempotent — only swizzles on the first call.
-  /// Must be called *before* the first window is shown (TomoApp.init).
-  static func install(cornerRadius: CGFloat) {
-    guard !installed else { return }
-    installed = true
+    /// Installs the override. Idempotent — only swizzles on the first call.
+    /// Must be called *before* the first window is shown (TomoApp.init).
+    static func install(cornerRadius: CGFloat) {
+        guard !installed else { return }
+        installed = true
 
-    guard let themeFrame = NSClassFromString("NSThemeFrame") else {
-      // NSThemeFrame is private — if Apple ever renames it, fail
-      // soft and let the system render the default radius.
-      logger.warning("NSThemeFrame not found — falling back to system corner radius")
-      return
+        guard let themeFrame = NSClassFromString("NSThemeFrame") else {
+            // NSThemeFrame is private — if Apple ever renames it, fail
+            // soft and let the system render the default radius.
+            logger.warning("NSThemeFrame not found — falling back to system corner radius")
+            return
+        }
+
+        let cgFloatReturn: @convention(block) (AnyObject) -> CGFloat = { _ in cornerRadius }
+        let cgSizeReturn: @convention(block) (AnyObject) -> CGSize = { _ in
+            CGSize(width: cornerRadius, height: cornerRadius)
+        }
+
+        let succeeded = [
+            replace(themeFrame, selector: "_cornerRadius", with: cgFloatReturn),
+            replace(themeFrame, selector: "_getCachedWindowCornerRadius", with: cgFloatReturn),
+            replace(themeFrame, selector: "_topCornerSize", with: cgSizeReturn),
+            replace(themeFrame, selector: "_bottomCornerSize", with: cgSizeReturn),
+        ]
+
+        let missingCount = succeeded.filter { !$0 }.count
+        if missingCount == succeeded.count {
+            logger.warning(
+                "None of the NSThemeFrame corner-radius selectors were found — system radius will apply")
+        } else if missingCount > 0 {
+            logger.warning(
+                "\(missingCount) of \(succeeded.count) corner-radius selectors missing — partial override; corners may render inconsistently"
+            )
+        }
     }
 
-    let radius = cornerRadius
-
-    let cgFloatReturn: @convention(block) (AnyObject) -> CGFloat = { _ in radius }
-    let cgSizeReturn: @convention(block) (AnyObject) -> CGSize = { _ in
-      CGSize(width: radius, height: radius)
+    @discardableResult
+    private static func replace(
+        _ cls: AnyClass,
+        selector name: String,
+        with block: Any
+    ) -> Bool {
+        let sel = NSSelectorFromString(name)
+        guard let method = class_getInstanceMethod(cls, sel) else {
+            logger.warning("Selector \(name) not found on \(NSStringFromClass(cls), privacy: .public)")
+            return false
+        }
+        let imp = imp_implementationWithBlock(block)
+        method_setImplementation(method, imp)
+        return true
     }
-
-    let succeeded = [
-      replace(themeFrame, selector: "_cornerRadius", with: cgFloatReturn),
-      replace(themeFrame, selector: "_getCachedWindowCornerRadius", with: cgFloatReturn),
-      replace(themeFrame, selector: "_topCornerSize", with: cgSizeReturn),
-      replace(themeFrame, selector: "_bottomCornerSize", with: cgSizeReturn),
-    ]
-
-    let missingCount = succeeded.filter { !$0 }.count
-    if missingCount == succeeded.count {
-      logger.warning(
-        "None of the NSThemeFrame corner-radius selectors were found — system radius will apply")
-    } else if missingCount > 0 {
-      logger.warning(
-        "\(missingCount) of \(succeeded.count) corner-radius selectors missing — partial override; corners may render inconsistently"
-      )
-    }
-  }
-
-  @discardableResult
-  private static func replace(
-    _ cls: AnyClass,
-    selector name: String,
-    with block: Any
-  ) -> Bool {
-    let sel = NSSelectorFromString(name)
-    guard let method = class_getInstanceMethod(cls, sel) else {
-      logger.warning("Selector \(name) not found on \(NSStringFromClass(cls), privacy: .public)")
-      return false
-    }
-    let imp = imp_implementationWithBlock(block)
-    method_setImplementation(method, imp)
-    return true
-  }
 }

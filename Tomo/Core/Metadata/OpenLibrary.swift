@@ -3,7 +3,7 @@ import os
 
 /// Pure-Swift Open Library client. No auth, no session state. Only invoked
 /// from explicit user actions (Principle 5).
-nonisolated enum OpenLibraryService {
+nonisolated enum OpenLibrary {
     /// Search Open Library by title (and optionally author). Returns one
     /// candidate per distinct cover image, capped at 20.
     static func searchCovers(title: String, author: String?) async throws -> [CoverCandidate] {
@@ -14,7 +14,7 @@ nonisolated enum OpenLibraryService {
         var items: [URLQueryItem] = [
             URLQueryItem(name: "title", value: trimmedTitle),
             URLQueryItem(name: "limit", value: "20"),
-            URLQueryItem(name: "fields", value: "key,cover_i,title,author_name,first_publish_year")
+            URLQueryItem(name: "fields", value: "key,cover_i,title,author_name,first_publish_year"),
         ]
         if let author {
             let trimmedAuthor = author.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -60,14 +60,15 @@ nonisolated enum OpenLibraryService {
             // grey "image not available" placeholder JPG. AsyncImage's
             // .failure case then renders our own placeholder.
             let large = URL(string: "https://covers.openlibrary.org/b/id/\(coverID)-L.jpg?default=false")!
-            results.append(CoverCandidate(
-                id: "ol-\(coverID)",
-                title: doc.title ?? trimmedTitle,
-                authors: doc.author_name ?? [],
-                thumbnailURL: large,
-                fullURL: large,
-                source: .openLibrary
-            ))
+            results.append(
+                CoverCandidate(
+                    id: "ol-\(coverID)",
+                    title: doc.title ?? trimmedTitle,
+                    authors: doc.author_name ?? [],
+                    thumbnailURL: large,
+                    fullURL: large,
+                    source: .openLibrary
+                ))
         }
         return results
     }

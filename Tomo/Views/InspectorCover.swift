@@ -1,7 +1,7 @@
-import SwiftUI
 import AppKit
-import UniformTypeIdentifiers
 import CoreTransferable
+import SwiftUI
+import UniformTypeIdentifiers
 import os
 
 /// Cover image inside the inspector with editing affordances:
@@ -53,7 +53,9 @@ struct InspectorCover: View {
                 guard let img = items.first.flatMap({ NSImage(data: $0.data) }) else { return false }
                 onSetCoverFromImage(img)
                 return true
-            } isTargeted: { dropTargeted = $0 }
+            } isTargeted: {
+                dropTargeted = $0
+            }
             .onPasteCommand(of: [UTType.image]) { providers in
                 Task { await handlePaste(from: providers) }
             }
@@ -148,9 +150,7 @@ struct InspectorCover: View {
         panel.prompt = "Choose"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            DispatchQueue.main.async {
-                onSetCoverFromFile(url)
-            }
+            onSetCoverFromFile(url)
         }
     }
 }

@@ -25,7 +25,9 @@ struct FlowLayout: Layout {
         }
     }
 
-    private func arrange(in width: CGFloat, subviews: Subviews) -> (positions: [CGPoint], sizes: [CGSize], totalHeight: CGFloat) {
+    private func arrange(in width: CGFloat, subviews: Subviews) -> (
+        positions: [CGPoint], sizes: [CGSize], totalHeight: CGFloat
+    ) {
         var positions: [CGPoint] = []
         var sizes: [CGSize] = []
         var x: CGFloat = 0

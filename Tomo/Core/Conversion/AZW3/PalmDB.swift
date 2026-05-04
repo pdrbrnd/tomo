@@ -45,7 +45,8 @@ nonisolated enum PalmDB {
         /// Encodes the full PalmDB to bytes. Mirrors the layout written by
         /// leotaku/mobi's `pdb.Database.Write`.
         func encoded() -> Data {
-            precondition(records.count <= Int(UInt16.max),
+            precondition(
+                records.count <= Int(UInt16.max),
                 "PalmDB supports at most \(UInt16.max) records (got \(records.count))")
 
             let recordCount = records.count
@@ -63,9 +64,10 @@ nonisolated enum PalmDB {
             // them.
             let palmDBHeaderLength = 78
             let recordHeaderLength = 8
-            let initialOffset = palmDBHeaderLength
+            let initialOffset =
+                palmDBHeaderLength
                 + recordHeaderLength * recordCount
-                + 2 // 2-byte padding between record headers and bodies
+                + 2  // 2-byte padding between record headers and bodies
 
             var bodies = Data()
             var offsets: [UInt32] = []
@@ -80,26 +82,26 @@ nonisolated enum PalmDB {
 
             // PalmDB header — 78 bytes, big-endian throughout.
             writer.writeFixedString(name, width: 32)
-            writer.write(UInt16(0))            // FileAttributes
-            writer.write(UInt16(0))            // Version
-            writer.write(palmTime)             // CreationTime
-            writer.write(palmTime)             // ModificationTime
-            writer.write(palmTime)             // BackupTime
-            writer.write(UInt32(0))            // ModificationNumber
-            writer.write(UInt32(0))            // AppInfo
-            writer.write(UInt32(0))            // SortInfo
-            writer.writeMagic("BOOK")          // Type
-            writer.writeMagic("MOBI")          // Creator
-            writer.write(lastRecordUID)        // LastRecordUID
-            writer.write(UInt32(0))            // NextRecordList
+            writer.write(UInt16(0))  // FileAttributes
+            writer.write(UInt16(0))  // Version
+            writer.write(palmTime)  // CreationTime
+            writer.write(palmTime)  // ModificationTime
+            writer.write(palmTime)  // BackupTime
+            writer.write(UInt32(0))  // ModificationNumber
+            writer.write(UInt32(0))  // AppInfo
+            writer.write(UInt32(0))  // SortInfo
+            writer.writeMagic("BOOK")  // Type
+            writer.writeMagic("MOBI")  // Creator
+            writer.write(lastRecordUID)  // LastRecordUID
+            writer.write(UInt32(0))  // NextRecordList
             writer.write(UInt16(recordCount))  // NumRecords
 
             // Record headers — 8 bytes each.
             for (index, offset) in offsets.enumerated() {
-                writer.write(offset)               // Offset
-                writer.write(UInt8(0))             // Attribute
-                writer.write(UInt8(0))             // Skip
-                writer.write(UInt16(index * 2))    // UniqueID
+                writer.write(offset)  // Offset
+                writer.write(UInt8(0))  // Attribute
+                writer.write(UInt8(0))  // Skip
+                writer.write(UInt16(index * 2))  // UniqueID
             }
 
             writer.writeZeros(2)

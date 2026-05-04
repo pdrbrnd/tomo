@@ -65,14 +65,18 @@ actor LibraryImporter {
             try MetadataSidecar.write(book, collectionNames: [], to: bookFolder)
             try await index.add(book)
 
-            libraryLogger.info("imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
+            libraryLogger.info(
+                "imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
             return book
         } catch {
             do {
                 try FileManager.default.trashItem(at: bookFolder, resultingItemURL: nil)
-                libraryLogger.warning("rolled back partial import: \(bookFolder.path(percentEncoded: false), privacy: .public)")
+                libraryLogger.warning(
+                    "rolled back partial import: \(bookFolder.path(percentEncoded: false), privacy: .public)")
             } catch let cleanupError {
-                libraryLogger.error("rollback failed for \(bookFolder.path(percentEncoded: false), privacy: .public): \(cleanupError.localizedDescription, privacy: .public)")
+                libraryLogger.error(
+                    "rollback failed for \(bookFolder.path(percentEncoded: false), privacy: .public): \(cleanupError.localizedDescription, privacy: .public)"
+                )
             }
             throw error
         }
@@ -85,12 +89,14 @@ actor LibraryImporter {
     /// logs its confidence as a dev-time signal.
     private func resolveLocale(declared: String?, file: URL) -> String {
         if let declared,
-           let direct = profiles.first(where: { $0.id.caseInsensitiveCompare(declared) == .orderedSame }) {
+            let direct = profiles.first(where: { $0.id.caseInsensitiveCompare(declared) == .orderedSame })
+        {
             classifierLogger.info("trusting EPUB-declared locale: \(declared, privacy: .public)")
             return direct.id
         }
         if let result = Classifier.classifyEPUB(at: file, profiles: profiles),
-           result.confidence >= Self.classificationThreshold {
+            result.confidence >= Self.classificationThreshold
+        {
             return result.profileId
         }
         return declared ?? "und"
@@ -117,7 +123,8 @@ private nonisolated func bookFolderURL(in libraryFolder: URL, metadata: EPUBMeta
     let author = sanitize(metadata.authors.first ?? "Unknown")
     let titlePart = sanitize(metadata.title)
     let folderName = metadata.year.map { "\(titlePart) (\($0))" } ?? titlePart
-    return libraryFolder
+    return
+        libraryFolder
         .appending(component: author)
         .appending(component: folderName)
 }

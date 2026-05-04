@@ -21,9 +21,7 @@ struct InlineEditField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        Group {
-            if isEditing { editingView } else { displayView }
-        }
+        if isEditing { editingView } else { displayView }
     }
 
     private var displayView: some View {

@@ -14,17 +14,17 @@ import UniformTypeIdentifiers
 /// "dynamic" UTI whose conformance checks fail silently — and SwiftUI's
 /// drop-destination matching uses those checks.
 extension UTType {
-  nonisolated static let tomoBookDrag = UTType(exportedAs: "com.pdrbrnd.tomo.book-drag")
+    nonisolated static let tomoBookDrag = UTType(exportedAs: "com.pdrbrnd.tomo.book-drag")
 }
 
 nonisolated struct BookDrag: Codable, Sendable, Transferable {
-  let bookIDs: [UUID]
+    let bookIDs: [UUID]
 
-  static var transferRepresentation: some TransferRepresentation {
-    DataRepresentation(contentType: .tomoBookDrag) { drag in
-      try JSONEncoder().encode(drag)
-    } importing: { data in
-      try JSONDecoder().decode(BookDrag.self, from: data)
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(contentType: .tomoBookDrag) { drag in
+            try JSONEncoder().encode(drag)
+        } importing: { data in
+            try JSONDecoder().decode(BookDrag.self, from: data)
+        }
     }
-  }
 }

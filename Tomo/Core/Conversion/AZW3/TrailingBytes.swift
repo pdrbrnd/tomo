@@ -33,15 +33,15 @@ nonisolated struct StrandData: Sendable, Equatable {
 
     func encoded() -> Data {
         var value = index << 3
-        if doesSpan                  { value |= 0b0001 }
-        if tbsType != 0              { value |= 0b0010 }
-        if numSiblings > 1           { value |= 0b0100 }
-        if firstOfNotFirstStrand     { value |= 0b1000 }
+        if doesSpan { value |= 0b0001 }
+        if tbsType != 0 { value |= 0b0010 }
+        if numSiblings > 1 { value |= 0b0100 }
+        if firstOfNotFirstStrand { value |= 0b1000 }
 
         var output = encodeVWI(value)
-        if tbsType != 0          { output.append(encodeVWI(tbsType)) }
-        if numSiblings > 1       { output.append(numSiblings) }
-        if doesSpan              { output.append(encodeVWI(0)) }
+        if tbsType != 0 { output.append(encodeVWI(tbsType)) }
+        if numSiblings > 1 { output.append(numSiblings) }
+        if doesSpan { output.append(encodeVWI(0)) }
         return output
     }
 }
@@ -93,12 +93,12 @@ nonisolated func multibyteOverlap(in record: Data) -> UInt8 {
     let starter = bytes[i]
     let expected: Int
     switch starter {
-    case 0x00...0x7F:    return 0   // ASCII or end of complete sequence
-    case 0x80...0xBF:    return 0   // Stuck on continuation byte; broken UTF-8
-    case 0xC0...0xDF:    expected = 2
-    case 0xE0...0xEF:    expected = 3
-    case 0xF0...0xF7:    expected = 4
-    default:             return 0   // Invalid UTF-8 starter
+    case 0x00...0x7F: return 0  // ASCII or end of complete sequence
+    case 0x80...0xBF: return 0  // Stuck on continuation byte; broken UTF-8
+    case 0xC0...0xDF: expected = 2
+    case 0xE0...0xEF: expected = 3
+    case 0xF0...0xF7: expected = 4
+    default: return 0  // Invalid UTF-8 starter
     }
 
     let bytesInThisRecord = bytes.count - i
@@ -138,7 +138,7 @@ nonisolated struct TrailProvider: Sendable {
 
             // Case 2: chapter starts or ends within the record range.
             let chapterStartsHere = from <= chapter.start && chapter.start <= to
-            let chapterEndsHere   = from <= end && end <= to
+            let chapterEndsHere = from <= end && end <= to
             if chapterStartsHere || chapterEndsHere {
                 if data.strand == nil {
                     data.strand = StrandData(index: i, tbsType: 8)

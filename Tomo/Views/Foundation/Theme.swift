@@ -1,44 +1,48 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 // Visual tokens. Opinionated values — not the system defaults.
 // Any tweak we make should pass through here so we don't drift.
 enum Theme {
     // Canvas: warm off-white in light, slightly-warm off-black in dark.
     // The point of these is to *not* be the system grey, which reads as default.
-    static let canvas = Color(nsColor: NSColor(name: nil) { appearance in
-        if isDarkAppearance(appearance) {
-            return NSColor(srgbRed: 0.062, green: 0.062, blue: 0.066, alpha: 1.0)
-        }
-        return NSColor(srgbRed: 0.965, green: 0.961, blue: 0.953, alpha: 1.0)
-    })
+    static let canvas = Color(
+        nsColor: NSColor(name: nil) { appearance in
+            if isDarkAppearance(appearance) {
+                return NSColor(srgbRed: 0.062, green: 0.062, blue: 0.066, alpha: 1.0)
+            }
+            return NSColor(srgbRed: 0.965, green: 0.961, blue: 0.953, alpha: 1.0)
+        })
 
     // Surface: a card / pill background that sits on the canvas. Visibly
     // brighter than the canvas so cards/pills read as elevated.
-    static let surface = Color(nsColor: NSColor(name: nil) { appearance in
-        if isDarkAppearance(appearance) {
-            return NSColor(srgbRed: 0.155, green: 0.155, blue: 0.160, alpha: 1.0)
-        }
-        return NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-    })
+    static let surface = Color(
+        nsColor: NSColor(name: nil) { appearance in
+            if isDarkAppearance(appearance) {
+                return NSColor(srgbRed: 0.155, green: 0.155, blue: 0.160, alpha: 1.0)
+            }
+            return NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+        })
 
     // Hairline: the border that catches light on cards/pills. Theme-adaptive.
-    static let hairline = Color(nsColor: NSColor(name: nil) { appearance in
-        if isDarkAppearance(appearance) {
-            return NSColor(white: 1.0, alpha: 0.06)
-        }
-        return NSColor(white: 0.0, alpha: 0.06)
-    })
+    static let hairline = Color(
+        nsColor: NSColor(name: nil) { appearance in
+            if isDarkAppearance(appearance) {
+                return NSColor(white: 1.0, alpha: 0.06)
+            }
+            return NSColor(white: 0.0, alpha: 0.06)
+        })
 
     // Panel: same as canvas in light (no contrast — relies on hairline + shadow
     // to define the panel), a touch brighter than canvas in dark so the
     // sidebar reads as a separate plane. Used by the inspector.
-    static let panel = Color(nsColor: NSColor(name: nil) { appearance in
-        if isDarkAppearance(appearance) {
-            return NSColor(srgbRed: 0.090, green: 0.090, blue: 0.094, alpha: 1.0)
-        }
-        return NSColor(srgbRed: 0.965, green: 0.961, blue: 0.953, alpha: 1.0)
-    })
+    static let panel = Color(
+        nsColor: NSColor(name: nil) { appearance in
+            if isDarkAppearance(appearance) {
+                return NSColor(srgbRed: 0.090, green: 0.090, blue: 0.094, alpha: 1.0)
+            }
+            return NSColor(srgbRed: 0.965, green: 0.961, blue: 0.953, alpha: 1.0)
+        })
 
     // Concentric corner radii. The rule everywhere: r_inner = r_outer − gap.
     // Tuned so the bottom-chrome 32pt buttons' centers coincide with both
@@ -119,7 +123,7 @@ func isDarkAppearance(_ appearance: NSAppearance) -> Bool {
         .darkAqua,
         .vibrantDark,
         .accessibilityHighContrastDarkAqua,
-        .accessibilityHighContrastVibrantDark
+        .accessibilityHighContrastVibrantDark,
     ]
     if darkNames.contains(appearance.name) { return true }
     return appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua

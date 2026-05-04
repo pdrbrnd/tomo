@@ -43,7 +43,8 @@ nonisolated func encodeCNCXString(_ string: String) -> Data {
 /// labels — none of the labels we use approach that.
 nonisolated func encodeINDXString(_ string: String) -> Data {
     let utf8 = Array(string.utf8)
-    precondition(utf8.count <= 255,
+    precondition(
+        utf8.count <= 255,
         "INDX label must fit in a single length byte (got \(utf8.count) bytes)")
     var bytes: [UInt8] = [UInt8(utf8.count)]
     bytes.append(contentsOf: utf8)

@@ -5,10 +5,10 @@ nonisolated struct Book: Sendable, Identifiable, Equatable {
     var title: String
     var authors: [String]
     var year: Int?
-    var locale: String                 // BCP 47: "pt-PT", "pt", "en-US", "und"
-    var coverPath: String?             // relative to the book's folder
+    var locale: String  // BCP 47: "pt-PT", "pt", "en-US", "und"
+    var coverPath: String?  // relative to the book's folder
     var dateAdded: Date
-    var fileURL: URL                   // absolute path to primary file
+    var fileURL: URL  // absolute path to primary file
     var origin: BookOrigin
     /// Collections this book belongs to. Populated by the index from the
     /// `book_collections` join table; not stored on the row directly. The

@@ -9,7 +9,7 @@ import os
 /// rather than a stub cover. Coverage skews mainstream English + the local
 /// store's catalogue (PT for Portugal); Apple stores don't fully overlap, so
 /// we query US + PT in parallel and merge.
-nonisolated enum iTunesSearchService {
+nonisolated enum AppleBooks {
     /// Search the US + PT Apple Books stores in parallel and return merged,
     /// deduped candidates. Per-store failures don't poison the other.
     static func searchCovers(title: String, author: String?) async throws -> [CoverCandidate] {
@@ -28,7 +28,8 @@ nonisolated enum iTunesSearchService {
         do {
             return try await searchOne(title: title, author: author, country: country)
         } catch {
-            metadataLogger.error("iTunes \(country, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            metadataLogger.error(
+                "iTunes \(country, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }
@@ -46,7 +47,7 @@ nonisolated enum iTunesSearchService {
             URLQueryItem(name: "media", value: "ebook"),
             URLQueryItem(name: "entity", value: "ebook"),
             URLQueryItem(name: "country", value: country),
-            URLQueryItem(name: "limit", value: "20")
+            URLQueryItem(name: "limit", value: "20"),
         ]
         guard let url = components.url else { throw CoverFetchError.badResponse }
 
@@ -72,14 +73,15 @@ nonisolated enum iTunesSearchService {
 
         return decoded.results.compactMap { result in
             guard let artwork100 = result.artworkUrl100,
-                  let hiRes = upscaleArtwork(artwork100) else { return nil }
+                let hiRes = upscaleArtwork(artwork100)
+            else { return nil }
             return CoverCandidate(
                 id: "itunes-\(country.lowercased())-\(result.trackId)",
                 title: result.trackName ?? title,
                 authors: result.artistName.map { [$0] } ?? [],
                 thumbnailURL: hiRes,
                 fullURL: hiRes,
-                source: .iTunes
+                source: .appleBooks
             )
         }
     }
@@ -97,13 +99,16 @@ nonisolated enum iTunesSearchService {
     ///   /100x100.png          (no `bb`)
     /// Regex-substituting the trailing size token covers all of them in one
     /// shot.
-    private static func upscaleArtwork(_ artworkURL: String) -> URL? {
+    /// Pattern is a constant — compile failure would be a programming error,
+    /// so we force-unwrap once at load time rather than `try?` per call.
+    private static let upscaleRegex: NSRegularExpression = {
         let pattern = #"/\d+x\d+(?:bb|cc)?(?:-\d+)?\.(?:jpg|jpeg|png)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else {
-            return URL(string: artworkURL)
-        }
+        return try! NSRegularExpression(pattern: pattern)
+    }()
+
+    private static func upscaleArtwork(_ artworkURL: String) -> URL? {
         let nsRange = NSRange(artworkURL.startIndex..<artworkURL.endIndex, in: artworkURL)
-        let upscaled = regex.stringByReplacingMatches(
+        let upscaled = upscaleRegex.stringByReplacingMatches(
             in: artworkURL,
             options: [],
             range: nsRange,

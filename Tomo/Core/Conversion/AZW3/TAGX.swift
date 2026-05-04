@@ -18,27 +18,27 @@ nonisolated struct TAGXTag: Hashable, Sendable {
 
     init(_ raw: UInt32) { self.raw = raw }
 
-    var tagId: UInt8     { UInt8((raw >> 24) & 0xFF) }
-    var tagNum: UInt8    { UInt8((raw >> 16) & 0xFF) }
-    var bitmask: UInt8   { UInt8((raw >> 8) & 0xFF) }
+    var tagId: UInt8 { UInt8((raw >> 24) & 0xFF) }
+    var tagNum: UInt8 { UInt8((raw >> 16) & 0xFF) }
+    var bitmask: UInt8 { UInt8((raw >> 8) & 0xFF) }
     var endMarker: UInt8 { UInt8(raw & 0xFF) }
-    var isEnd: Bool      { endMarker == 1 }
+    var isEnd: Bool { endMarker == 1 }
 
     // NCX entries (flat — hierarchical fields are added when v2 needs them)
-    static let entryPosition    = TAGXTag(0x01010100)
-    static let entryLength      = TAGXTag(0x02010200)
-    static let entryNameOffset  = TAGXTag(0x03010400)
-    static let entryDepthLevel  = TAGXTag(0x04010800)
+    static let entryPosition = TAGXTag(0x01010100)
+    static let entryLength = TAGXTag(0x02010200)
+    static let entryNameOffset = TAGXTag(0x03010400)
+    static let entryDepthLevel = TAGXTag(0x04010800)
 
     // Skeleton table
     static let skeletonChunkCount = TAGXTag(0x01010300)
-    static let skeletonGeometry   = TAGXTag(0x06020C00)
+    static let skeletonGeometry = TAGXTag(0x06020C00)
 
     // Chunk table
-    static let chunkCNCXOffset     = TAGXTag(0x02010100)
-    static let chunkFileNumber     = TAGXTag(0x03010200)
+    static let chunkCNCXOffset = TAGXTag(0x02010100)
+    static let chunkFileNumber = TAGXTag(0x03010200)
     static let chunkSequenceNumber = TAGXTag(0x04010400)
-    static let chunkGeometry       = TAGXTag(0x06020800)
+    static let chunkGeometry = TAGXTag(0x06020800)
 
     /// End-of-table sentinel — required at the end of every TAGX table.
     static let end = TAGXTag(0x00000001)
@@ -76,9 +76,9 @@ nonisolated enum TAGXTable {
 /// into the spec.
 nonisolated func nvals(for tag: TAGXTag) -> UInt8 {
     switch tag {
-    case .skeletonGeometry:                     return 4
-    case .chunkGeometry, .skeletonChunkCount:   return 2
-    default:                                    return 1
+    case .skeletonGeometry: return 4
+    case .chunkGeometry, .skeletonChunkCount: return 2
+    default: return 1
     }
 }
 
@@ -107,7 +107,8 @@ nonisolated func calculateControlByte(_ tags: [TAGXTag]) -> UInt8 {
         let shifted = UInt32(nentries) << shifts
         current |= tag.bitmask & UInt8(shifted & 0xFF)
     }
-    precondition(!controlBytes.isEmpty,
+    precondition(
+        !controlBytes.isEmpty,
         "TAGX table must contain at least one .end marker")
     return controlBytes[0]
 }

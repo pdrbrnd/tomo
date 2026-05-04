@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Renders a cover image from disk, with a typography placeholder when no
 /// cover URL is provided. Single owner for the missing-cover treatment.
@@ -88,7 +88,10 @@ struct LocalCoverImage: View {
     }
 
     private func load() async {
-        guard let url else { image = nil; return }
+        guard let url else {
+            image = nil
+            return
+        }
         image = await Task.detached { NSImage(contentsOf: url) }.value
     }
 }

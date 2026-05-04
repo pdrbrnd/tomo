@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct LibraryView: View {
     let state: AppState
@@ -40,13 +40,12 @@ struct LibraryView: View {
         } else {
             let needle = searchText.lowercased()
             bySearch = state.books.filter { book in
-                book.title.lowercased().contains(needle) ||
-                book.authors.contains { $0.lowercased().contains(needle) }
+                book.title.lowercased().contains(needle) || book.authors.contains { $0.lowercased().contains(needle) }
             }
         }
         return bySearch.filter { book in
-            (selectedCollection.map { book.collectionIDs.contains($0) } ?? true) &&
-            (selectedLanguage.map { book.locale == $0 } ?? true)
+            (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
+                && (selectedLanguage.map { book.locale == $0 } ?? true)
         }
     }
 
@@ -55,7 +54,8 @@ struct LibraryView: View {
     /// collection is the more specific scope.
     private var searchPlaceholder: String {
         if let id = selectedCollection,
-           let collection = state.collections.first(where: { $0.id == id }) {
+            let collection = state.collections.first(where: { $0.id == id })
+        {
             return "Search \(collection.name)"
         }
         if let lang = selectedLanguage {
@@ -212,9 +212,10 @@ struct LibraryView: View {
                 booksPendingDelete = []
             }
         } message: {
-            Text(booksPendingDelete.count == 1
-                ? "The book and its metadata will be moved to the Trash."
-                : "These books and their metadata will be moved to the Trash."
+            Text(
+                booksPendingDelete.count == 1
+                    ? "The book and its metadata will be moved to the Trash."
+                    : "These books and their metadata will be moved to the Trash."
             )
         }
         .confirmationDialog(
@@ -339,7 +340,8 @@ struct LibraryView: View {
             return "Nothing matches “\(searchText)”."
         }
         if let id = selectedCollection,
-           let collection = state.collections.first(where: { $0.id == id }) {
+            let collection = state.collections.first(where: { $0.id == id })
+        {
             return "No books in “\(collection.name)” yet."
         }
         if let lang = selectedLanguage {
@@ -448,19 +450,23 @@ struct LibraryView: View {
         // disambiguation lag. Modifier flags read from NSEvent because
         // TapGesture.modifiers() doesn't reliably exclude plain taps when
         // both forms are attached simultaneously.
-        .simultaneousGesture(TapGesture(count: 1).onEnded {
-            let flags = NSEvent.modifierFlags
-            if flags.contains(.command) {
-                handleCommandClick(book)
-            } else if flags.contains(.shift) {
-                handleShiftClick(book)
-            } else {
-                handlePlainClick(book)
+        .simultaneousGesture(
+            TapGesture(count: 1).onEnded {
+                let flags = NSEvent.modifierFlags
+                if flags.contains(.command) {
+                    handleCommandClick(book)
+                } else if flags.contains(.shift) {
+                    handleShiftClick(book)
+                } else {
+                    handlePlainClick(book)
+                }
             }
-        })
-        .simultaneousGesture(TapGesture(count: 2).onEnded {
-            NSWorkspace.shared.open(book.fileURL)
-        })
+        )
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                NSWorkspace.shared.open(book.fileURL)
+            }
+        )
         .overlay(
             RightClickCatcher {
                 // Standard macOS behavior: right-clicking an unselected
@@ -670,8 +676,9 @@ struct LibraryView: View {
         // is most likely to want to remove it from there. Removing from
         // arbitrary collections is done via drag-out / inspector.
         if let collectionID = selectedCollection,
-           let collection = state.collections.first(where: { $0.id == collectionID }),
-           book.collectionIDs.contains(collectionID) {
+            let collection = state.collections.first(where: { $0.id == collectionID }),
+            book.collectionIDs.contains(collectionID)
+        {
             MenuDivider()
             bookMenuItem("Remove from \(collection.name)", icon: "minus", destructive: true) {
                 Task { await state.removeBook(book, from: collectionID) }
@@ -704,7 +711,8 @@ struct LibraryView: View {
             }
         }
         if let collectionID = selectedCollection,
-           let collection = state.collections.first(where: { $0.id == collectionID }) {
+            let collection = state.collections.first(where: { $0.id == collectionID })
+        {
             let inCollection = books.filter { $0.collectionIDs.contains(collectionID) }
             if !inCollection.isEmpty {
                 MenuDivider()
@@ -977,10 +985,22 @@ struct LibraryView: View {
     }
 
     private func handleEscape() {
-        if searchFocused { searchFocused = false; return }
-        if !searchText.isEmpty { searchText = ""; return }
-        if !selectedBookIDs.isEmpty { clearSelection(); return }
-        if inspectorOpen { inspectorOpen = false; return }
+        if searchFocused {
+            searchFocused = false
+            return
+        }
+        if !searchText.isEmpty {
+            searchText = ""
+            return
+        }
+        if !selectedBookIDs.isEmpty {
+            clearSelection()
+            return
+        }
+        if inspectorOpen {
+            inspectorOpen = false
+            return
+        }
         if sidebarOpen { sidebarOpen = false }
     }
 }

@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Window-level chrome adjustments that need direct NSWindow access.
 ///
@@ -39,7 +39,7 @@ struct WindowCustomizer: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         let coordinator = context.coordinator
-        DispatchQueue.main.async { [weak view] in
+        Task { @MainActor [weak view] in
             guard let view else { return }
             apply(to: view, coordinator: coordinator)
         }
@@ -48,7 +48,7 @@ struct WindowCustomizer: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         let coordinator = context.coordinator
-        DispatchQueue.main.async { [weak nsView] in
+        Task { @MainActor [weak nsView] in
             guard let nsView else { return }
             apply(to: nsView, coordinator: coordinator)
         }
@@ -90,10 +90,11 @@ struct WindowCustomizer: NSViewRepresentable {
             }
             // Title-bar coords aren't flipped — larger Y is higher on
             // screen, so visually moving DOWN means decreasing Y.
-            button.setFrameOrigin(NSPoint(
-                x: original.x + inset,
-                y: original.y - inset
-            ))
+            button.setFrameOrigin(
+                NSPoint(
+                    x: original.x + inset,
+                    y: original.y - inset
+                ))
             // Pin the button so window resize / auto-layout can't drag it.
             button.autoresizingMask = []
         }

@@ -21,6 +21,6 @@ nonisolated struct ConversionRegistry: Sendable {
     /// format adapter; everything else (device drivers, the UI gate)
     /// flows from here.
     static let `default` = ConversionRegistry([
-        EPUBToAZW3Converter(),
+        EPUBToAZW3Converter()
     ])
 }

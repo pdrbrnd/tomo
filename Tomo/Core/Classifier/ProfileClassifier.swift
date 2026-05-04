@@ -2,7 +2,7 @@ import Foundation
 
 nonisolated struct Classification: Sendable, Equatable {
     let profileId: String
-    let confidence: Double      // 0...1, normalized over candidate scores
+    let confidence: Double  // 0...1, normalized over candidate scores
 }
 
 nonisolated enum ProfileClassifier {

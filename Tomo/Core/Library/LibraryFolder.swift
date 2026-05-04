@@ -37,7 +37,8 @@ nonisolated enum LibraryFolder {
     /// doesn't show in the picker.
     static func recents() -> [URL] {
         let paths = UserDefaults.standard.stringArray(forKey: recentsKey) ?? []
-        return paths
+        return
+            paths
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
             .filter(isExistingDirectory)
     }
@@ -74,11 +75,13 @@ nonisolated enum LibraryFolder {
     /// True if the folder contains no non-hidden entries.
     /// Returns false if the folder can't be read (we don't assume empty on error).
     static func isEmpty(_ folder: URL) -> Bool {
-        guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: folder,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard
+            let contents = try? FileManager.default.contentsOfDirectory(
+                at: folder,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        else {
             return false
         }
         return contents.isEmpty
@@ -95,12 +98,14 @@ nonisolated enum LibraryFolder {
         )
 
         for authorURL in authorURLs where isDirectory(authorURL) {
+            try Task.checkCancellation()
             let bookURLs = try fm.contentsOfDirectory(
                 at: authorURL,
                 includingPropertiesForKeys: [.isDirectoryKey],
                 options: [.skipsHiddenFiles]
             )
             for bookURL in bookURLs where isDirectory(bookURL) {
+                try Task.checkCancellation()
                 let sidecar = bookURL.appending(component: MetadataSidecar.filename)
                 if fm.fileExists(atPath: sidecar.path(percentEncoded: false)) {
                     result.append(bookURL)

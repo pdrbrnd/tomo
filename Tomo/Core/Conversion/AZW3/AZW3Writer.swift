@@ -28,7 +28,8 @@ nonisolated struct AZW3Writer: Sendable {
         // text aren't representable. The format also breaks down well
         // before that — Kindle's parser practically caps around the
         // hundreds of MB. This precondition documents the boundary.
-        precondition(text.count <= UInt32.max,
+        precondition(
+            text.count <= UInt32.max,
             "AZW3 combined text exceeds UInt32.max bytes (\(text.count))")
 
         // 2. Build the null record with EXTH metadata. We mutate it
@@ -70,7 +71,7 @@ nonisolated struct AZW3Writer: Sendable {
         //    leotaku's `% 4` quirk (the count is the modulus itself,
         //    not 4-minus-modulus — this is intentional).
         if let lastTextRecord = textRecords.last,
-           lastTextRecord.length % 4 != 0
+            lastTextRecord.length % 4 != 0
         {
             let padBytes = lastTextRecord.length % 4
             db.records.append(PalmDB.RawRecord(Data(count: padBytes)))
@@ -142,10 +143,11 @@ nonisolated struct AZW3Writer: Sendable {
         ]
         var cssOffset = htmlEnd
         for cssLen in cssLengths {
-            fdstEntries.append(.init(
-                start: UInt32(cssOffset),
-                end: UInt32(cssOffset + cssLen)
-            ))
+            fdstEntries.append(
+                .init(
+                    start: UInt32(cssOffset),
+                    end: UInt32(cssOffset + cssLen)
+                ))
             cssOffset += cssLen
         }
         null.mobi.fdstEntryCount = UInt32(fdstEntries.count)

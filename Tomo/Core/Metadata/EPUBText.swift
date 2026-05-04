@@ -38,8 +38,9 @@ private nonisolated func collectText(from node: XMLNode) -> [String] {
         return []
     }
     if let element = node as? XMLElement,
-       let name = element.localName,
-       name == "script" || name == "style" {
+        let name = element.localName,
+        name == "script" || name == "style"
+    {
         return []
     }
     return (node.children ?? []).flatMap { collectText(from: $0) }

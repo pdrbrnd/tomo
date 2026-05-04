@@ -154,10 +154,10 @@ struct DeviceTile: View {
         if reduceMotion { return 1.0 }
         switch visual {
         case .idle: return 1.0
-        case .dragActive: return 1.10   // attention grab when any in-app drag starts
-        case .dragOver: return 1.20     // strong reaction when drag is over us
+        case .dragActive: return 1.10  // attention grab when any in-app drag starts
+        case .dragOver: return 1.20  // strong reaction when drag is over us
         case .sending: return 1.06
-        case .success: return 1.10      // celebratory pop
+        case .success: return 1.10  // celebratory pop
         case .error: return 1.04
         }
     }

@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Transparent NSView overlay that intercepts right-clicks only. Left-clicks
 /// and drags pass through to the underlying SwiftUI view because `hitTest`

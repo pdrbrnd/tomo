@@ -132,11 +132,13 @@ struct LibrarySidebar: View {
                     .foregroundStyle(.primary.opacity(0.45))
             }
         }
-        .buttonStyle(SidebarRowStyle(
-            isSelected: isSelected,
-            isDropTargeted: isDropTargeted,
-            recentlyDropped: recentlyDropped
-        ))
+        .buttonStyle(
+            SidebarRowStyle(
+                isSelected: isSelected,
+                isDropTargeted: isDropTargeted,
+                recentlyDropped: recentlyDropped
+            )
+        )
         .contextMenu {
             Button("Rename…") { beginRename(collection) }
             Button("Delete…", role: .destructive) {

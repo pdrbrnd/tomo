@@ -27,7 +27,7 @@ nonisolated func ncxHeaderIndexRecord(entryCount: Int) -> IndexRecord {
     let label = encodeINDXString(String(format: "%03d", entryCount - 1))
     var entry = label
     entry.append(uint16BigEndian(UInt16(entryCount)))
-    entry.append(Data(count: 3))    // Trailing zero pad inside entry
+    entry.append(Data(count: 3))  // Trailing zero pad inside entry
     return IndexRecord(
         type: 2,
         tagxTable: TAGXTable.ncxSingle,
@@ -89,10 +89,10 @@ nonisolated func ncxIndexRecord(chapters: [ChapterInfo]) -> (IndexRecord, CNCXRe
         let label = encodeINDXString(String(format: "%03x", chapter.start))
         var entry = label
         entry.append(controlByte)
-        entry.append(encodeVWI(chapter.start))    // Record offset
-        entry.append(encodeVWI(chapter.length))   // Record length
-        entry.append(encodeVWI(cncxOffset))       // Title offset in CNCX
-        entry.append(encodeVWI(0))                // Depth level (flat)
+        entry.append(encodeVWI(chapter.start))  // Record offset
+        entry.append(encodeVWI(chapter.length))  // Record length
+        entry.append(encodeVWI(cncxOffset))  // Title offset in CNCX
+        entry.append(encodeVWI(0))  // Depth level (flat)
         idxtEntries.append(entry)
 
         cncxOffset += cncx.count
@@ -119,10 +119,10 @@ nonisolated func skeletonIndexRecord(chunks: [ChunkInfo]) -> IndexRecord {
         let label = encodeINDXString("SKEL" + String(format: "%010d", i))
         var entry = label
         entry.append(controlByte)
-        entry.append(encodeVWI(1))                  // Chunk count for this skel
-        entry.append(encodeVWI(1))                  // (paired count)
-        entry.append(encodeVWI(chunk.preStart))     // Skel byte start
-        entry.append(encodeVWI(chunk.preLength))    // Skel byte length
+        entry.append(encodeVWI(1))  // Chunk count for this skel
+        entry.append(encodeVWI(1))  // (paired count)
+        entry.append(encodeVWI(chunk.preStart))  // Skel byte start
+        entry.append(encodeVWI(chunk.preLength))  // Skel byte length
         idxtEntries.append(entry)
     }
 
@@ -150,11 +150,11 @@ nonisolated func chunkIndexRecord(chunks: [ChunkInfo]) -> (IndexRecord, CNCXReco
         let label = encodeINDXString(String(format: "%010d", chunk.contentStart))
         var entry = label
         entry.append(controlByte)
-        entry.append(encodeVWI(cncxOffset))         // CNCX offset
-        entry.append(encodeVWI(i))                  // File number
-        entry.append(encodeVWI(i))                  // Sequence number
-        entry.append(encodeVWI(0))                  // Geometry start
-        entry.append(encodeVWI(chunk.contentLength)) // Geometry length
+        entry.append(encodeVWI(cncxOffset))  // CNCX offset
+        entry.append(encodeVWI(i))  // File number
+        entry.append(encodeVWI(i))  // Sequence number
+        entry.append(encodeVWI(0))  // Geometry start
+        entry.append(encodeVWI(chunk.contentLength))  // Geometry length
         idxtEntries.append(entry)
 
         cncxOffset += cncx.count

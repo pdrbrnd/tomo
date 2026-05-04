@@ -19,7 +19,9 @@ nonisolated enum LanguageProfileStore {
                 let profile = try decoder.decode(LanguageProfile.self, from: data)
                 result.append(profile)
             } catch {
-                classifierLogger.error("failed to load \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                classifierLogger.error(
+                    "failed to load \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
             }
         }
 
@@ -29,18 +31,26 @@ nonisolated enum LanguageProfileStore {
 
     private static func bundleURLs() -> [URL] {
         if let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: "Profiles"),
-           !urls.isEmpty {
+            !urls.isEmpty
+        {
             return urls
         }
         if let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: nil),
-           !urls.isEmpty {
+            !urls.isEmpty
+        {
             return urls
         }
         // PBXFileSystemSynchronizedRootGroup may copy resources into the bundle
         // without registering them in CFBundle's index. Scan the resource
         // directory directly as a last resort.
         guard let resourceURL = Bundle.main.resourceURL else { return [] }
-        let contents = (try? FileManager.default.contentsOfDirectory(at: resourceURL, includingPropertiesForKeys: nil)) ?? []
+        let contents: [URL]
+        do {
+            contents = try FileManager.default.contentsOfDirectory(at: resourceURL, includingPropertiesForKeys: nil)
+        } catch {
+            classifierLogger.warning("could not list bundle resources: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
         return contents.filter { $0.pathExtension.lowercased() == "json" }
     }
 }

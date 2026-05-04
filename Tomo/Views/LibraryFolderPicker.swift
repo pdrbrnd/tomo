@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// Folder pill rendered next to the traffic lights — the always-visible
@@ -109,7 +109,7 @@ struct LibraryFolderPicker: View {
             popoverOpen = false
             // Defer until after the popover dismisses — fileImporter and
             // popover both want the window's modal stack and overlap badly.
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 fileImporterOpen = true
             }
         } label: {
