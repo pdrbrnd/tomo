@@ -547,6 +547,12 @@ struct BookInspector: View {
                 metaRow("Size", value: ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
             }
             metaRow("Source", value: sourcePluginName ?? "Plugin")
+            // Plugin-supplied extras (publisher, ISBN, subjects, etc.).
+            // Rendered in the order the plugin returned them — same row
+            // styling so the inspector reads as one continuous table.
+            ForEach(Array(result.metadata.enumerated()), id: \.offset) { _, field in
+                metaRow(field.key, value: field.value)
+            }
         }
     }
 

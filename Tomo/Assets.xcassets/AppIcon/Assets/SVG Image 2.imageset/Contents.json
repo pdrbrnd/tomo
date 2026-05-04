@@ -1,17 +1,15 @@
 {
   "images" : [
     {
-      "filename" : "icon-fg.png",
+      "filename" : "SVG Image 2.svg",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "icon-fg@2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "icon-fg@3x.png",
       "idiom" : "universal",
       "scale" : "3x"
     }

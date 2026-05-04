@@ -638,7 +638,13 @@ struct LibraryView: View {
             }
             downloadStates[result.id] = .added
             try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(reduceMotion ? .easeOut(duration: 0.22) : .smooth(duration: 0.4)) {
+            // Instant swap. The library card was hidden during the celebration
+            // window; releasing both the plugin result and the celebrating
+            // book ID *without* animation makes the source card disappear and
+            // the library card take its sorted spot in the same frame.
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) {
                 pluginResults.removeAll { $0.id == result.id }
                 if let importedBook {
                     celebratingBookIDs.remove(importedBook.id)

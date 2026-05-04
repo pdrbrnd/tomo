@@ -1,5 +1,13 @@
 import Foundation
 
+/// One label / value pair the inspector will render below the canonical
+/// metadata rows. Plugins decide what to surface (publisher, ISBN, subjects,
+/// etc.) and the inspector mirrors them in order.
+struct PluginField: Hashable, Sendable {
+    let key: String
+    let value: String
+}
+
 /// Mirrors the JS plugin's result shape. Plugins return JS objects with these
 /// fields; we lift them into Swift here. `id` is whatever the plugin uses to
 /// uniquely identify the result on its own side — opaque to us.
@@ -13,7 +21,9 @@ struct PluginResult: Identifiable, Hashable, Sendable {
     let sizeBytes: Int?
     let coverURL: URL?
     let detailURL: URL?
-    let metadata: [String: String]
+    /// Ordered list of additional inspector rows. The plugin's order is
+    /// preserved as-is (it knows what's most relevant). Empty is fine.
+    let metadata: [PluginField]
 
     init(
         id: String,
@@ -25,7 +35,7 @@ struct PluginResult: Identifiable, Hashable, Sendable {
         sizeBytes: Int?,
         coverURL: URL? = nil,
         detailURL: URL? = nil,
-        metadata: [String: String] = [:]
+        metadata: [PluginField] = []
     ) {
         self.id = id
         self.title = title
@@ -55,14 +65,15 @@ struct PluginResult: Identifiable, Hashable, Sendable {
         let sizeBytes = dict["sizeBytes"] as? Int
         let coverURL = (dict["coverURL"] as? String).flatMap(URL.init(string:))
         let detailURL = (dict["detailURL"] as? String).flatMap(URL.init(string:))
-        let metadata: [String: String] = {
-            guard let raw = dict["metadata"] as? [String: Any] else { return [:] }
-            var out: [String: String] = [:]
-            for (k, v) in raw {
-                if let s = v as? String { out[k] = s }
-            }
-            return out
-        }()
+        // Plugin contract: metadata is an array of `{ key, value }` objects.
+        // Order is preserved. Entries missing either field are skipped.
+        let metadata: [PluginField] = ((dict["metadata"] as? [[String: Any]]) ?? []).compactMap { entry in
+            guard let key = entry["key"] as? String,
+                let value = entry["value"] as? String,
+                !key.isEmpty, !value.isEmpty
+            else { return nil }
+            return PluginField(key: key, value: value)
+        }
 
         return PluginResult(
             id: id,
@@ -87,7 +98,7 @@ struct PluginResult: Identifiable, Hashable, Sendable {
             "authors": authors,
             "language": language,
             "format": format,
-            "metadata": metadata,
+            "metadata": metadata.map { ["key": $0.key, "value": $0.value] },
         ]
         if let year { dict["year"] = year }
         if let sizeBytes { dict["sizeBytes"] = sizeBytes }
