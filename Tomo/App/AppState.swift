@@ -406,6 +406,7 @@ final class AppState {
         guard !trimmed.isEmpty else { return nil }
         do {
             let collection = try await index.createCollection(named: trimmed)
+            await persistCollectionsToDisk()
             await loadBooks()
             libraryLogger.info("created collection: \(trimmed, privacy: .public)")
             return collection
@@ -423,6 +424,7 @@ final class AppState {
         guard !trimmed.isEmpty else { return }
         do {
             try await index.renameCollection(id: id, to: trimmed)
+            await persistCollectionsToDisk()
             // Sidecars store the old name; re-write each affected book so the
             // on-disk truth follows the rename.
             let affectedBooks = books.filter { $0.collectionIDs.contains(id) }
@@ -443,6 +445,7 @@ final class AppState {
         let affectedBooks = books.filter { $0.collectionIDs.contains(id) }
         do {
             try await index.deleteCollection(id: id)
+            await persistCollectionsToDisk()
             for book in affectedBooks {
                 var remaining = book.collectionIDs
                 remaining.remove(id)
@@ -452,6 +455,23 @@ final class AppState {
         } catch {
             libraryLogger.error(
                 "delete collection failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Snapshots the index's current collection definitions to
+    /// `<library>/.tomo/collections.json`. Called after any mutation that
+    /// changes the collection set (create / rename / delete) and at the end
+    /// of a disk sync to capture sidecar-driven auto-creations.
+    private func persistCollectionsToDisk() async {
+        guard let libraryFolder, let index else { return }
+        do {
+            let collections = try await index.collections()
+            try await Task.detached { [libraryFolder] in
+                try CollectionsFile.write(collections, in: libraryFolder)
+            }.value
+        } catch {
+            libraryLogger.error(
+                "persist collections.json failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -625,6 +645,24 @@ final class AppState {
             return
         }
         do {
+            // 1. One-time migration: if no collections.json exists yet but the
+            //    DB has collections (carried forward from before this change),
+            //    dump them to disk so we don't lose UUIDs / sortOrder. Runs
+            //    only on first sync after upgrade.
+            let didMigrate = try await migrateLegacyCollectionsIfNeeded(
+                in: libraryFolder, index: index)
+
+            // 2. Read collection definitions from disk and seed the index
+            //    (wipes previous library's collections — fixes the
+            //    ghost-collection bug on library-folder change). nil =
+            //    fresh library with no JSON yet.
+            let onDiskCollections =
+                try await Task.detached { [libraryFolder] in
+                    try CollectionsFile.read(in: libraryFolder)
+                }.value
+            try await index.seedCollections(onDiskCollections ?? [])
+
+            // 3. Walk the library folder, read sidecars.
             let folders = try await LibraryFolder.bookFolders(in: libraryFolder)
             var sidecars: [LoadedSidecar] = []
             for folder in folders {
@@ -646,14 +684,30 @@ final class AppState {
                 try Task.checkCancellation()
                 try await index.delete(id: id)
             }
-            for sidecar in sidecars where toAdd.contains(sidecar.book.id) {
+
+            // 4. Re-attach memberships for ALL sidecars (not just new ones),
+            //    since we just wiped book_collections in step 2.
+            for sidecar in sidecars {
                 try Task.checkCancellation()
-                try await index.add(sidecar.book)
+                if toAdd.contains(sidecar.book.id) {
+                    try await index.add(sidecar.book)
+                }
                 for name in sidecar.collectionNames {
+                    // getOrCreate so a sidecar referencing a not-yet-on-disk
+                    // collection still resolves. New collections are picked
+                    // up in the persist step below.
                     let collection = try await index.getOrCreateCollection(named: name)
                     try await index.addBook(sidecar.book.id, to: collection.id)
                 }
             }
+
+            // 5. If a sidecar auto-created a collection in step 4, it's now
+            //    in the DB but not on disk. Snapshot the DB to JSON so disk
+            //    catches up. Skipped when migration already wrote the file.
+            if !didMigrate {
+                await persistCollectionsToDisk()
+            }
+
             libraryLogger.info(
                 "sync: \(sidecars.count) on disk, +\(toAdd.count) -\(orphans.count)")
             await loadBooks()
@@ -662,6 +716,37 @@ final class AppState {
         } catch {
             libraryLogger.error("sync failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    private static let didMigrateLegacyCollectionsKey = "didMigrateLegacyCollections"
+
+    /// One-time migration: pre-v1, collection definitions only existed in the
+    /// SQLite index. Post-v1 they live in `<library>/.tomo/collections.json`.
+    /// On the very first sync after upgrade, dump the index's collections to
+    /// the current library's JSON so UUIDs / sortOrder survive. Gated by a
+    /// `UserDefaults` flag so it can't fire again — critical, otherwise
+    /// switching to a fresh library folder would re-migrate the *previous*
+    /// library's stale DB rows into the new folder's JSON. Returns true if
+    /// the file was written.
+    private func migrateLegacyCollectionsIfNeeded(
+        in libraryFolder: URL, index: BookIndex
+    ) async throws -> Bool {
+        guard !UserDefaults.standard.bool(forKey: Self.didMigrateLegacyCollectionsKey) else {
+            return false
+        }
+        defer { UserDefaults.standard.set(true, forKey: Self.didMigrateLegacyCollectionsKey) }
+        let exists = await Task.detached { [libraryFolder] in
+            CollectionsFile.exists(in: libraryFolder)
+        }.value
+        guard !exists else { return false }
+        let dbCollections = try await index.collections()
+        guard !dbCollections.isEmpty else { return false }
+        try await Task.detached { [libraryFolder] in
+            try CollectionsFile.write(dbCollections, in: libraryFolder)
+        }.value
+        libraryLogger.info(
+            "migrated \(dbCollections.count, privacy: .public) collection(s) → collections.json")
+        return true
     }
 
     private func openIndexIfNeeded() async {

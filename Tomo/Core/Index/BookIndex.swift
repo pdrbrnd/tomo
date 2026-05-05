@@ -87,6 +87,20 @@ actor BookIndex {
         }
     }
 
+    /// Wipes the `collections` and `book_collections` tables, then inserts
+    /// the given definitions verbatim (preserving their UUIDs and sortOrder).
+    /// Called at the start of every disk sync — `.tomo/collections.json` is
+    /// the source of truth, the index is just a queryable mirror.
+    func seedCollections(_ collections: [Collection]) async throws {
+        try await pool.write { db in
+            try db.execute(sql: "DELETE FROM book_collections")
+            try db.execute(sql: "DELETE FROM collections")
+            for collection in collections {
+                try Self.insertCollection(collection, into: db)
+            }
+        }
+    }
+
     /// Returns the existing collection with `name` (case-insensitive), or
     /// creates one if none exists. Used by rebuild-from-sidecars.
     func getOrCreateCollection(named name: String) async throws -> Collection {

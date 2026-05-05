@@ -35,6 +35,10 @@ nonisolated enum MetadataSidecar {
 }
 
 private nonisolated struct SidecarPayload: Codable {
+    /// Schema version. Always emitted on write. On read, defaults to 1 when
+    /// absent (covers all sidecars written before this field existed). Switch
+    /// on this when introducing breaking changes — bump and add migration.
+    var version: Int
     var id: UUID
     var title: String
     var authors: [String]
@@ -46,7 +50,10 @@ private nonisolated struct SidecarPayload: Codable {
     var origin: BookOrigin
     var collections: [String]
 
+    static let currentVersion = 1
+
     init(book: Book, collectionNames: [String]) {
+        self.version = Self.currentVersion
         self.id = book.id
         self.title = book.title
         self.authors = book.authors
@@ -74,13 +81,15 @@ private nonisolated struct SidecarPayload: Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, authors, year, locale, coverPath, dateAdded, fileName, origin, collections
+        case version, id, title, authors, year, locale, coverPath, dateAdded, fileName, origin,
+            collections
         // Legacy keys (sidecars written before the unified-locale refactor):
         case languageCode, languageProfileId
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
         // Old sidecars (pre-2026-05) didn't persist the book id. Mint one
         // for them — it'll be stable from this read forward because the
         // re-write will include it. Identity is only "lost" for the first
@@ -107,6 +116,7 @@ private nonisolated struct SidecarPayload: Codable {
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(version, forKey: .version)
         try c.encode(id, forKey: .id)
         try c.encode(title, forKey: .title)
         try c.encode(authors, forKey: .authors)
