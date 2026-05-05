@@ -7,8 +7,17 @@ struct LocalCoverImage: View {
     let url: URL?
     var fallbackTitle: String? = nil
     var fallbackAuthor: String? = nil
+    /// External hint that a cover *will* arrive even though `url` is nil
+    /// right now (e.g. plugin search still running, post-search enricher
+    /// not done). Drives the skeleton when the URL itself isn't set yet.
+    /// Once `url` is non-nil, the internal fetch state takes over —
+    /// skeleton stays up until the image actually loads.
+    var isLoading: Bool = false
 
     @State private var image: NSImage?
+    @State private var isFetching = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var skeletonPulse = false
 
     var body: some View {
         // `Color.clear` is the load-bearing primitive: flexible, always
@@ -27,12 +36,46 @@ struct LocalCoverImage: View {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
+                        .transition(.opacity)
+                } else if showsSkeleton {
+                    skeleton
+                        .transition(.opacity)
                 } else {
                     placeholder
+                        .transition(.opacity)
                 }
             }
+            .animation(.easeInOut(duration: 0.18), value: image == nil)
             .clipped()
             .task(id: url) { await load() }
+    }
+
+    /// True while we're either actively fetching the image, or the parent
+    /// has flagged a pending cover that hasn't even produced a URL yet.
+    private var showsSkeleton: Bool {
+        isFetching || (url == nil && isLoading)
+    }
+
+    /// Soft surface pulse — same gradient stack as the typography
+    /// placeholder so the eventual cover crossfades in cleanly rather
+    /// than swapping a solid skeleton for a textured fallback.
+    private var skeleton: some View {
+        ZStack {
+            Theme.surface
+            LinearGradient(
+                colors: [.primary.opacity(0.04), .primary.opacity(0.10)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .opacity(skeletonPulse ? 1.0 : 0.55)
+        .animation(
+            reduceMotion
+                ? .easeInOut(duration: 0.4)
+                : .easeInOut(duration: 1.1).repeatForever(autoreverses: true),
+            value: skeletonPulse
+        )
+        .onAppear { skeletonPulse = true }
     }
 
     @ViewBuilder
@@ -89,8 +132,14 @@ struct LocalCoverImage: View {
     private func load() async {
         guard let url else {
             image = nil
+            isFetching = false
             return
         }
+        // Reset image so a URL change re-triggers the skeleton instead of
+        // showing the previous cover during the new fetch.
+        image = nil
+        isFetching = true
+        defer { isFetching = false }
         image = await Task.detached { NSImage(contentsOf: url) }.value
     }
 }

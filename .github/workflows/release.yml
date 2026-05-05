@@ -97,3 +97,28 @@ jobs:
             dist/Tomo-*.dmg
             dist/Tomo-*.dmg.sha256
           generate_release_notes: true
+
+      - name: Bump Homebrew cask
+        env:
+          TAP_PAT: ${{ secrets.TAP_PAT }}
+        run: |
+          BARE_VERSION="${VERSION#v}"
+          SHA=$(shasum -a 256 "dist/Tomo-${VERSION}.dmg" | awk '{print $1}')
+
+          git clone "https://x-access-token:${TAP_PAT}@github.com/pdrbrnd/homebrew-tap.git" tap
+          cd tap
+
+          # macOS BSD sed needs the empty '' after -i for in-place edit.
+          sed -i '' "s|version \"[^\"]*\"|version \"$BARE_VERSION\"|" Casks/tomo.rb
+          sed -i '' "s|sha256 \"[^\"]*\"|sha256 \"$SHA\"|" Casks/tomo.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet Casks/tomo.rb; then
+            echo "Cask already at $BARE_VERSION — nothing to commit."
+          else
+            git add Casks/tomo.rb
+            git commit -m "tomo $BARE_VERSION"
+            git push
+          fi

@@ -34,6 +34,10 @@ struct BookCard: View {
     let isSelected: Bool
     var deviceStatus: BookCardDeviceStatus = .noDevice
     var downloadState: CardDownloadState = .idle
+    /// Forwarded to `LocalCoverImage` so source-result cards show a
+    /// skeleton pulse while a plugin search / cover enricher is still
+    /// running, even before a `coverURL` lands.
+    var isCoverLoading: Bool = false
     let cardWidth: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -58,7 +62,8 @@ struct BookCard: View {
             LocalCoverImage(
                 url: item.coverURL,
                 fallbackTitle: item.title,
-                fallbackAuthor: item.firstAuthor
+                fallbackAuthor: item.firstAuthor,
+                isLoading: isCoverLoading
             )
             .opacity(coverDimmed ? 0.45 : 1.0)
             .animation(.easeInOut(duration: 0.18), value: coverDimmed)

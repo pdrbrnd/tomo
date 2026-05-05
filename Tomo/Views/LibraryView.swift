@@ -33,10 +33,6 @@ struct LibraryView: View {
     /// Per-source-card download state, keyed by `PluginResult.id`. Drives the
     /// in-place card morph when downloading + importing.
     @State private var downloadStates: [String: CardDownloadState] = [:]
-    /// Background task that fills in covers for source results the plugin
-    /// didn't supply. Cancelled when a new search starts so stale covers
-    /// don't land after a query change.
-    @State private var coverEnrichmentTask: Task<Void, Never>?
     /// Library books that just landed via a source download and whose source
     /// card is still showing its "Added" celebration. The library card is
     /// filtered out of the grid for the celebration window so the user sees
@@ -244,7 +240,6 @@ struct LibraryView: View {
             pluginResults = pluginResults.filter { newSet.contains($0.pluginID) }
             if newSet.isEmpty {
                 pluginSearchTask?.cancel()
-                coverEnrichmentTask?.cancel()
                 pluginResults = []
                 selectedSourceID = nil
                 state.pluginSearchInFlight = false
@@ -530,6 +525,7 @@ struct LibraryView: View {
             item: .source(result),
             isSelected: selectedSourceID == result.id,
             downloadState: downloadStates[result.id] ?? .idle,
+            isCoverLoading: result.coverURL == nil && state.pluginSearchInFlight,
             cardWidth: cardWidth
         )
         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
@@ -611,7 +607,6 @@ struct LibraryView: View {
     /// proceed.
     private func schedulePluginSearch(for query: String) {
         pluginSearchTask?.cancel()
-        coverEnrichmentTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let plugins = state.enabledPlugins
         guard !trimmed.isEmpty, !plugins.isEmpty else {
@@ -659,19 +654,19 @@ struct LibraryView: View {
             }
 
             guard !Task.isCancelled else { return }
-            // Cover enrichment runs once across all merged results.
+            // Cover enrichment is part of the same task — keeps the
+            // search-bar spinner running until covers are settled, so the
+            // user sees one continuous "loading" state rather than the
+            // spinner ending mid-blink as covers swap in.
             let snapshot = pluginResults
-            let needsEnrichment = snapshot.contains { $0.coverURL == nil }
-            if needsEnrichment {
-                coverEnrichmentTask = Task { @MainActor in
-                    let enrichments = await PluginCoverEnricher.enrich(snapshot)
-                    guard !Task.isCancelled else { return }
-                    pluginResults = pluginResults.map { existing in
-                        guard existing.coverURL == nil,
-                            let url = enrichments[existing.id]
-                        else { return existing }
-                        return existing.with(coverURL: url)
-                    }
+            if snapshot.contains(where: { $0.coverURL == nil }) {
+                let enrichments = await PluginCoverEnricher.enrich(snapshot)
+                guard !Task.isCancelled else { return }
+                pluginResults = pluginResults.map { existing in
+                    guard existing.coverURL == nil,
+                        let url = enrichments[existing.id]
+                    else { return existing }
+                    return existing.with(coverURL: url)
                 }
             }
         }
