@@ -15,13 +15,6 @@ A native macOS e-book library manager. Single-user, local-first. Native handling
 - **Open Library cover lookup** by ISBN, paste, or file picker.
 - **Duplicate detection** (title + author fuzzy match), format preference (EPUB > AZW3 > MOBI > PDF).
 
-## What it isn't
-
-- Not a reader (no in-app reading; double-click opens Show Details, not Apple Books).
-- Not a sync service (single-user, single-Mac).
-- Not a Calibre clone (no plugin ecosystem, no news, no server mode).
-- Not a DRM tool (books arrive DRM-free or they don't).
-
 ## Install
 
 ```sh
