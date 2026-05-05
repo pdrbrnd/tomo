@@ -10,6 +10,7 @@
 		EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */; };
 		EB5500A1FA6F644000455500 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = EB5500A2FA6F644000455500 /* SwiftSoup */; };
 		EBA6776C2FAA0188003CB7DE /* AZW3 in Frameworks */ = {isa = PBXBuildFile; productRef = EBA6776B2FAA0188003CB7DE /* AZW3 */; };
+		EBA67C4D2FAA7CAC003CB7DE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = EBA67C4C2FAA7CAC003CB7DE /* Sparkle */; };
 		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -66,6 +67,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EBA67C4D2FAA7CAC003CB7DE /* Sparkle in Frameworks */,
 				EBF14F862FA6F64400045D30 /* GRDB in Frameworks */,
 				EBA6776C2FAA0188003CB7DE /* AZW3 in Frameworks */,
 				EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */,
@@ -141,6 +143,7 @@
 				EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */,
 				EB5500A2FA6F644000455500 /* SwiftSoup */,
 				EBA6776B2FAA0188003CB7DE /* AZW3 */,
+				EBA67C4C2FAA7CAC003CB7DE /* Sparkle */,
 			);
 			productName = Tomo;
 			productReference = EB4E9A582FA6F23B0015E496 /* Tomo.app */;
@@ -179,6 +182,7 @@
 				EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				EBA6776A2FAA0188003CB7DE /* XCRemoteSwiftPackageReference "swift-azw3" */,
+				EBA67C4B2FAA7CAC003CB7DE /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;
@@ -460,7 +464,7 @@
 				RUNTIME_EXCEPTION_ALLOW_UNSIGNED_EXECUTABLE_MEMORY = NO;
 				RUNTIME_EXCEPTION_DEBUGGING_TOOL = NO;
 				RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION = NO;
-				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
+				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -527,6 +531,14 @@
 				minimumVersion = 0.2.0;
 			};
 		};
+		EBA67C4B2FAA7CAC003CB7DE /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.1;
+			};
+		};
 		EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
@@ -552,6 +564,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EBA6776A2FAA0188003CB7DE /* XCRemoteSwiftPackageReference "swift-azw3" */;
 			productName = AZW3;
+		};
+		EBA67C4C2FAA7CAC003CB7DE /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EBA67C4B2FAA7CAC003CB7DE /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 		EBF14F852FA6F64400045D30 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;

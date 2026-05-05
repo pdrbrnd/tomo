@@ -40,12 +40,24 @@ jobs:
 
       - name: Archive
         run: |
+          BARE_VERSION="${VERSION#v}"
+          # Build number derived from the tag so CFBundleVersion monotonically
+          # increases — Sparkle uses it to decide newer-vs-older.
+          # 1.2.0 → 10200, 1.2.3 → 10203, 2.0.0 → 20000.
+          BUILD_NUMBER=$(echo "$BARE_VERSION" | awk -F. '{ printf "%d", $1*10000 + $2*100 + $3 }')
+
+          # Persist for later steps (appcast, etc.).
+          echo "BARE_VERSION=$BARE_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+
           xcodebuild \
             -project Tomo.xcodeproj \
             -scheme Tomo \
             -configuration Release \
             -destination 'generic/platform=macOS' \
             -archivePath $RUNNER_TEMP/Tomo.xcarchive \
+            MARKETING_VERSION="$BARE_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             archive
 
       - name: Export
@@ -90,6 +102,25 @@ jobs:
         run: |
           shasum -a 256 "dist/Tomo-${VERSION}.dmg" | tee dist/Tomo-${VERSION}.dmg.sha256
 
+      - name: Sign update with Sparkle
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          SPARKLE_VERSION="2.7.0"
+          curl -fsSL -o "$RUNNER_TEMP/sparkle.tar.xz" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+
+          KEY_FILE=$(mktemp)
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+
+          SIGN_OUTPUT=$("$RUNNER_TEMP/sparkle/bin/sign_update" -f "$KEY_FILE" "dist/Tomo-${VERSION}.dmg")
+          rm -f "$KEY_FILE"
+
+          # SIGN_OUTPUT is: sparkle:edSignature="..." length="..."
+          echo "SPARKLE_SIGN=$SIGN_OUTPUT" >> "$GITHUB_ENV"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -97,6 +128,61 @@ jobs:
             dist/Tomo-*.dmg
             dist/Tomo-*.dmg.sha256
           generate_release_notes: true
+
+      - name: Update appcast and landing page
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          DMG_URL="https://github.com/${REPO}/releases/download/${VERSION}/Tomo-${VERSION}.dmg"
+          PUB_DATE=$(LC_ALL=en_US.UTF-8 date -u +"%a, %d %b %Y %H:%M:%S +0000")
+
+          # Pull release notes — softprops/action-gh-release just generated them.
+          gh api "repos/${REPO}/releases/tags/${VERSION}" --jq .body > "$RUNNER_TEMP/release_notes.md"
+
+          # Clone main fresh; the workflow runs in detached HEAD on the tag.
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$RUNNER_TEMP/repo"
+          cd "$RUNNER_TEMP/repo"
+
+          # Build the new <item> block. Variables expand; release notes land
+          # in CDATA so they don't need escaping. sparkle:version is the
+          # integer build number Sparkle compares; shortVersionString is the
+          # human-readable label users see in the dialog.
+          cat > "$RUNNER_TEMP/new_item.xml" <<APPCAST_ITEM
+                  <item>
+                      <title>${VERSION}</title>
+                      <pubDate>${PUB_DATE}</pubDate>
+                      <sparkle:version>${BUILD_NUMBER}</sparkle:version>
+                      <sparkle:shortVersionString>${BARE_VERSION}</sparkle:shortVersionString>
+                      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+                      <description><![CDATA[
+          $(cat "$RUNNER_TEMP/release_notes.md")
+                      ]]></description>
+                      <enclosure url="${DMG_URL}" type="application/octet-stream" ${SPARKLE_SIGN} />
+                  </item>
+          APPCAST_ITEM
+
+          # Insert the new item directly before </channel>.
+          awk -v insert_file="$RUNNER_TEMP/new_item.xml" '
+              /<\/channel>/ {
+                  while ((getline line < insert_file) > 0) print line
+                  close(insert_file)
+              }
+              { print }
+          ' docs/appcast.xml > "$RUNNER_TEMP/appcast.new"
+          mv "$RUNNER_TEMP/appcast.new" docs/appcast.xml
+
+          # Bake the new tag into the landing-page download link. Match any
+          # vX.Y.Z so the rewrite is idempotent regardless of the previous
+          # value.
+          sed -i '' -E "s|/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/Tomo-v[0-9]+\.[0-9]+\.[0-9]+\.dmg|/releases/download/${VERSION}/Tomo-${VERSION}.dmg|g" docs/index.html
+          sed -i '' -E "s|data-version=\"v[0-9]+\.[0-9]+\.[0-9]+\"|data-version=\"${VERSION}\"|g" docs/index.html
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/appcast.xml docs/index.html
+          git commit -m "appcast: ${VERSION}"
+          git push origin main
 
       - name: Bump Homebrew cask
         env:

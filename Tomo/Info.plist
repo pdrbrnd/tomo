@@ -24,6 +24,10 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
+	<key>SUFeedURL</key>
+	<string>https://tomolibrary.com/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+  <string>VJXfisJ+FDQ3HPyQQhh6z7DELX8+LLRGqD3qHdHWnnE=</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
