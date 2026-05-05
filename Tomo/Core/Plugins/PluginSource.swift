@@ -91,4 +91,33 @@ enum PluginDirectory {
         let displayName = url.deletingPathExtension().lastPathComponent
         return try PluginSource(displayName: displayName, pluginPath: url)
     }
+
+    /// Copies any plugins bundled in `Resources/Plugins/` into the user's
+    /// plugins directory the first time the app runs. Idempotent via a
+    /// `UserDefaults` flag — removing a seeded plugin later won't bring
+    /// it back. Failures are silent: if the bundle ships nothing, or the
+    /// destination dir can't be created, the user just sees an empty
+    /// plugins list (matching the "no plugins" state).
+    static func seedBundledPluginsIfNeeded() {
+        let key = "didSeedDefaultPlugins"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        defer { UserDefaults.standard.set(true, forKey: key) }
+
+        // Xcode 16's synchronized file groups flatten the Resources/Plugins
+        // folder into the bundle root, so look up `.js` at top-level.
+        guard let dir = directoryURL(),
+            let bundleURLs = Bundle.main.urls(
+                forResourcesWithExtension: "js", subdirectory: nil)
+        else { return }
+
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true)
+
+        for bundleURL in bundleURLs {
+            let dest = dir.appending(path: bundleURL.lastPathComponent)
+            guard !FileManager.default.fileExists(atPath: dest.path(percentEncoded: false))
+            else { continue }
+            try? FileManager.default.copyItem(at: bundleURL, to: dest)
+        }
+    }
 }

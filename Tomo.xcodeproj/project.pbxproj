@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */; };
 		EB5500A1FA6F644000455500 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = EB5500A2FA6F644000455500 /* SwiftSoup */; };
+		EBA6776C2FAA0188003CB7DE /* AZW3 in Frameworks */ = {isa = PBXBuildFile; productRef = EBA6776B2FAA0188003CB7DE /* AZW3 */; };
 		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -66,6 +67,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EBF14F862FA6F64400045D30 /* GRDB in Frameworks */,
+				EBA6776C2FAA0188003CB7DE /* AZW3 in Frameworks */,
 				EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */,
 				EB5500A1FA6F644000455500 /* SwiftSoup in Frameworks */,
 			);
@@ -138,6 +140,7 @@
 				EBF14F852FA6F64400045D30 /* GRDB */,
 				EB1F1F1F1F1F1F1F1F1F1F02 /* ZIPFoundation */,
 				EB5500A2FA6F644000455500 /* SwiftSoup */,
+				EBA6776B2FAA0188003CB7DE /* AZW3 */,
 			);
 			productName = Tomo;
 			productReference = EB4E9A582FA6F23B0015E496 /* Tomo.app */;
@@ -175,6 +178,7 @@
 				EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */,
 				EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+				EBA6776A2FAA0188003CB7DE /* XCLocalSwiftPackageReference "../swift-azw3" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;
@@ -478,6 +482,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		EBA6776A2FAA0188003CB7DE /* XCLocalSwiftPackageReference "../swift-azw3" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../swift-azw3";
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -515,6 +526,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
+		};
+		EBA6776B2FAA0188003CB7DE /* AZW3 */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AZW3;
 		};
 		EBF14F852FA6F64400045D30 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;

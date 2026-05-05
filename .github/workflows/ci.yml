@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Build
+        run: xcodebuild -project Tomo.xcodeproj -scheme Tomo -configuration Debug -destination 'platform=macOS' build
+      - name: Test
+        run: xcodebuild -project Tomo.xcodeproj -scheme Tomo -destination 'platform=macOS' test

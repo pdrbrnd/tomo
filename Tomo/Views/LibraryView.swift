@@ -516,9 +516,13 @@ struct LibraryView: View {
         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
-                let state = downloadStates[result.id] ?? .idle
-                guard state == .idle || state == .error else { return }
-                Task { await downloadAndImport(result) }
+                withAnimation(selectionAnimation) {
+                    selectedBookIDs = []
+                    selectionAnchor = nil
+                    selectedSourceID = result.id
+                }
+                searchFocused = false
+                inspectorOpen = true
             }
         )
         .simultaneousGesture(
@@ -777,7 +781,8 @@ struct LibraryView: View {
         )
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
-                NSWorkspace.shared.open(book.fileURL)
+                handlePlainClick(book)
+                inspectorOpen = true
             }
         )
         .overlay(
@@ -957,10 +962,6 @@ struct LibraryView: View {
             selectedBookIDs = [book.id]
             selectionAnchor = book.id
             inspectorOpen = true
-            dismiss()
-        }
-        bookMenuItem("Open in Default App", icon: "arrow.up.right.square") {
-            NSWorkspace.shared.open(book.fileURL)
             dismiss()
         }
         bookMenuItem("Show in Finder", icon: "folder") {
@@ -1277,12 +1278,6 @@ struct LibraryView: View {
                 .keyboardShortcut("f", modifiers: .command)
             Button("") { handleSelectAll() }
                 .keyboardShortcut("a", modifiers: .command)
-            Button("") {
-                if let book = inspectorBook {
-                    NSWorkspace.shared.open(book.fileURL)
-                }
-            }
-            .keyboardShortcut("o", modifiers: .command)
             Button("") { handleDeleteShortcut() }
                 .keyboardShortcut(.delete, modifiers: .command)
             Button("") { handleEscape() }

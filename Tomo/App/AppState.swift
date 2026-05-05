@@ -100,6 +100,7 @@ final class AppState {
         self.device = detected
         self.deviceFilenames = detected?.filenames() ?? []
         startVolumeMonitoring()
+        PluginDirectory.seedBundledPluginsIfNeeded()
         loadPluginsIfPresent()
     }
 

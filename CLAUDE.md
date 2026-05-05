@@ -208,9 +208,10 @@ later (rename folders to match new metadata on save).
 
 EPUB→AZW3 (KF8) is implemented in-app under `Tomo/Core/Conversion/`.
 The writer half lives in `AZW3/` as a self-contained module ready for
-extraction into a standalone Swift package. Phase 1 hardware-validated
-2026-05-03; Phase 2 backlog (cover, TOC, CSS, image records, etc.) is
-in `docs/azw3_phase2.md`. We do not bundle Calibre, KindleGen, or
+extraction into a standalone Swift package. Phases 1 and 2 hardware-validated
+2026-05-03 — cover, TOC NCX, CSS flows, body images all shipped. See
+`docs/azw3_phase2.md` for the explicitly-deferred list (PalmDoc compression,
+older-firmware thumbnail hack, etc.). We do not bundle Calibre, KindleGen, or
 Amazon's Send to Kindle Mac app, and we don't route through SMTP /
 Amazon servers.
 

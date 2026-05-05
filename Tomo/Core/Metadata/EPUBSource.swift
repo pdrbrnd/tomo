@@ -1,9 +1,8 @@
+import AZW3
 import Foundation
 import os
 
 /// Reads an EPUB and produces a `BookManifest` ready for the AZW3 writer.
-/// The writer accepts a plain `BookManifest` and doesn't know EPUB exists —
-/// see `AZW3/README.md` for the isolation contract.
 nonisolated enum EPUBSource {
 
     static func read(from url: URL) throws -> BookManifest {

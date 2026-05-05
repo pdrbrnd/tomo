@@ -1,13 +1,10 @@
+import AZW3
 import Foundation
 
 /// Bridges Tomo's EPUB pipeline to the AZW3 writer. Reads an EPUB
 /// off disk via `EPUBSource`, hands the resulting `BookManifest` to
 /// `AZW3Writer`, and writes the produced bytes into the conversion
 /// scratch directory.
-///
-/// Lives outside `Tomo/Core/Conversion/AZW3/` so the writer stays
-/// free of EPUB and Tomo concerns. When the writer is extracted to
-/// a standalone package, this file stays in Tomo.
 nonisolated struct EPUBToAZW3Converter: FormatConverter {
     let input: FileFormat = .epub
     let output: FileFormat = .azw3
