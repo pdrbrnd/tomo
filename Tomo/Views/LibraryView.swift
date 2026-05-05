@@ -420,13 +420,59 @@ struct LibraryView: View {
     @ViewBuilder
     private var gridArea: some View {
         if state.libraryFolder == nil {
-            placeholderText("Choose a library folder to begin.")
+            emptyLibraryCTA
         } else if state.books.isEmpty && pluginResults.isEmpty && !state.pluginSearchInFlight {
-            placeholderText("Drop a book to begin.")
+            placeholderText("Drop a book to begin")
         } else if gridItems.isEmpty {
             placeholderText(emptyFilteredMessage)
         } else {
             grid
+        }
+    }
+
+    /// First-launch CTA. Replaces a centered "choose a folder" line with
+    /// an actual button — the top-left folder pill is still visible, but
+    /// users on a fresh launch shouldn't have to find it.
+    private var emptyLibraryCTA: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            Image(systemName: "books.vertical")
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
+            VStack(spacing: 6) {
+                Text("Choose your library folder")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary.opacity(Theme.Text.primary))
+                Text("Tomo keeps your books and metadata in a folder of your choosing.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.primary.opacity(Theme.Text.secondary))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+            }
+            Button {
+                presentLibraryFolderPicker()
+            } label: {
+                Text("Choose Folder…")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 9)
+                    .background(Capsule(style: .continuous).fill(Color.accentColor))
+            }
+            .buttonStyle(.plain)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func presentLibraryFolderPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            state.libraryFolder = url
         }
     }
 
@@ -526,7 +572,10 @@ struct LibraryView: View {
             isSelected: selectedSourceID == result.id,
             downloadState: downloadStates[result.id] ?? .idle,
             isCoverLoading: result.coverURL == nil && state.pluginSearchInFlight,
-            cardWidth: cardWidth
+            cardWidth: cardWidth,
+            onSourceDownload: {
+                Task { await downloadAndImport(result) }
+            }
         )
         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .simultaneousGesture(

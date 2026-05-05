@@ -83,7 +83,7 @@ struct BottomChrome: View {
 
     private func chromeButtonLabel(symbol: String, active: Bool) -> some View {
         ZStack {
-            Circle().fill(Theme.surface)
+            Circle().fill(Theme.overlaySurface)
             Circle().stroke(Theme.hairline, lineWidth: 0.5)
             // SF Symbols' sidebar.* don't ship a fill variant, so the
             // active state shifts weight + opacity instead.

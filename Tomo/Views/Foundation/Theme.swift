@@ -24,6 +24,12 @@ enum Theme {
             return NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
         })
 
+    /// Overlay surface for chrome floating over the cover grid (folder
+    /// pill, search pill, sidebar / inspector toggle buttons). Translucent
+    /// + blurred so the covers behind read through; hairline + softShadow
+    /// at the call site provide edge definition.
+    static let overlaySurface: Material = .ultraThinMaterial
+
     // Hairline: the border that catches light on cards/pills. Theme-adaptive.
     static let hairline = Color(
         nsColor: NSColor(name: nil) { appearance in

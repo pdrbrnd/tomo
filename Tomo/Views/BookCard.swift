@@ -39,6 +39,11 @@ struct BookCard: View {
     /// running, even before a `coverURL` lands.
     var isCoverLoading: Bool = false
     let cardWidth: CGFloat
+    /// When set on a `.source` card, the idle cloud badge becomes a
+    /// button that triggers this directly. People kept clicking the
+    /// badge expecting download — the badge looks like a button, so it
+    /// is one.
+    var onSourceDownload: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -172,7 +177,23 @@ struct BookCard: View {
 
     /// Idle source-result badge: same pill shape as `onDeviceBadge` so the
     /// visual language stays consistent — different glyph, same placement.
+    /// Becomes a button when `onSourceDownload` is provided.
+    @ViewBuilder
     private var idleSourceBadge: some View {
+        if let onSourceDownload {
+            Button(action: onSourceDownload) {
+                cloudBadgeShape
+            }
+            .buttonStyle(.plain)
+            .contentShape(Circle())
+            .help("Download to library")
+        } else {
+            cloudBadgeShape
+                .help("From source")
+        }
+    }
+
+    private var cloudBadgeShape: some View {
         ZStack {
             Circle().fill(.ultraThinMaterial)
             Circle().fill(Color.black.opacity(0.62))
@@ -180,7 +201,6 @@ struct BookCard: View {
                 .foregroundStyle(Color.white)
         }
         .frame(width: 22, height: 22)
-        .help("From source — double-click to download")
     }
 
     // MARK: - Source state capsule

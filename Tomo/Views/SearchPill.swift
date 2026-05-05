@@ -50,7 +50,7 @@ struct SearchPill<Trailing: View>: View {
         .background(
             ZStack {
                 Capsule(style: .continuous)
-                    .fill(Theme.surface)
+                    .fill(Theme.overlaySurface)
                 Capsule(style: .continuous)
                     .stroke(Theme.hairline, lineWidth: 0.5)
             }

@@ -55,7 +55,7 @@ struct LibraryFolderPicker: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.menuItem, style: .continuous)
-                .fill(Theme.surface)
+                .fill(Theme.overlaySurface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.menuItem, style: .continuous)
