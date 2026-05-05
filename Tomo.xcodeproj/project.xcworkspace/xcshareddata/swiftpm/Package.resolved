@@ -1,5 +1,5 @@
 {
-  "originHash" : "5d1648195653d0e057fc9c08f01199bfa6472d9e2b9f23f19baeddb7ff952654",
+  "originHash" : "cd81f9374e08e7ffdb787069ca7ee41c1eda0dd7ffb72baa8fc8c25d8b000f02",
   "pins" : [
     {
       "identity" : "grdb.swift",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
         "version" : "7.10.0"
+      }
+    },
+    {
+      "identity" : "swift-azw3",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pdrbrnd/swift-azw3",
+      "state" : {
+        "revision" : "f6cf1d49727f46cef2d902ebd66c684a29f8a4bb",
+        "version" : "0.1.0"
       }
     },
     {

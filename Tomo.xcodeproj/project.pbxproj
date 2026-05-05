@@ -178,7 +178,7 @@
 				EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */,
 				EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 				EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
-				EBA6776A2FAA0188003CB7DE /* XCLocalSwiftPackageReference "../swift-azw3" */,
+				EBA6776A2FAA0188003CB7DE /* XCRemoteSwiftPackageReference "swift-azw3" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;
@@ -482,13 +482,6 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		EBA6776A2FAA0188003CB7DE /* XCLocalSwiftPackageReference "../swift-azw3" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "../swift-azw3";
-		};
-/* End XCLocalSwiftPackageReference section */
-
 /* Begin XCRemoteSwiftPackageReference section */
 		EB1F1F1F1F1F1F1F1F1F1F03 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -504,6 +497,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.7.0;
+			};
+		};
+		EBA6776A2FAA0188003CB7DE /* XCRemoteSwiftPackageReference "swift-azw3" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pdrbrnd/swift-azw3";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
 			};
 		};
 		EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */ = {
@@ -529,6 +530,7 @@
 		};
 		EBA6776B2FAA0188003CB7DE /* AZW3 */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = EBA6776A2FAA0188003CB7DE /* XCRemoteSwiftPackageReference "swift-azw3" */;
 			productName = AZW3;
 		};
 		EBF14F852FA6F64400045D30 /* GRDB */ = {
