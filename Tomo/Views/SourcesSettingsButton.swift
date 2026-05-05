@@ -41,10 +41,12 @@ private struct SourcesPopoverContent: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            if let source = state.pluginSource {
-                pluginRow(name: source.displayName)
-            } else {
+            if state.pluginSources.isEmpty {
                 emptyRow
+            } else {
+                ForEach(state.pluginSources) { plugin in
+                    pluginRow(plugin: plugin)
+                }
             }
 
             MenuDivider()
@@ -59,7 +61,7 @@ private struct SourcesPopoverContent: View {
             } label: {
                 rowLabel(icon: "folder", title: "Reveal Plugins Folder")
             }
-            if state.pluginSource != nil {
+            if !state.pluginSources.isEmpty {
                 Button {
                     state.reloadPluginSource()
                 } label: {
@@ -82,16 +84,16 @@ private struct SourcesPopoverContent: View {
             .padding(.bottom, 4)
     }
 
-    /// Plugin row carrying the on/off toggle. Lays out on the same indent
-    /// as the menu rows: leading icon-column slot (filled by the toggle),
-    /// then the plugin name + subtitle.
-    private func pluginRow(name: String) -> some View {
+    /// One plugin row with a per-plugin enable checkbox. Lays out on the
+    /// same indent as the menu rows: leading icon-column slot (filled by
+    /// the toggle), then the plugin name + subtitle.
+    private func pluginRow(plugin: PluginSource) -> some View {
         HStack(spacing: 9) {
             Toggle(
                 "",
                 isOn: Binding(
-                    get: { state.sourceSearchEnabled },
-                    set: { state.sourceSearchEnabled = $0 }
+                    get: { state.enabledPluginIDs.contains(plugin.id) },
+                    set: { state.setPluginEnabled(plugin.id, enabled: $0) }
                 )
             )
             .toggleStyle(.checkbox)
@@ -99,7 +101,7 @@ private struct SourcesPopoverContent: View {
             .frame(width: 14)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(name)
+                Text(plugin.displayName)
                     .font(.system(size: 13, weight: .regular))
                 Text("Plugin")
                     .font(.system(size: 11))

@@ -10,9 +10,12 @@ struct PluginField: Hashable, Sendable {
 
 /// Mirrors the JS plugin's result shape. Plugins return JS objects with these
 /// fields; we lift them into Swift here. `id` is whatever the plugin uses to
-/// uniquely identify the result on its own side — opaque to us.
+/// uniquely identify the result on its own side — opaque to us. `pluginID`
+/// identifies which plugin produced it (host-side, never exposed to JS) so
+/// downloads can be routed back to the originating plugin.
 struct PluginResult: Identifiable, Hashable, Sendable {
     let id: String
+    let pluginID: String
     let title: String
     let authors: [String]
     let year: Int?
@@ -25,8 +28,14 @@ struct PluginResult: Identifiable, Hashable, Sendable {
     /// preserved as-is (it knows what's most relevant). Empty is fine.
     let metadata: [PluginField]
 
+    /// `id` may not be globally unique across plugins; this composite is.
+    /// Use it for `Set` / `Dictionary` keys that span plugins (e.g.
+    /// `downloadStates`).
+    var fingerprint: String { "\(pluginID):\(id)" }
+
     init(
         id: String,
+        pluginID: String,
         title: String,
         authors: [String],
         year: Int?,
@@ -38,6 +47,7 @@ struct PluginResult: Identifiable, Hashable, Sendable {
         metadata: [PluginField] = []
     ) {
         self.id = id
+        self.pluginID = pluginID
         self.title = title
         self.authors = authors
         self.year = year
@@ -50,8 +60,9 @@ struct PluginResult: Identifiable, Hashable, Sendable {
     }
 
     /// Lifts a JS-side dictionary into a `PluginResult`. Returns nil if the
-    /// dictionary lacks an id+title — minimum viable result.
-    static func from(jsValue dict: [String: Any]) -> PluginResult? {
+    /// dictionary lacks an id+title — minimum viable result. `pluginID` is
+    /// stamped by the host (the plugin doesn't know its own id).
+    static func from(jsValue dict: [String: Any], pluginID: String) -> PluginResult? {
         guard
             let id = dict["id"] as? String,
             let title = dict["title"] as? String,
@@ -77,6 +88,7 @@ struct PluginResult: Identifiable, Hashable, Sendable {
 
         return PluginResult(
             id: id,
+            pluginID: pluginID,
             title: title,
             authors: authors,
             year: year,
@@ -90,7 +102,8 @@ struct PluginResult: Identifiable, Hashable, Sendable {
     }
 
     /// Serialises back to the dict shape the plugin expects when it receives
-    /// a result back via `download(result)`.
+    /// a result back via `download(result)`. `pluginID` is host-side only —
+    /// excluded from the JS-facing dict.
     func toJSDictionary() -> [String: Any] {
         var dict: [String: Any] = [
             "id": id,
@@ -113,6 +126,7 @@ struct PluginResult: Identifiable, Hashable, Sendable {
     func with(coverURL newURL: URL?) -> PluginResult {
         PluginResult(
             id: id,
+            pluginID: pluginID,
             title: title,
             authors: authors,
             year: year,

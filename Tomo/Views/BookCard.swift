@@ -151,17 +151,17 @@ struct BookCard: View {
         .transition(.opacity)
     }
 
-    /// Subtle blurred check pill at the top-left of cards whose book is on
-    /// the connected device. Pairs with the cover dim on missing books —
-    /// together they give a clear positive/negative signal at a glance.
+    /// Blurred device pill at the top-left of cards whose book is on the
+    /// connected device. Glyph matches `DeviceTile`'s default icon so the
+    /// "this is on the device" signal reads the same wherever it shows up.
     private var onDeviceBadge: some View {
         ZStack {
             Circle().fill(.ultraThinMaterial)
             Circle().fill(Color.black.opacity(0.62))
-            Icon(symbol: "checkmark", weight: .bold, size: 9)
+            Icon(symbol: "ipad", weight: .regular, size: 11)
                 .foregroundStyle(Color.white)
         }
-        .frame(width: 18, height: 18)
+        .frame(width: 22, height: 22)
         .help("On device")
     }
 
@@ -171,10 +171,10 @@ struct BookCard: View {
         ZStack {
             Circle().fill(.ultraThinMaterial)
             Circle().fill(Color.black.opacity(0.62))
-            Icon(symbol: "icloud.and.arrow.down", weight: .bold, size: 9)
+            Icon(symbol: "icloud.and.arrow.down", weight: .bold, size: 11)
                 .foregroundStyle(Color.white)
         }
-        .frame(width: 18, height: 18)
+        .frame(width: 22, height: 22)
         .help("From source — double-click to download")
     }
 

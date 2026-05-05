@@ -1,12 +1,16 @@
 import Foundation
 import JavaScriptCore
+import os
 
 /// One loaded plugin, exposing the contract-shaped `search` / `download` API.
 ///
 /// Wraps a `PluginHost` (the JSContext + bindings) and lifts JS-side dicts
 /// into typed Swift values. `@MainActor` because `PluginHost` is.
 @MainActor
-final class PluginSource {
+final class PluginSource: Identifiable {
+    /// Unique within the plugins directory (= filename without extension).
+    /// Used as the `pluginID` stamped on results so downloads route back here.
+    let id: String
     let displayName: String
     private let host: PluginHost
 
@@ -23,9 +27,11 @@ final class PluginSource {
         }
         self.host = try PluginHost(pluginSource: source)
         self.displayName = displayName
+        self.id = displayName
     }
 
-    /// Calls the plugin's `search(query)` and lifts results.
+    /// Calls the plugin's `search(query)` and lifts results, stamping
+    /// `pluginID` on each so downloads route back to this plugin.
     /// Caller is expected to debounce; this fires immediately.
     func search(_ query: PluginQuery) async throws -> [PluginResult] {
         let value = try await host.invokePromise(
@@ -33,7 +39,10 @@ final class PluginSource {
         guard let arr = value.toArray() as? [[String: Any]] else {
             throw PluginError.invalidResponse
         }
-        return arr.compactMap(PluginResult.from(jsValue:))
+        let pluginID = self.id
+        return arr.compactMap { dict in
+            PluginResult.from(jsValue: dict, pluginID: pluginID)
+        }
     }
 
     /// Calls the plugin's `download(result)` and returns the URL the plugin
@@ -83,13 +92,25 @@ enum PluginDirectory {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// Loads the first plugin found in the directory. Returns nil when the
-    /// directory has no `.js` files. Throws `PluginError` if the file is
-    /// present but fails to parse — caller surfaces a toast.
-    static func loadFirstPlugin() throws -> PluginSource? {
-        guard let url = availablePluginURLs().first else { return nil }
-        let displayName = url.deletingPathExtension().lastPathComponent
-        return try PluginSource(displayName: displayName, pluginPath: url)
+    /// Loads every plugin found in the directory. Continues past individual
+    /// failures so one broken plugin doesn't take down the rest; returns the
+    /// successfully-loaded plugins plus the first error encountered (if any)
+    /// for the caller to surface as a toast.
+    static func loadAllPlugins() -> (plugins: [PluginSource], firstError: Error?) {
+        var plugins: [PluginSource] = []
+        var firstError: Error?
+        for url in availablePluginURLs() {
+            let displayName = url.deletingPathExtension().lastPathComponent
+            do {
+                plugins.append(try PluginSource(displayName: displayName, pluginPath: url))
+            } catch {
+                pluginLogger.error(
+                    "loading \(url.lastPathComponent, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                )
+                if firstError == nil { firstError = error }
+            }
+        }
+        return (plugins, firstError)
     }
 
     /// Copies any plugins bundled in `Resources/Plugins/` into the user's

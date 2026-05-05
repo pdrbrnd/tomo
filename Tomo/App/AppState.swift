@@ -73,15 +73,29 @@ final class AppState {
     /// task is cancelled when superseded by a new toast.
     var currentToast: Toast?
 
-    /// User-loaded JS plugin used as a search source. Single-plugin in the
-    /// spike — multi-plugin merging is productionisation work. nil until
-    /// `loadPluginsIfPresent()` succeeds, or if no plugin file exists.
-    private(set) var pluginSource: PluginSource?
+    /// User-loaded JS plugins used as search sources. All `.js` files in the
+    /// plugins directory; replaced wholesale on reload. Empty until
+    /// `loadPluginsIfPresent()` runs.
+    private(set) var pluginSources: [PluginSource] = []
 
-    /// User-toggleable on/off for plugin search. Survives in-app for the
-    /// session; persistence is productionisation work. When false,
-    /// `schedulePluginSearch` returns nothing regardless of input.
-    var sourceSearchEnabled: Bool = true
+    /// IDs of plugins currently enabled for search. Persisted in
+    /// `UserDefaults` under `enabledPluginIDs`. First-run default: all
+    /// loaded plugins are enabled.
+    private(set) var enabledPluginIDs: Set<String> = []
+
+    /// Plugins currently enabled for search.
+    var enabledPlugins: [PluginSource] {
+        pluginSources.filter { enabledPluginIDs.contains($0.id) }
+    }
+
+    /// Looks up a loaded plugin by ID. Used to route a `PluginResult`'s
+    /// download call back to the plugin that produced it.
+    func plugin(withID id: String) -> PluginSource? {
+        pluginSources.first(where: { $0.id == id })
+    }
+
+    private static let enabledPluginIDsKey = "enabledPluginIDs"
+    private static let didInitPluginEnableStateKey = "didInitPluginEnableState"
 
     /// True while a plugin search is in flight (post-debounce, awaiting
     /// the plugin's `search()` Promise). Drives the trailing-icon spinner
@@ -100,33 +114,54 @@ final class AppState {
         self.device = detected
         self.deviceFilenames = detected?.filenames() ?? []
         startVolumeMonitoring()
+        if let stored = UserDefaults.standard.array(forKey: Self.enabledPluginIDsKey) as? [String] {
+            self.enabledPluginIDs = Set(stored)
+        }
         PluginDirectory.seedBundledPluginsIfNeeded()
         loadPluginsIfPresent()
+        // First-run for the per-plugin toggle: enable everything that loaded
+        // so the user gets working search out of the box without a tour.
+        if !UserDefaults.standard.bool(forKey: Self.didInitPluginEnableStateKey) {
+            self.enabledPluginIDs = Set(pluginSources.map(\.id))
+            persistEnabledPluginIDs()
+            UserDefaults.standard.set(true, forKey: Self.didInitPluginEnableStateKey)
+        }
     }
 
-    /// Loads whichever plugin is in the plugins directory (folder is source
-    /// of truth — rename or delete on disk takes effect on the next reload).
-    /// Silent no-op when empty. Surfaces a toast on parse / contract failures
-    /// so the user knows their plugin is broken without opening the console.
+    private func persistEnabledPluginIDs() {
+        UserDefaults.standard.set(Array(enabledPluginIDs), forKey: Self.enabledPluginIDsKey)
+    }
+
+    /// Per-plugin enable toggle from the sources popover. Persisted.
+    func setPluginEnabled(_ pluginID: String, enabled: Bool) {
+        if enabled { enabledPluginIDs.insert(pluginID) } else { enabledPluginIDs.remove(pluginID) }
+        persistEnabledPluginIDs()
+    }
+
+    /// Loads every plugin in the plugins directory. Folder is source of
+    /// truth — rename / delete on disk takes effect on the next reload.
+    /// One broken plugin doesn't prevent others from loading; the first
+    /// error surfaces as a toast.
     ///
-    /// Note: replacing `pluginSource` doesn't actively cancel in-flight
-    /// `fetch` Tasks owned by the prior `PluginHost`. Those Tasks hop back
-    /// to MainActor and call `resolve`/`reject` on a JSValue whose context
-    /// has been replaced — harmless (the resolved value is discarded by an
-    /// abandoned Promise) but worth knowing. Productionisation should track
-    /// in-flight tasks per host and cancel on reload.
+    /// Note: replacing `pluginSources` doesn't actively cancel in-flight
+    /// `fetch` Tasks owned by prior `PluginHost`s. Those Tasks hop back to
+    /// MainActor and call `resolve`/`reject` on JSValues whose contexts
+    /// have been replaced — harmless (the resolved value is discarded by
+    /// an abandoned Promise) but worth knowing. Productionisation should
+    /// track in-flight tasks per host and cancel on reload.
     private func loadPluginsIfPresent() {
-        do {
-            self.pluginSource = try PluginDirectory.loadFirstPlugin()
-            if let source = pluginSource {
-                pluginLogger.info("loaded plugin: \(source.displayName, privacy: .public)")
-            } else {
-                pluginLogger.info("no plugins in directory")
-            }
-        } catch {
-            self.pluginSource = nil
-            pluginLogger.error("plugin load failed: \(error.localizedDescription, privacy: .public)")
-            showToast(.error("Plugin failed to load: \(error.localizedDescription)"))
+        let result = PluginDirectory.loadAllPlugins()
+        self.pluginSources = result.plugins
+        // Drop enabled IDs whose plugin file is gone so the set stays
+        // tight to actually-loaded plugins.
+        let loadedIDs = Set(result.plugins.map(\.id))
+        if !enabledPluginIDs.isSubset(of: loadedIDs) {
+            enabledPluginIDs.formIntersection(loadedIDs)
+            persistEnabledPluginIDs()
+        }
+        pluginLogger.info("loaded \(result.plugins.count, privacy: .public) plugin(s)")
+        if let err = result.firstError {
+            showToast(.error("Plugin failed to load: \(err.localizedDescription)"))
         }
     }
 
@@ -153,8 +188,14 @@ final class AppState {
                 }
                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
             }.value
+            let installedID = sourceURL.deletingPathExtension().lastPathComponent
             reloadPluginSource()
-            if pluginSource != nil {
+            if let installed = plugin(withID: installedID) {
+                // Newly installed plugins start enabled. Existing plugins
+                // overwritten by the same name keep whatever state they had.
+                if !enabledPluginIDs.contains(installed.id) {
+                    setPluginEnabled(installed.id, enabled: true)
+                }
                 showToast(.info("Plugin installed."))
             }
         } catch {

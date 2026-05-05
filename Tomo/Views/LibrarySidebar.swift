@@ -1,17 +1,29 @@
 import SwiftUI
 
+/// Cross-cutting filter on the connected-device axis. Composable with
+/// collection + language filters via AND, like every other axis.
+enum DeviceFilter: String, Hashable {
+    case onDevice
+    case notOnDevice
+}
+
 /// Left-edge floating pane: organisation and filtering. Same shape language
-/// as the right inspector. Holds three sections:
+/// as the right inspector. Sections:
 ///   - All Books (clears all axes)
+///   - Device (only when a device is connected)
 ///   - Collections (user-created, with create/rename/delete + drag-to-add)
 ///   - Languages (auto-populated from the books' locales)
 struct LibrarySidebar: View {
     @Binding var selectedCollection: UUID?
     @Binding var selectedLanguage: String?
+    @Binding var selectedDeviceFilter: DeviceFilter?
     let totalBooks: Int
     let collections: [Collection]
     let collectionCounts: [UUID: Int]
     let languageCounts: [String: Int]
+    let deviceConnected: Bool
+    let onDeviceCount: Int
+    let notOnDeviceCount: Int
     let onCreateCollection: (String) -> Void
     let onRenameCollection: (UUID, String) -> Void
     let onRequestDeleteCollection: (Collection) -> Void
@@ -46,6 +58,10 @@ struct LibrarySidebar: View {
                         allBooksSection
                             .padding(.top, Theme.Chrome.paneTopReserve)
 
+                        if deviceConnected {
+                            deviceSection
+                        }
+
                         collectionsSection
 
                         if !sortedLocales.isEmpty {
@@ -65,10 +81,36 @@ struct LibrarySidebar: View {
             row(
                 label: "All Books",
                 count: totalBooks,
-                isSelected: selectedCollection == nil && selectedLanguage == nil
+                isSelected: selectedCollection == nil && selectedLanguage == nil && selectedDeviceFilter == nil
             ) {
                 selectedCollection = nil
                 selectedLanguage = nil
+                selectedDeviceFilter = nil
+            }
+        }
+    }
+
+    // MARK: - Device
+
+    private var deviceSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionHeader("Device")
+
+            VStack(spacing: Self.rowSpacing) {
+                row(
+                    label: "On device",
+                    count: onDeviceCount,
+                    isSelected: selectedDeviceFilter == .onDevice
+                ) {
+                    selectedDeviceFilter = (selectedDeviceFilter == .onDevice) ? nil : .onDevice
+                }
+                row(
+                    label: "Not on device",
+                    count: notOnDeviceCount,
+                    isSelected: selectedDeviceFilter == .notOnDevice
+                ) {
+                    selectedDeviceFilter = (selectedDeviceFilter == .notOnDevice) ? nil : .notOnDevice
+                }
             }
         }
     }

@@ -12,6 +12,7 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var selectedLanguage: String?
     @State private var selectedCollection: UUID?
+    @State private var selectedDeviceFilter: DeviceFilter?
     @State private var booksPendingDelete: [Book] = []
     @State private var collectionPendingDelete: Collection?
     @State private var coverGalleryBook: Book?
@@ -73,6 +74,14 @@ struct LibraryView: View {
             !celebratingBookIDs.contains(book.id)
                 && (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
                 && (selectedLanguage.map { book.locale == $0 } ?? true)
+                && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
+        }
+    }
+
+    private func matches(deviceFilter: DeviceFilter, book: Book) -> Bool {
+        switch deviceFilter {
+        case .onDevice: return isOnDevice(book)
+        case .notOnDevice: return !isOnDevice(book)
         }
     }
 
@@ -230,12 +239,17 @@ struct LibraryView: View {
         .onChange(of: searchText) { _, newValue in
             schedulePluginSearch(for: newValue)
         }
-        .onChange(of: state.sourceSearchEnabled) { _, enabled in
-            if !enabled {
+        .onChange(of: state.enabledPluginIDs) { _, newSet in
+            // Drop results from plugins that are no longer enabled.
+            pluginResults = pluginResults.filter { newSet.contains($0.pluginID) }
+            if newSet.isEmpty {
                 pluginSearchTask?.cancel()
+                coverEnrichmentTask?.cancel()
                 pluginResults = []
                 selectedSourceID = nil
-            } else {
+                state.pluginSearchInFlight = false
+            } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Re-run search to pick up any newly-enabled plugins.
                 schedulePluginSearch(for: searchText)
             }
         }
@@ -585,25 +599,25 @@ struct LibraryView: View {
         }
     }
 
-    /// Debounces plugin search by 300ms. Cancels any in-flight task so older
-    /// queries can't overwrite newer results. Empty queries clear results.
+    /// Debounces plugin search by 300ms then runs every enabled plugin
+    /// concurrently, accumulating results as they land. Cancels any
+    /// in-flight task so older queries can't overwrite newer ones. One
+    /// failing plugin doesn't take down the others — it logs and the rest
+    /// proceed.
     private func schedulePluginSearch(for query: String) {
         pluginSearchTask?.cancel()
         coverEnrichmentTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard
-            !trimmed.isEmpty,
-            state.sourceSearchEnabled,
-            let source = state.pluginSource
-        else {
+        let plugins = state.enabledPlugins
+        guard !trimmed.isEmpty, !plugins.isEmpty else {
             pluginResults = []
             return
         }
         // Parse the search bar into structured fields. `field:value` tokens
         // become `query.title`, `query.author`, etc.; everything else stays
         // in `query.text`. Plugins consume what they understand.
-        let query = QueryParser.parse(trimmed)
-        guard !query.isEmpty else {
+        let parsedQuery = QueryParser.parse(trimmed)
+        guard !parsedQuery.isEmpty else {
             pluginResults = []
             return
         }
@@ -613,41 +627,47 @@ struct LibraryView: View {
         // "Searching sources…" during the whole window between keystroke
         // and results landing — not 1s of stale hits followed by a swap.
         pluginResults = []
-        // Set the flag at both sites: once here so it's true the moment
-        // schedulePluginSearch returns (covers the gap before the new task
-        // body runs), and once inside the task body so it survives the
-        // previous-task's defer firing on MainActor's next tick (which
-        // would otherwise wipe this assignment).
         state.pluginSearchInFlight = true
         pluginSearchTask = Task { @MainActor in
             state.pluginSearchInFlight = true
             defer { state.pluginSearchInFlight = false }
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            do {
-                let results = try await source.search(query)
-                guard !Task.isCancelled else { return }
-                pluginResults = results
-                // Kick off cover enrichment as a separate task so result
-                // cards appear immediately and covers fade in as they land.
-                let needsEnrichment = results.contains { $0.coverURL == nil }
-                if needsEnrichment {
-                    coverEnrichmentTask = Task { @MainActor in
-                        let enrichments = await PluginCoverEnricher.enrich(results)
-                        guard !Task.isCancelled else { return }
-                        pluginResults = pluginResults.map { existing in
-                            guard existing.coverURL == nil,
-                                let url = enrichments[existing.id]
-                            else { return existing }
-                            return existing.with(coverURL: url)
-                        }
+
+            // Run each enabled plugin in turn and accumulate results. With
+            // 2-3 plugins typical, sequential is plenty fast (~1s worst
+            // case after the 300ms debounce) and dodges the cross-actor
+            // region-isolation gymnastics a TaskGroup would need under
+            // Swift 6 strict concurrency. One slow plugin will block the
+            // next; revisit if/when that becomes a real problem.
+            for plugin in plugins {
+                if Task.isCancelled { break }
+                do {
+                    let results = try await plugin.search(parsedQuery)
+                    if Task.isCancelled { break }
+                    pluginResults.append(contentsOf: results)
+                } catch {
+                    pluginLogger.error(
+                        "plugin \(plugin.id, privacy: .public) search failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+            // Cover enrichment runs once across all merged results.
+            let snapshot = pluginResults
+            let needsEnrichment = snapshot.contains { $0.coverURL == nil }
+            if needsEnrichment {
+                coverEnrichmentTask = Task { @MainActor in
+                    let enrichments = await PluginCoverEnricher.enrich(snapshot)
+                    guard !Task.isCancelled else { return }
+                    pluginResults = pluginResults.map { existing in
+                        guard existing.coverURL == nil,
+                            let url = enrichments[existing.id]
+                        else { return existing }
+                        return existing.with(coverURL: url)
                     }
                 }
-            } catch {
-                guard !Task.isCancelled else { return }
-                pluginResults = []
-                state.showToast(.error("Search failed: \(error.localizedDescription)"))
-                pluginLogger.error("plugin search failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
@@ -657,8 +677,8 @@ struct LibraryView: View {
     /// through the existing import pipeline so plugin-sourced books look
     /// identical to manually-imported ones afterwards.
     private func downloadAndImport(_ result: PluginResult) async {
-        guard let source = state.pluginSource else {
-            state.showToast(.error("No source plugin loaded."))
+        guard let source = state.plugin(withID: result.pluginID) else {
+            state.showToast(.error("Plugin '\(result.pluginID)' is no longer loaded."))
             return
         }
         // Reentry guard. Two rapid double-clicks both schedule a Task before
@@ -1083,10 +1103,14 @@ struct LibraryView: View {
         LibrarySidebar(
             selectedCollection: $selectedCollection,
             selectedLanguage: $selectedLanguage,
+            selectedDeviceFilter: $selectedDeviceFilter,
             totalBooks: state.books.count,
             collections: state.collections,
             collectionCounts: state.collectionCounts,
             languageCounts: state.languageCounts,
+            deviceConnected: state.device != nil,
+            onDeviceCount: state.books.filter { isOnDevice($0) }.count,
+            notOnDeviceCount: state.books.filter { !isOnDevice($0) }.count,
             onCreateCollection: { name in
                 Task { await state.createCollection(named: name) }
             },
@@ -1136,7 +1160,7 @@ struct LibraryView: View {
             multiDeviceInfo: inspectorBooks.count > 1 ? multiDeviceInfo(for: inspectorBooks) : nil,
             sourceResult: inspectedSource,
             sourceDownloadState: inspectedSource.flatMap { downloadStates[$0.id] } ?? .idle,
-            sourcePluginName: state.pluginSource?.displayName,
+            sourcePluginName: inspectedSource.flatMap { state.plugin(withID: $0.pluginID)?.displayName },
             onSourceDownload: {
                 if let source = inspectedSource {
                     Task { await downloadAndImport(source) }
