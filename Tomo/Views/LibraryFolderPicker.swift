@@ -14,9 +14,16 @@ import UniformTypeIdentifiers
 struct LibraryFolderPicker: View {
     let folder: URL?
     let setFolder: (URL) -> Void
+    let clearFolder: () -> Void
 
     @State private var popoverOpen = false
     @State private var fileImporterOpen = false
+    @State private var hoveredRecent: URL?
+    /// Bumped after a removal so SwiftUI re-evaluates `popoverContent` and
+    /// re-reads `LibraryFolder.recents()`. The recents list lives in
+    /// UserDefaults and is otherwise invisible to the view-tree dependency
+    /// tracker.
+    @State private var recentsTick = 0
 
     var body: some View {
         Button {
@@ -66,9 +73,10 @@ struct LibraryFolderPicker: View {
 
     @ViewBuilder
     private var popoverContent: some View {
-        // `recents()` is a static read; SwiftUI re-evaluates body when
-        // `folder` changes (which is when recents change), so the snapshot
-        // stays fresh without observation plumbing.
+        // Read `recentsTick` so SwiftUI re-evaluates this body when a
+        // remove fires; `LibraryFolder.recents()` reads UserDefaults and
+        // would otherwise be invisible to the dependency tracker.
+        let _ = recentsTick
         let recents = LibraryFolder.recents()
 
         VStack(alignment: .leading, spacing: 0) {
@@ -79,14 +87,12 @@ struct LibraryFolderPicker: View {
                 MenuDivider()
             }
             openFolderRow
-            if folder != nil {
-                showInFinderRow
-            }
         }
     }
 
     private func recentRow(_ url: URL) -> some View {
         let isCurrent = url.standardizedFileURL == folder?.standardizedFileURL
+        let isHovered = hoveredRecent == url
         return Button {
             popoverOpen = false
             if !isCurrent { setFolder(url) }
@@ -96,11 +102,55 @@ struct LibraryFolderPicker: View {
                     .frame(width: 14)
                 Text(url.lastPathComponent)
                 Spacer()
-                if isCurrent {
-                    Icon(symbol: "checkmark", weight: .medium, size: 11)
-                        .foregroundStyle(.primary.opacity(0.5))
+                trailingSlot(url: url, isCurrent: isCurrent, isHovered: isHovered)
+            }
+        }
+        .onHover { hovering in
+            hoveredRecent = hovering ? url : (hoveredRecent == url ? nil : hoveredRecent)
+        }
+    }
+
+    /// Single trailing slot for each recent row. Hover swaps the checkmark
+    /// (if current) for two action icons. Instant — no animation.
+    @ViewBuilder
+    private func trailingSlot(url: URL, isCurrent: Bool, isHovered: Bool) -> some View {
+        if isHovered {
+            HStack(spacing: 6) {
+                rowActionButton(symbol: "magnifyingglass", help: "Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    popoverOpen = false
+                }
+                rowActionButton(symbol: "trash", help: "Remove from Recents") {
+                    removeRecent(url)
                 }
             }
+        } else if isCurrent {
+            Icon(symbol: "checkmark", weight: .medium, size: 11)
+                .foregroundStyle(.primary.opacity(0.5))
+        }
+    }
+
+    private func rowActionButton(symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Icon(symbol: symbol, weight: .regular, size: 11)
+                .foregroundStyle(.primary.opacity(Theme.Text.muted))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func removeRecent(_ url: URL) {
+        let isCurrent = url.standardizedFileURL == folder?.standardizedFileURL
+        LibraryFolder.removeFromRecents(url)
+        hoveredRecent = nil
+        recentsTick &+= 1
+        if isCurrent {
+            // Removing the active library returns the user to the empty
+            // state; close the popover so the centered CTA is unobstructed.
+            clearFolder()
+            popoverOpen = false
         }
     }
 
@@ -117,21 +167,6 @@ struct LibraryFolderPicker: View {
                 Icon(symbol: "folder.badge.plus", weight: .regular, size: 13)
                     .frame(width: 14)
                 Text("Open Folder…")
-            }
-        }
-    }
-
-    private var showInFinderRow: some View {
-        Button {
-            popoverOpen = false
-            if let folder {
-                NSWorkspace.shared.activateFileViewerSelecting([folder])
-            }
-        } label: {
-            HStack(spacing: 9) {
-                Icon(symbol: "magnifyingglass", weight: .regular, size: 13)
-                    .frame(width: 14)
-                Text("Show in Finder")
             }
         }
     }

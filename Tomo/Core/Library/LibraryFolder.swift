@@ -54,6 +54,16 @@ nonisolated enum LibraryFolder {
         UserDefaults.standard.set(existing, forKey: recentsKey)
     }
 
+    /// Drop a URL from the recents list. Does not touch the on-disk folder
+    /// or the currently-loaded library; the picker is responsible for
+    /// clearing `libraryFolder` when the user removes the active entry.
+    static func removeFromRecents(_ url: URL) {
+        let path = url.path(percentEncoded: false)
+        var existing = UserDefaults.standard.stringArray(forKey: recentsKey) ?? []
+        existing.removeAll { $0 == path }
+        UserDefaults.standard.set(existing, forKey: recentsKey)
+    }
+
     private static func isExistingDirectory(_ url: URL) -> Bool {
         var isDir: ObjCBool = false
         let exists = FileManager.default.fileExists(

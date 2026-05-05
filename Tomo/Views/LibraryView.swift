@@ -204,7 +204,8 @@ struct LibraryView: View {
             // top padding ≈ 24 − 12 ≈ 12pt aligns the centers.
             LibraryFolderPicker(
                 folder: state.libraryFolder,
-                setFolder: { state.libraryFolder = $0 }
+                setFolder: { state.libraryFolder = $0 },
+                clearFolder: { state.libraryFolder = nil }
             )
             .padding(.leading, 90)
             .padding(.top, 14)
@@ -437,7 +438,7 @@ struct LibraryView: View {
         VStack(spacing: 18) {
             Spacer()
             Image(systemName: "books.vertical")
-                .font(.system(size: 56, weight: .light))
+                .font(.system(size: 24, weight: .light))
                 .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
             VStack(spacing: 6) {
                 Text("Choose your library folder")
