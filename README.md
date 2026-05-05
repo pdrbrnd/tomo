@@ -2,9 +2,7 @@
 
 A native macOS e-book library manager. Single-user, local-first. Native handling of language variants and a first-class Kindle delivery workflow.
 
-<!-- Drop a screenshot in docs/screenshot.png and uncomment:
-![Tomo](docs/screenshot.png)
--->
+![Tomo](screenshots/1.main.png)
 
 ## What it does
 
