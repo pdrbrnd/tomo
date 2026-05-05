@@ -183,7 +183,14 @@ final class PluginHost {
     private func installQuerySelectorAll(in ctx: JSContext) {
         let qsa: @convention(block) (String, String) -> JSValue = { html, selector in
             do {
-                let doc = try SwiftSoup.parse(html)
+                // HTML5 parsers silently drop `<tr>`/`<td>` outside table
+                // context, which breaks row-level re-parsing. If the fragment
+                // starts with one of those tags, wrap it in a table so the
+                // parser keeps the cells.
+                let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
+                let needsTableWrap = trimmed.hasPrefix("<td") || trimmed.hasPrefix("<tr") || trimmed.hasPrefix("<th")
+                let toParse = needsTableWrap ? "<table>\(html)</table>" : html
+                let doc = try SwiftSoup.parse(toParse)
                 let elements = try doc.select(selector)
                 var result: [[String: Any]] = []
                 for el in elements {

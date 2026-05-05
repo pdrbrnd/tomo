@@ -38,8 +38,11 @@ func runSpike() async {
         await runDownload(host: host, query: queryText)
     case "smoke":
         await runSmoke(host: host)
+    case "browser":
+        let queryText = args.count > 2 ? args[2] : "saramago"
+        await runBrowser(query: queryText)
     default:
-        fputs("usage: JSCoreSpike [search|download|smoke] [query]\n", stderr)
+        fputs("usage: JSCoreSpike [search|download|smoke|browser] [query]\n", stderr)
         exit(2)
     }
 }
@@ -57,7 +60,8 @@ func runSearch(host: PluginHost, query: String) async {
             let lang = r["language"] as? String ?? "—"
             let format = r["format"] as? String ?? "—"
             let size = (r["sizeBytes"] as? Int).map { "\($0/1024) KB" } ?? "—"
-            print("  [\(i)] \(title) — \(authors) (\(year)) [\(lang)] \(format) \(size)")
+            let cover = (r["coverURL"] as? String).map { String($0.suffix(50)) } ?? "—"
+            print("  [\(i)] \(title) — \(authors) (\(year)) [\(lang)] \(format) \(size) cover:\(cover)")
         }
         if results.count > 10 {
             print("  … and \(results.count - 10) more")

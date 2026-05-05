@@ -13,10 +13,18 @@ struct SourcesSettingsButton: View {
         Button {
             popoverOpen.toggle()
         } label: {
-            Icon(symbol: "ellipsis", weight: .regular, size: 11)
-                .foregroundStyle(.primary.opacity(popoverOpen ? Theme.Text.primary : Theme.Text.placeholder))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+            Group {
+                if state.pluginSearchInFlight {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(.primary.opacity(Theme.Text.placeholder))
+                } else {
+                    Icon(symbol: "ellipsis", weight: .regular, size: 11)
+                        .foregroundStyle(.primary.opacity(popoverOpen ? Theme.Text.primary : Theme.Text.placeholder))
+                }
+            }
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Sources")

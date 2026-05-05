@@ -83,6 +83,11 @@ final class AppState {
     /// `schedulePluginSearch` returns nothing regardless of input.
     var sourceSearchEnabled: Bool = true
 
+    /// True while a plugin search is in flight (post-debounce, awaiting
+    /// the plugin's `search()` Promise). Drives the trailing-icon spinner
+    /// and the "searching…" empty state.
+    var pluginSearchInFlight: Bool = false
+
     private nonisolated(unsafe) var mountTask: Task<Void, Never>?
     private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
     private var sendStateResetTask: Task<Void, Never>?

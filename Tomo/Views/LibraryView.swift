@@ -32,6 +32,10 @@ struct LibraryView: View {
     /// Per-source-card download state, keyed by `PluginResult.id`. Drives the
     /// in-place card morph when downloading + importing.
     @State private var downloadStates: [String: CardDownloadState] = [:]
+    /// Background task that fills in covers for source results the plugin
+    /// didn't supply. Cancelled when a new search starts so stale covers
+    /// don't land after a query change.
+    @State private var coverEnrichmentTask: Task<Void, Never>?
     /// Library books that just landed via a source download and whose source
     /// card is still showing its "Added" celebration. The library card is
     /// filtered out of the grid for the celebration window so the user sees
@@ -403,7 +407,7 @@ struct LibraryView: View {
     private var gridArea: some View {
         if state.libraryFolder == nil {
             placeholderText("Choose a library folder to begin.")
-        } else if state.books.isEmpty && pluginResults.isEmpty {
+        } else if state.books.isEmpty && pluginResults.isEmpty && !state.pluginSearchInFlight {
             placeholderText("Drop a book to begin.")
         } else if gridItems.isEmpty {
             placeholderText(emptyFilteredMessage)
@@ -413,6 +417,13 @@ struct LibraryView: View {
     }
 
     private var emptyFilteredMessage: String {
+        // Source search is in flight — say so, instead of "nothing matches".
+        // The library half may still be empty for the typed query but the
+        // plugin half is about to populate, and "nothing matches" reads as a
+        // dead-end the user doesn't need to see for ~1s while results land.
+        if state.pluginSearchInFlight, !searchText.isEmpty {
+            return "Searching sources…"
+        }
         if !searchText.isEmpty {
             return "Nothing matches “\(searchText)”."
         }
@@ -574,6 +585,7 @@ struct LibraryView: View {
     /// queries can't overwrite newer results. Empty queries clear results.
     private func schedulePluginSearch(for query: String) {
         pluginSearchTask?.cancel()
+        coverEnrichmentTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
             !trimmed.isEmpty,
@@ -583,13 +595,50 @@ struct LibraryView: View {
             pluginResults = []
             return
         }
+        // Parse the search bar into structured fields. `field:value` tokens
+        // become `query.title`, `query.author`, etc.; everything else stays
+        // in `query.text`. Plugins consume what they understand.
+        let query = QueryParser.parse(trimmed)
+        guard !query.isEmpty else {
+            pluginResults = []
+            return
+        }
+        // Clear stale results immediately so a previous query's hits don't
+        // linger while the new one debounces + fetches. Combined with the
+        // in-flight flag flipping *before* the sleep below, the user sees
+        // "Searching sources…" during the whole window between keystroke
+        // and results landing — not 1s of stale hits followed by a swap.
+        pluginResults = []
+        // Set the flag at both sites: once here so it's true the moment
+        // schedulePluginSearch returns (covers the gap before the new task
+        // body runs), and once inside the task body so it survives the
+        // previous-task's defer firing on MainActor's next tick (which
+        // would otherwise wipe this assignment).
+        state.pluginSearchInFlight = true
         pluginSearchTask = Task { @MainActor in
+            state.pluginSearchInFlight = true
+            defer { state.pluginSearchInFlight = false }
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             do {
-                let results = try await source.search(PluginQuery(text: trimmed))
+                let results = try await source.search(query)
                 guard !Task.isCancelled else { return }
                 pluginResults = results
+                // Kick off cover enrichment as a separate task so result
+                // cards appear immediately and covers fade in as they land.
+                let needsEnrichment = results.contains { $0.coverURL == nil }
+                if needsEnrichment {
+                    coverEnrichmentTask = Task { @MainActor in
+                        let enrichments = await PluginCoverEnricher.enrich(results)
+                        guard !Task.isCancelled else { return }
+                        pluginResults = pluginResults.map { existing in
+                            guard existing.coverURL == nil,
+                                let url = enrichments[existing.id]
+                            else { return existing }
+                            return existing.with(coverURL: url)
+                        }
+                    }
+                }
             } catch {
                 guard !Task.isCancelled else { return }
                 pluginResults = []
