@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import JavaScriptCore
 import SwiftSoup
@@ -37,6 +38,7 @@ final class PluginHost {
         installConsole(in: ctx)
         installFetch(in: ctx)
         installQuerySelectorAll(in: ctx)
+        installCacheImage(in: ctx)
 
         ctx.evaluateScript(pluginSource)
         if let err = exception.consume() {
@@ -172,6 +174,94 @@ final class PluginHost {
             "body": body,
             "url": finalURL,
         ]
+    }
+
+    /// Mirror of the app-side `cacheImage` binding. Downloads bytes with
+    /// caller-supplied headers (e.g. Referer for hotlink-protected covers)
+    /// and caches them on disk. Returns the local file path. Plugins use
+    /// this when a source's own cover URL is the most authoritative cover
+    /// but the server requires a Referer to actually serve the bytes.
+    private func installCacheImage(in ctx: JSContext) {
+        let cacheImage: @convention(block) (String, JSValue?) -> JSValue = { [weak self] url, opts in
+            guard let self else { return JSValue(undefinedIn: ctx) }
+            let prepared = self.prepareCacheImageOptions(opts: opts)
+            return self.makePromise(in: ctx) { resolve, reject in
+                Task.detached {
+                    do {
+                        let path = try await Self.fetchAndCache(url: url, options: prepared)
+                        await MainActor.run {
+                            resolve.call(withArguments: [path])
+                        }
+                    } catch {
+                        await MainActor.run {
+                            reject.call(withArguments: ["\(error)"])
+                        }
+                    }
+                }
+            }
+        }
+        ctx.setObject(cacheImage, forKeyedSubscript: "cacheImage" as NSString)
+    }
+
+    private func prepareCacheImageOptions(opts: JSValue?) -> CacheImageOptions {
+        guard let opts, opts.isObject else { return CacheImageOptions() }
+        let referer = opts.forProperty("referer")?.toString()
+        let headers = opts.forProperty("headers")?.toDictionary() as? [String: String]
+        return CacheImageOptions(referer: referer, headers: headers)
+    }
+
+    private struct CacheImageOptions: Sendable {
+        var referer: String?
+        var headers: [String: String]?
+    }
+
+    nonisolated private static func fetchAndCache(url urlString: String, options: CacheImageOptions) async throws
+        -> String
+    {
+        guard let url = URL(string: urlString) else {
+            throw PluginError.runtime("invalid url: \(urlString)")
+        }
+        let key = sha256Hex(urlString)
+        let cacheDir = try cacheDirectory()
+        let cacheFile = cacheDir.appending(path: "\(key).bin")
+        if FileManager.default.fileExists(atPath: cacheFile.path(percentEncoded: false)) {
+            return cacheFile.path(percentEncoded: false)
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 15
+        req.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            forHTTPHeaderField: "User-Agent")
+        if let referer = options.referer {
+            req.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        if let headers = options.headers {
+            for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        }
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status), data.count > 100 else {
+            throw PluginError.runtime("cacheImage status \(status), \(data.count) bytes")
+        }
+        try data.write(to: cacheFile, options: .atomic)
+        return cacheFile.path(percentEncoded: false)
+    }
+
+    nonisolated private static func cacheDirectory() throws -> URL {
+        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            throw PluginError.runtime("no cache directory available")
+        }
+        let dir =
+            base
+            .appending(path: "com.pdrbrnd.tomo", directoryHint: .isDirectory)
+            .appending(path: "plugin-covers", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    nonisolated private static func sha256Hex(_ s: String) -> String {
+        let hash = SHA256.hash(data: Data(s.utf8))
+        return hash.map { String(format: "%02x", $0) }.joined()
     }
 
     private func installQuerySelectorAll(in ctx: JSContext) {

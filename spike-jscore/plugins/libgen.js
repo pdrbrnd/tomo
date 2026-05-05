@@ -55,13 +55,14 @@ async function search(query) {
     // <tr> is the header — we just check for ≥9 <td> cells per row to skip
     // it, since the header has fewer (or different) cells.
     const rows = querySelectorAll(r.body, "table.table-striped tr");
-    const results = [];
+    const parsedRows = [];
     for (const row of rows) {
         const cells = querySelectorAll(row.html, "td");
         if (cells.length < 9) continue;
 
         // Title cell: first <a href="edition.php?id=..."> is the canonical
-        // title link; its text is the title.
+        // title link; its text is the title. The secondary badge ("f 1234567")
+        // carries the file id we need to compute the cover URL bucket.
         const titleAnchors = querySelectorAll(cells[0].html, "a[href*='edition.php']");
         if (titleAnchors.length === 0) continue;
         const title = titleAnchors[0].text.trim();
@@ -69,6 +70,10 @@ async function search(query) {
         const editionHref = titleAnchors[0].attrs.href || "";
         const editionMatch = editionHref.match(/edition\.php\?id=(\d+)/);
         const editionId = editionMatch ? editionMatch[1] : null;
+
+        const fileBadges = querySelectorAll(cells[0].html, "span.badge-secondary");
+        const fileMatch = fileBadges[0]?.text?.match(/(\d+)/);
+        const fileId = fileMatch ? parseInt(fileMatch[1], 10) : null;
 
         const authorsText = (cells[1].text || "").trim();
         const authors = authorsText
@@ -96,34 +101,52 @@ async function search(query) {
             continue;
         }
 
-        results.push({
-            id: md5,
-            title,
-            authors,
-            year: Number.isFinite(year) ? year : null,
-            language: normalizeLanguage(languageRaw),
-            format: format || "epub",
-            sizeBytes,
-            coverURL: null,  // libgen.li doesn't surface covers in the result table
-            detailURL: editionId
-                ? `${BASE}/edition.php?id=${editionId}`
-                : `${BASE}/ads.php?md5=${md5}`,
-            metadata: [
-                publisher && { key: "Publisher", value: publisher },
-                languageRaw && { key: "Original language", value: languageRaw },
-                editionId && { key: "Edition ID", value: editionId },
-                { key: "MD5", value: md5 },
-            ].filter(Boolean),
+        parsedRows.push({
+            fileId,
+            result: {
+                id: md5,
+                title,
+                authors,
+                year: Number.isFinite(year) ? year : null,
+                language: normalizeLanguage(languageRaw),
+                format: format || "epub",
+                sizeBytes,
+                coverURL: null,  // populated below via libgen's cover server when present
+                detailURL: editionId
+                    ? `${BASE}/edition.php?id=${editionId}`
+                    : `${BASE}/ads.php?md5=${md5}`,
+                metadata: [
+                    publisher && { key: "Publisher", value: publisher },
+                    languageRaw && { key: "Original language", value: languageRaw },
+                    editionId && { key: "Edition ID", value: editionId },
+                    { key: "MD5", value: md5 },
+                ].filter(Boolean),
+            },
         });
 
-        if (results.length >= 30) break;
+        if (parsedRows.length >= 30) break;
     }
 
-    // Cover enrichment is the app's job — it has access to iTunes (US + PT
-    // stores) plus Open Library, the same stack used for library-book cover
-    // lookups. Plugins return null coverURL when the source doesn't expose
-    // one; the app fills the gap.
-    return results;
+    // libgen's own covers live at /fictioncovers/<bucket>/<md5>.jpg where
+    // bucket = floor(file_id / 1000) * 1000. Both pieces are already in the
+    // row, so the URL is built without any extra HTTP. The cover server
+    // requires a Referer header pointing at libgen.li (hotlink check) — the
+    // app's `cacheImage` binding handles that and returns a local file path.
+    // Failures (no cover for this entry, content-length 0, etc.) leave
+    // coverURL null and the app's iTunes/OL enricher fills the gap.
+    await Promise.all(parsedRows.map(async ({ fileId, result }) => {
+        if (!fileId) return;
+        const bucket = Math.floor(fileId / 1000) * 1000;
+        const url = `${BASE}/fictioncovers/${bucket}/${result.id}.jpg`;
+        try {
+            const path = await cacheImage(url, { referer: `${BASE}/` });
+            if (path) result.coverURL = `file://${path}`;
+        } catch (_) {
+            // no libgen cover for this entry — app-side enricher will try
+            // iTunes / Open Library next.
+        }
+    }));
+    return parsedRows.map(p => p.result);
 }
 
 async function download(result) {
