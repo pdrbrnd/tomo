@@ -11,10 +11,12 @@ natively and treats device delivery as a first-class workflow.
 
 ## What this is NOT
 
-- Not an e-book reader (no in-app reading)
+- Not an e-book reader (no in-app reading; double-click → Show details)
 - Not a sync service (single-user, single-Mac)
-- Not a Calibre clone (no plugin ecosystem, no news, no server mode)
+- Not a Calibre clone (no news, no server mode, no Tomo-app plugin system)
 - Not a DRM tool (out of scope; books arrive DRM-free or they don't arrive)
+
+Source plugins (JS files in `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`) are a separate concept — they search external catalogues; they don't extend the app itself.
 
 ## Owner / context
 
@@ -50,12 +52,16 @@ These are load-bearing. Don't violate them without flagging it.
 
 1. **Library on disk is the source of truth.** Flat folder structure:
    `Library/Author/Title (Year)/book.epub`. Human-readable. Survives the
-   app being deleted. Sidecar `metadata.json` per book for fields the EPUB
-   format doesn't natively hold.
+   app being deleted. Each book carries a `metadata.json` sidecar with
+   everything the index needs (title, authors, locale, collections by
+   name, id, etc.). Collection *definitions* (id, sortOrder, dateCreated)
+   live in `<library>/.tomo/collections.json` so empty collections and
+   sortOrder also survive a rebuild.
 
 2. **The SQLite index is disposable.** Stored outside the library folder
    at `~/Library/Application Support/[app-bundle-id]/index.db`. Never in
-   iCloud (SQLite + cloud sync = corruption). Rebuild from disk on demand.
+   iCloud (SQLite + cloud sync = corruption). Rebuilds entirely from the
+   sidecars + `.tomo/collections.json` on demand.
 
 3. **iCloud Drive is supported, not promoted.** The library folder may live
    in iCloud. Use `NSFileCoordinator` for reads/writes. Detect `.icloud`
@@ -69,7 +75,7 @@ These are load-bearing. Don't violate them without flagging it.
 5. **No network calls without user action.** Metadata fetches, cover lookups,
    etc. are explicit clicks, never background.
 
-6. **No external binary dependencies in v1.** Everything ships in the app
+6. **No external binary dependencies.** Everything ships in the app
    bundle as Swift code or pure-Swift packages. No shelling out to
    `ebook-convert`, `pandoc`, or anything else.
 
@@ -78,6 +84,9 @@ These are load-bearing. Don't violate them without flagging it.
 - Swift 6.0 / SwiftUI, macOS 26+ target (`MainActor` default isolation)
 - GRDB for SQLite
 - ZIPFoundation for EPUB reading (EPUB is just zip + XML)
+- SwiftSoup for HTML parsing (used by source plugins' `querySelectorAll` host binding)
+- [`AZW3`](https://github.com/pdrbrnd/swift-azw3) — our own SwiftPM package, the EPUB→AZW3 writer
+- JavaScriptCore for source plugins (one bundled: `gutenberg.js`)
 - Native `FileManager` + `NSFileCoordinator` for file ops
 - No external binaries. No Python. No bundled apps.
 
@@ -94,39 +103,41 @@ Fast and snappy is not negotiable:
 
 ```
 Tomo/
-  App/                    # @main, app lifecycle, settings
+  App/                    # @main, app lifecycle, AppState
   Views/                  # SwiftUI views, one per file
-  Models/                 # plain structs: Book, BookOrigin, LanguageProfile
+  Models/                 # plain structs: Book, BookOrigin, Collection, LanguageProfile
   Core/
-    Library/              # library folder operations
+    Library/              # library folder operations, CollectionsFile
     Index/                # SQLite index (GRDB)
-    Metadata/             # EPUB parsing, sidecar I/O, EPUBSource
+    Metadata/             # EPUB parsing, sidecar I/O, cover lookup
     Classifier/           # language profile engine
-    Delivery/             # Kindle USB driver
-    Conversion/           # EPUB→AZW3 writer + adapter layer
-      AZW3/               # standalone-package-shaped AZW3 writer
+    Delivery/             # Kindle USB driver + thumbnail writer
+    Conversion/           # EPUB→AZW3 adapter (delegates to swift-azw3)
+    Plugins/              # JS source-plugin host (JavaScriptCore)
   Resources/
     Profiles/             # bundled language profile JSON files
+    Plugins/              # bundled JS plugins (gutenberg.js)
 ```
 
-The `Conversion/AZW3/` subdirectory is destined for extraction into a
-standalone Swift package. Nothing in there may import or reference any
-Tomo type — see `Tomo/Core/Conversion/AZW3/README.md`.
+The AZW3 writer itself lives in [`pdrbrnd/swift-azw3`](https://github.com/pdrbrnd/swift-azw3) (extracted from this repo as a standalone SwiftPM package). The in-tree `Core/Conversion/` folder is just the adapter that bridges Tomo's `EPUBSource` to `AZW3.AZW3Writer`.
 
 ## Data model
 
-Models live in `Tomo/Models/`. Read those files for the current
-shapes (`Book.swift`, `LanguageProfile.swift`). The sidecar
-`metadata.json` mirrors `Book` minus `id` (id lives in the index).
+Models live in `Tomo/Models/`. Read those files for the current shapes
+(`Book.swift`, `Collection.swift`, `LanguageProfile.swift`). The sidecar
+`metadata.json` carries everything in `Book` *including* `id`, plus the
+`collections` array (by name) and a top-level `version` field for future
+migrations. See `Tomo/Core/Metadata/MetadataSidecar.swift`.
 
-Two intent notes the code can't express:
+Disk truth split:
 
-- `BookOrigin` is in v1 even though sources are v2. Every v1-imported
-  book is `.manualImport`. This avoids a migration when sources ship.
-- `Book` has a single `fileURL` (primary file) — multi-format-per-book
-  (`formats: [BookFormat]`) is deferred until v2 sources need it. The
-  `FileFormat` enum in `Tomo/Core/Conversion/` is unrelated; it's
-  the conversion layer's format identifier, not a data-model type.
+- Per-book sidecar (`metadata.json`): all `Book` fields + collection memberships by name.
+- Per-library `<root>/.tomo/collections.json`: collection definitions (id, name, sortOrder, dateCreated). Pairs with sidecar memberships to fully reconstruct the index.
+
+Intent notes the code can't express:
+
+- `BookOrigin` distinguishes manual-import from plugin-sourced books (`.source(id, ref)`). All books imported via a JS plugin's `download()` carry the originating plugin's id.
+- `Book` has a single `fileURL` (primary file) — multi-format-per-book (`formats: [BookFormat]`) isn't shipped. The `FileFormat` enum in `Tomo/Core/Conversion/` is the conversion layer's format identifier, not a data-model type.
 
 ## Language profiles — intent
 
@@ -143,20 +154,22 @@ For non-EPUB formats: classifier doesn't reach into MOBI/AZW3/PDF
 contents. Books in those formats either get a manually-set locale or
 sit at `und` (the BCP 47 "undetermined" tag).
 
-## Sources — v2 concept
+## Sources
 
-v2 will add a sources system for searching external book catalogues
-(public catalogues, e-book stores, OPDS feeds, etc.) from inside the app.
-See `docs/sources.md` for the motivation, protocol shape, and design
-notes. Not a v1 concern beyond the `BookOrigin` field on `Book`.
+External book search runs through user-installed JavaScript plugins loaded from `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`. One plugin (`gutenberg.js`) ships bundled and is seeded on first launch; users install more by dropping `.js` files into the folder.
 
-## v1 scope (in priority order)
+The contract and host bindings (fetch, querySelectorAll, cacheImage, console) are documented in `docs/plugins.md`. Source-of-truth shapes live in `Tomo/Core/Plugins/{PluginResult,PluginHost,PluginSource}.swift`. Multi-plugin search runs each enabled plugin in turn; per-plugin enable/disable in the sources popover, persisted in `UserDefaults`.
 
-1. Library: import, organise, browse (grid + list), search, edit metadata (incl. language profile and cover), delete
-2. Language profiles: classification on import (when EPUB doesn't declare a full locale), badges, bulk re-classify
-3. Cover art editing: paste, file picker, fetch from Open Library by ISBN
-4. Duplicate detection: title+author fuzzy match, format preference (EPUB > AZW3 > MOBI > PDF), manual merge UI
-5. Kindle delivery: USB sideload, with EPUB→AZW3 conversion done in-app (no Amazon-server round-trip)
+## Format support
+
+Imports go through `LibraryImporter`, which dispatches by file extension and reads metadata via the matching reader. The accepted set is `LibraryImporter.acceptedExtensions` — currently `epub` and `pdf`. Adding a format means adding a `<Format>Metadata.swift` reader that produces an `ImportedFileMetadata` and a case in `readMetadata`.
+
+Per-format notes:
+
+- **EPUB** — full path: metadata, cover, language classification on import.
+- **PDF** — `/Info` for title/author/year (with junk-title detection — Word's "Microsoft Word - foo.docx" gets thrown out for the filename), first page rendered as JPEG cover at 600px long-side. No language classification (PDFs don't carry a reliable tag); locale lands at `und` unless the user sets it.
+
+Once a book is in the library, AZW3 / MOBI / PDF can be sideloaded to a Kindle via passthrough; only EPUB triggers the in-app conversion path. Drop overlay surfaces the accepted set; non-accepted drops surface a toast and are silently dropped.
 
 ## Editing model
 
@@ -200,26 +213,22 @@ number stops carrying signal. So:
   The number isn't saved.
 
 **File relocation on edit:** Editing title/authors/year does *not* move the
-book's files on disk in v1 — the `Author/Title (Year)/` folder name may
-drift from the metadata after edits. Harmless for the index; worth fixing
-later (rename folders to match new metadata on save).
+book's files on disk — the `Author/Title (Year)/` folder name may drift
+from the metadata after edits. Harmless for the index; worth fixing later
+(rename folders to match new metadata on save).
 
 ## Conversion
 
-EPUB→AZW3 (KF8) is implemented in-app under `Tomo/Core/Conversion/`.
-The writer half lives in `AZW3/` as a self-contained module ready for
-extraction into a standalone Swift package. Phases 1 and 2 hardware-validated
-2026-05-03 — cover, TOC NCX, CSS flows, body images all shipped. See
-`docs/azw3_phase2.md` for the explicitly-deferred list (PalmDoc compression,
-older-firmware thumbnail hack, etc.). We do not bundle Calibre, KindleGen, or
-Amazon's Send to Kindle Mac app, and we don't route through SMTP /
-Amazon servers.
+EPUB→AZW3 (KF8) is delegated to the [`AZW3`](https://github.com/pdrbrnd/swift-azw3) SwiftPM package (our own — extracted from this repo). Tomo's `EPUBToAZW3Converter` (in `Core/Conversion/`) is just the adapter that builds a `BookManifest` from an EPUB on disk and feeds it to `AZW3Writer`. Hardware-validated on Kindle Paperwhite Signature, FW 5.19.2.
+
+For Kindle home-screen covers, the writer's EXTH 201 alone isn't enough on most current firmwares — the home-screen scanner pulls covers from `system/thumbnails/thumbnail_<ASIN>_EBOK_portrait.jpg`. `Core/Delivery/KindleCoverThumbnail.swift` writes that file alongside the AZW3 copy. ASIN comes from `AZW3Writer.asin` (deterministic in the manifest); the JPEG is resized to 500px tall via ImageIO.
+
+We do not bundle Calibre, KindleGen, or Amazon's Send to Kindle Mac app, and we don't route through SMTP / Amazon servers.
 
 ## v2 (later, not now)
 
-- Sources system (see `docs/sources.md`)
 - Reading progress sync from `My Clippings.txt`
-- Collections / saved searches
+- Saved searches
 - Series support
 - Library subset export
 
@@ -228,9 +237,10 @@ Amazon servers.
 - DRM removal of any kind
 - In-app reading
 - Multi-device sync logic beyond "iCloud folder works fine"
-- Plugin system (sources are Swift files in the repo, not user-installable plugins)
+- A *Tomo-app* plugin system (source plugins are JS only — they search and download; they don't extend the app itself)
 - News / RSS / feed fetching (Calibre-style)
 - iOS companion app
+- App Store distribution (sandbox is off; Homebrew cask is the channel)
 
 ## Architectural layers
 
@@ -238,7 +248,7 @@ The codebase has three loose layers. Files should sit clearly in one.
 
 **Models (`Models/`).** Plain structs. `Codable` where they cross the disk
 boundary. No SwiftUI imports, no business logic beyond data shape. `Book`,
-`BookOrigin`, `LanguageProfile`.
+`BookOrigin`, `Collection`, `LanguageProfile`.
 
 **Core (`Core/`).** The work the app does. File I/O, parsing, classifying,
 indexing, delivering. Pure-Swift modules with no SwiftUI dependency. Each
@@ -260,13 +270,9 @@ Swift: state management, concurrency, view composition, API design.
 
 Project-specific additions on top of the skill:
 
-- Error handling: typed errors at module boundaries (`enum LibraryError`),
-  not `throws Error`.
+- Error handling: typed errors at module boundaries (`enum LibraryError`), not `throws Error`.
 - Logs via `os.Logger`, one logger per subsystem.
-- Tests: Swift Testing (`@Test`, `#expect`), focus on the classifier and
-  the file-organisation logic. UI tests are not worth the maintenance for v1.
-  Test target not scaffolded yet — added when the first thing worth testing
-  exists.
+- Tests: Swift Testing (`@Test`, `#expect`) under `TomoTests/`. Focus on the classifier, sidecar/index round-trips, and file-organisation logic. UI tests aren't worth the maintenance.
 
 ## Project-specific watchouts
 
@@ -303,15 +309,11 @@ Tests live under `TomoTests/`.
 - **Bundle ID:** `com.pdrbrnd.tomo` (used for `~/Library/Application Support/com.pdrbrnd.tomo/`).
 - **Deployment target:** macOS 26.0.
 - **Swift language mode:** 6.0 (strict concurrency; types default to `MainActor` isolation).
-- **Sandbox:** off. Distribution path is Homebrew cask, not Mac App Store. Signing/notarization deferred until distribution is a concern.
+- **Sandbox:** off. **Signing:** Developer ID Application, manual signing, Hardened Runtime on (Release config). Team is Significa. Distribution path is Homebrew cask via `pdrbrnd/homebrew-tap`.
+- **Releases:** push tag `vX.Y.Z` → `.github/workflows/release.yml` archives, signs, notarizes, staples, builds DMG, attaches to GitHub Release. Tap cask is updated manually per release (auto-bump is a v1.1 backlog item — see plan file).
 - **Dependencies:** added via Xcode → File → Add Package Dependencies (SwiftPM-resolved into the project).
 
 ## Known unknowns to flag, not solve silently
 
-- Open Library API rate limits and metadata quality vary. Treat fetched
-  metadata as a suggestion, never auto-apply.
-- Kindle firmware behaviour around AZW3 indexing is empirically
-  verified per device, not by spec. The current writer was validated
-  on FW 5.19.2 (Paperwhite Signature) on 2026-05-03; if a future
-  firmware tightens validation, expect the spike's Phase 2 work to
-  surface here first.
+- Open Library API rate limits and metadata quality vary. Treat fetched metadata as a suggestion, never auto-apply.
+- Kindle firmware behaviour around AZW3 indexing and home-screen covers is empirically verified per device, not by spec. The writer + thumbnail-folder write are validated on FW 5.19.2 (Paperwhite Signature). If a future firmware tightens validation or stops honoring the thumbnail folder (Amazon has reportedly leaned toward overwriting sideloaded thumbnails over Wi-Fi on some firmwares), expect the issue to surface in `swift-azw3` or `Core/Delivery/KindleCoverThumbnail.swift` first.

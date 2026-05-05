@@ -2,13 +2,18 @@ import Foundation
 import os
 
 enum LibraryImporterError: LocalizedError {
+    case unsupportedFormat(String)
     case parsingFailed
     case destinationExists
 
     var errorDescription: String? {
         switch self {
-        case .parsingFailed: "Could not read EPUB metadata."
-        case .destinationExists: "A book with this title and author is already in the library."
+        case .unsupportedFormat(let ext):
+            return "Tomo doesn't import .\(ext) files yet."
+        case .parsingFailed:
+            return "Could not read the file's metadata."
+        case .destinationExists:
+            return "A book with this title and author is already in the library."
         }
     }
 }
@@ -22,12 +27,37 @@ actor LibraryImporter {
         self.profiles = profiles
     }
 
+    /// File extensions the importer knows how to read. Lowercase, no leading
+    /// dot. Surfaced to UI (drop overlay, error messages) so the accepted
+    /// list stays in one place.
+    static let acceptedExtensions: Set<String> = ["epub", "pdf"]
+
+    static func canImport(_ url: URL) -> Bool {
+        acceptedExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    /// Pretty list for UI surfaces ("EPUB and PDF"). Sorted, uppercased,
+    /// joined with " and " when there are two — Oxford comma otherwise.
+    static var acceptedExtensionsDisplay: String {
+        let sorted = acceptedExtensions.sorted().map { $0.uppercased() }
+        switch sorted.count {
+        case 0: return ""
+        case 1: return sorted[0]
+        case 2: return "\(sorted[0]) and \(sorted[1])"
+        default:
+            let head = sorted.dropLast().joined(separator: ", ")
+            return "\(head), and \(sorted.last!)"
+        }
+    }
+
     func importBook(from sourceURL: URL, into libraryFolder: URL) async throws -> Book {
         libraryLogger.info("importing \(sourceURL.lastPathComponent, privacy: .public)")
 
-        let metadata: EPUBMetadata
+        let metadata: ImportedFileMetadata
         do {
-            metadata = try EPUBMetadata.read(from: sourceURL)
+            metadata = try Self.readMetadata(from: sourceURL)
+        } catch let err as LibraryImporterError {
+            throw err
         } catch {
             libraryLogger.error("metadata parse failed: \(error.localizedDescription, privacy: .public)")
             throw LibraryImporterError.parsingFailed
@@ -82,19 +112,53 @@ actor LibraryImporter {
         }
     }
 
-    /// Decide the book's locale: trust the EPUB-declared full locale when it
+    /// Per-format dispatch. Each branch returns the same uniform metadata
+    /// shape so the rest of the import flow doesn't care which file type
+    /// it came from. Classifier only runs for EPUBs (it inspects HTML
+    /// content, which the AZW3/MOBI/PDF readers don't surface).
+    private static func readMetadata(from url: URL) throws -> ImportedFileMetadata {
+        switch url.pathExtension.lowercased() {
+        case "epub":
+            let m = try EPUBMetadata.read(from: url)
+            return ImportedFileMetadata(
+                title: m.title,
+                authors: m.authors,
+                language: m.language,
+                year: m.year,
+                coverImage: m.coverImage.map {
+                    ImportedFileMetadata.CoverImage(data: $0.data, pathExtension: $0.pathExtension)
+                }
+            )
+        case "pdf":
+            let m = try PDFMetadata.read(from: url)
+            return ImportedFileMetadata(
+                title: m.title,
+                authors: m.authors,
+                language: m.language,
+                year: m.year,
+                coverImage: m.coverImage.map {
+                    ImportedFileMetadata.CoverImage(data: $0.data, pathExtension: $0.pathExtension)
+                }
+            )
+        default:
+            throw LibraryImporterError.unsupportedFormat(url.pathExtension.lowercased())
+        }
+    }
+
+    /// Decide the book's locale: trust the declared full locale when it
     /// matches a known profile, otherwise classify (only applied above the
     /// confidence threshold — uncertain results would be coin flips), otherwise
-    /// fall back to the EPUB's raw declaration or "und". The classifier still
-    /// logs its confidence as a dev-time signal.
+    /// fall back to the declaration or "und". Classifier only inspects EPUB
+    /// content; for non-EPUBs the EPUB path returns nil and we land at "und".
     private func resolveLocale(declared: String?, file: URL) -> String {
         if let declared,
             let direct = profiles.first(where: { $0.id.caseInsensitiveCompare(declared) == .orderedSame })
         {
-            classifierLogger.info("trusting EPUB-declared locale: \(declared, privacy: .public)")
+            classifierLogger.info("trusting declared locale: \(declared, privacy: .public)")
             return direct.id
         }
-        if let result = Classifier.classifyEPUB(at: file, profiles: profiles),
+        if file.pathExtension.lowercased() == "epub",
+            let result = Classifier.classifyEPUB(at: file, profiles: profiles),
             result.confidence >= Self.classificationThreshold
         {
             return result.profileId
@@ -107,8 +171,24 @@ actor LibraryImporter {
     private static let classificationThreshold = 0.6
 }
 
+/// Common metadata shape the importer consumes, populated by per-format
+/// readers (`EPUBMetadata`, `PDFMetadata`). Internal to the importer —
+/// downstream code uses `Book` after persistence.
+struct ImportedFileMetadata: Sendable {
+    let title: String
+    let authors: [String]
+    let language: String?
+    let year: Int?
+    let coverImage: CoverImage?
+
+    struct CoverImage: Sendable {
+        let data: Data
+        let pathExtension: String
+    }
+}
+
 private nonisolated func writeCover(
-    _ cover: EPUBMetadata.CoverImage?,
+    _ cover: ImportedFileMetadata.CoverImage?,
     for title: String,
     in bookFolder: URL
 ) -> String? {
@@ -126,7 +206,7 @@ private nonisolated func writeCover(
     }
 }
 
-private nonisolated func bookFolderURL(in libraryFolder: URL, metadata: EPUBMetadata) -> URL {
+private nonisolated func bookFolderURL(in libraryFolder: URL, metadata: ImportedFileMetadata) -> URL {
     let author = sanitize(metadata.authors.first ?? "Unknown")
     let titlePart = sanitize(metadata.title)
     let folderName = metadata.year.map { "\(titlePart) (\($0))" } ?? titlePart

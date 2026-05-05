@@ -253,18 +253,6 @@ struct LibraryView: View {
                 schedulePluginSearch(for: searchText)
             }
         }
-        .alert(
-            "Couldn't import book",
-            isPresented: Binding(
-                get: { state.lastImportError != nil },
-                set: { if !$0 { state.lastImportError = nil } }
-            ),
-            presenting: state.lastImportError
-        ) { _ in
-            Button("OK", role: .cancel) {}
-        } message: { detail in
-            Text(detail)
-        }
         .confirmationDialog(
             deleteDialogTitle,
             isPresented: Binding(
@@ -400,10 +388,27 @@ struct LibraryView: View {
         .animation(deviceTileAnimation, value: state.device?.displayName)
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.28), value: state.currentToast?.id)
         .dropDestination(for: URL.self) { urls, _ in
-            let epubs = urls.filter { $0.pathExtension.lowercased() == "epub" }
-            guard !epubs.isEmpty else { return false }
+            let (accepted, rejected) = urls.reduce(into: ([URL](), [URL]())) { acc, url in
+                if LibraryImporter.canImport(url) {
+                    acc.0.append(url)
+                } else {
+                    acc.1.append(url)
+                }
+            }
+            if !rejected.isEmpty {
+                let exts =
+                    Set(rejected.map { $0.pathExtension.lowercased() })
+                    .sorted()
+                    .map { ".\($0)" }
+                    .joined(separator: ", ")
+                state.showToast(
+                    .error(
+                        "Unsupported file type (\(exts)). Tomo imports \(LibraryImporter.acceptedExtensionsDisplay)."
+                    ))
+            }
+            guard !accepted.isEmpty else { return !rejected.isEmpty }
             Task {
-                for url in epubs {
+                for url in accepted {
                     await state.importBook(from: url)
                 }
             }

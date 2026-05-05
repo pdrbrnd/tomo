@@ -23,6 +23,11 @@ struct DropOverlay: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.85))
                     .tracking(0.1)
+                Text(LibraryImporter.acceptedExtensionsDisplay)
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.primary.opacity(Theme.Text.placeholder))
+                    .tracking(0.4)
+                    .textCase(.uppercase)
             }
         }
         .allowsHitTesting(false)

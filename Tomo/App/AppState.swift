@@ -63,11 +63,6 @@ final class AppState {
     /// idle after a brief display.
     var deviceSendState: DeviceSendState = .idle
 
-    /// User-facing error from the most recent import attempt. Surfaced as an
-    /// alert in `LibraryView` and cleared on dismiss. Logged-only failures
-    /// (programmer errors) don't write here.
-    var lastImportError: String?
-
     /// Currently visible toast, or nil when nothing is shown. Replaced on
     /// every `showToast` call (no stacking). Auto-dismissed by a task; the
     /// task is cancelled when superseded by a new toast.
@@ -347,20 +342,20 @@ final class AppState {
     }
 
     /// Imports a file into the library and returns the resulting `Book`.
-    /// Returns nil on failure (and writes a user-facing message to
-    /// `lastImportError`). Callers that don't need the imported book can
-    /// ignore the return value — the standard refresh still happens.
+    /// Returns nil on failure and surfaces a toast to the user. Callers
+    /// that don't need the imported book can ignore the return value —
+    /// the standard refresh still happens.
     @discardableResult
     func importBook(from url: URL) async -> Book? {
         await openIndexIfNeeded()
         guard let importer else {
             libraryLogger.error("import called without index/importer")
-            lastImportError = "Library is not ready yet."
+            showToast(.error("Library isn't ready yet."))
             return nil
         }
         guard let libraryFolder else {
             libraryLogger.error("import called without library folder")
-            lastImportError = "Choose a library folder before importing."
+            showToast(.error("Choose a library folder before importing."))
             return nil
         }
         do {
@@ -369,7 +364,7 @@ final class AppState {
             return imported
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            lastImportError = "\(url.lastPathComponent): \(message)"
+            showToast(.error("\(url.lastPathComponent): \(message)"))
             libraryLogger.error("import failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
