@@ -15,8 +15,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pdrbrnd/swift-azw3",
       "state" : {
-        "revision" : "f6cf1d49727f46cef2d902ebd66c684a29f8a4bb",
-        "version" : "0.1.0"
+        "revision" : "f450a4e50067de7f3ec00b3d9ccc9ff3e445c698",
+        "version" : "0.2.0"
       }
     },
     {

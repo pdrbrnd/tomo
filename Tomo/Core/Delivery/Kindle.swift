@@ -87,6 +87,14 @@ nonisolated struct Kindle: BookDevice {
             try await ConversionScratch.withScratchDirectory { scratch in
                 let converted = try await converter.convert(source: book.fileURL, into: scratch)
                 try await self.performCopy(from: converted, to: dest)
+                // Best-effort home-screen cover. Calibre's thumbnail-folder
+                // approach is the reliable path on modern firmwares — EXTH 201
+                // alone renders inside the book but isn't picked up by the
+                // home-screen scanner. Failures are non-fatal; the book is
+                // usable either way.
+                if sourceFormat == .epub {
+                    await self.writeKindleCoverThumbnail(epubURL: book.fileURL)
+                }
             }
 
         case .none:
@@ -122,6 +130,23 @@ nonisolated struct Kindle: BookDevice {
                     "fsync after copy failed: \(error.localizedDescription, privacy: .public)")
             }
         }.value
+    }
+
+    /// Reads the EPUB to extract its cover and computed ASIN, then writes a
+    /// resized JPEG to the Kindle's `system/thumbnails/` folder. Logs and
+    /// returns on any failure — the home-screen cover is a nice-to-have, not
+    /// a delivery contract.
+    private func writeKindleCoverThumbnail(epubURL: URL) async {
+        let volumeURL = self.volumeURL
+        do {
+            try await Task.detached {
+                let manifest = try EPUBSource.read(from: epubURL)
+                try KindleCoverThumbnail.write(manifest: manifest, volumeURL: volumeURL)
+            }.value
+        } catch {
+            deliveryLogger.warning(
+                "kindle thumbnail write failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func remove(_ book: Book) async throws {
