@@ -43,8 +43,12 @@ struct LibrarySidebar: View {
     /// row resets the timer instead of letting the first task race in and
     /// clear the new flash early.
     @State private var flashClearTask: Task<Void, Never>?
-    @FocusState private var newCollectionFocused: Bool
-    @FocusState private var renameFocused: Bool
+    @FocusState private var focusedField: SidebarFocus?
+
+    private enum SidebarFocus: Hashable {
+        case newCollection
+        case rename
+    }
 
     private var sortedLocales: [String] {
         languageCounts.keys.sorted()
@@ -217,37 +221,51 @@ struct LibrarySidebar: View {
     }
 
     private var newCollectionField: some View {
-        TextField("New collection", text: $newCollectionName)
-            .textFieldStyle(.plain)
-            .font(.system(size: 13, weight: .regular))
-            .focused($newCollectionFocused)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.sidebarRow, style: .continuous)
-                    .fill(.primary.opacity(Theme.Surface.hoverSoft))
-            )
-            .padding(.horizontal, Theme.Spacing.menuInset)
-            .onSubmit { commitCreate() }
-            .onAppear { newCollectionFocused = true }
-            .onChange(of: newCollectionFocused) { _, focused in
+        inlineTextField(
+            text: $newCollectionName,
+            placeholder: "New collection",
+            field: .newCollection,
+            onSubmit: { commitCreate() },
+            onBlur: {
                 // Cancel-on-blur: if the user clicks away without naming the
                 // collection, the inline field disappears with no side effect.
-                if !focused {
-                    if newCollectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        cancelCreate()
-                    } else {
-                        commitCreate()
-                    }
+                if newCollectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    cancelCreate()
+                } else {
+                    commitCreate()
                 }
             }
+        )
     }
 
     private func renameField(for collection: Collection) -> some View {
-        TextField("", text: $renameDraft)
+        inlineTextField(
+            text: $renameDraft,
+            placeholder: "",
+            field: .rename,
+            onSubmit: { commitRename(collection) },
+            onBlur: {
+                let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, trimmed != collection.name {
+                    commitRename(collection)
+                } else {
+                    cancelRename()
+                }
+            }
+        )
+    }
+
+    private func inlineTextField(
+        text: Binding<String>,
+        placeholder: String,
+        field: SidebarFocus,
+        onSubmit: @escaping () -> Void,
+        onBlur: @escaping () -> Void
+    ) -> some View {
+        TextField(placeholder, text: text)
             .textFieldStyle(.plain)
             .font(.system(size: 13, weight: .regular))
-            .focused($renameFocused)
+            .focused($focusedField, equals: field)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(
@@ -255,17 +273,10 @@ struct LibrarySidebar: View {
                     .fill(.primary.opacity(Theme.Surface.hoverSoft))
             )
             .padding(.horizontal, Theme.Spacing.menuInset)
-            .onSubmit { commitRename(collection) }
-            .onAppear { renameFocused = true }
-            .onChange(of: renameFocused) { _, focused in
-                if !focused {
-                    let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty, trimmed != collection.name {
-                        commitRename(collection)
-                    } else {
-                        cancelRename()
-                    }
-                }
+            .onSubmit(onSubmit)
+            .onAppear { focusedField = field }
+            .onChange(of: focusedField) { _, newFocus in
+                if newFocus != field { onBlur() }
             }
     }
 

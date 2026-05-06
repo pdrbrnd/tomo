@@ -268,8 +268,8 @@ under `Tomo/`, the project file is `Tomo.xcodeproj/` at repo root.
 Tests live under `TomoTests/`.
 
 - **Open in Xcode:** `open Tomo.xcodeproj` then `⌘R` to build and run.
-- **CLI build:** `xcodebuild -project tomo.xcodeproj -scheme tomo -configuration Debug build`
-- **CLI test:** `xcodebuild -project tomo.xcodeproj -scheme tomo -destination 'platform=macOS' test`
+- **CLI build:** `xcodebuild -project Tomo.xcodeproj -scheme Tomo -configuration Debug build`
+- **CLI test:** `xcodebuild -project Tomo.xcodeproj -scheme Tomo -destination 'platform=macOS' test`
 - **Bundle ID:** `com.pdrbrnd.tomo` (used for `~/Library/Application Support/com.pdrbrnd.tomo/`).
 - **Deployment target:** macOS 26.0.
 - **Swift language mode:** 6.0 (strict concurrency; types default to `MainActor` isolation).
