@@ -19,6 +19,9 @@ struct LibraryView: View {
     @State private var externalDropTargeted = false
     @State private var marquee: MarqueeState = .inactive
     @State private var cardFrames: [Book.ID: CGRect] = [:]
+    /// Live column count from the grid's GeometryReader. Drives ↑/↓ arrow-key
+    /// navigation (which moves selection by `gridColumnCount` items at a time).
+    @State private var gridColumnCount: Int = 1
     @State private var contextMenuBookID: Book.ID?
     @State private var contextMenuSourceID: String?
     @State private var dragEndPollingTask: Task<Void, Never>?
@@ -61,14 +64,15 @@ struct LibraryView: View {
     /// with the search query. Standard "OR within an axis, AND between axes"
     /// — degenerate to single-select since each axis only holds one value.
     private var filteredBooks: [Book] {
+        // Same parser used for plugin search. Library books get the same
+        // structured filters (`format:epub`, `author:saramago`, etc.) so the
+        // search bar grammar is honoured uniformly across both halves.
+        let parsedQuery = QueryParser.parse(searchText)
         let bySearch: [Book]
-        if searchText.isEmpty {
+        if parsedQuery.isEmpty {
             bySearch = state.books
         } else {
-            let needle = searchText.lowercased()
-            bySearch = state.books.filter { book in
-                book.title.lowercased().contains(needle) || book.authors.contains { $0.lowercased().contains(needle) }
-            }
+            bySearch = state.books.filter { bookMatches(book: $0, query: parsedQuery) }
         }
         return bySearch.filter { book in
             !celebratingBookIDs.contains(book.id)
@@ -76,6 +80,45 @@ struct LibraryView: View {
                 && (selectedLanguage.map { book.locale == $0 } ?? true)
                 && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
         }
+    }
+
+    /// Applies parsed search-bar tokens to a single library book. Free text
+    /// matches title or any author (legacy behaviour); structured fields are
+    /// AND'd in. `publisher` / `isbn` aren't carried on `Book`, so we only
+    /// honour them on the plugin side.
+    private func bookMatches(book: Book, query: PluginQuery) -> Bool {
+        if !query.text.isEmpty {
+            let needle = query.text.lowercased()
+            let titleMatch = book.title.lowercased().contains(needle)
+            let authorMatch = book.authors.contains { $0.lowercased().contains(needle) }
+            if !titleMatch && !authorMatch { return false }
+        }
+        if let title = query.title?.lowercased(), !title.isEmpty,
+            !book.title.lowercased().contains(title)
+        {
+            return false
+        }
+        if let author = query.author?.lowercased(), !author.isEmpty,
+            !book.authors.contains(where: { $0.lowercased().contains(author) })
+        {
+            return false
+        }
+        if let format = query.format?.lowercased(), !format.isEmpty,
+            book.fileURL.pathExtension.lowercased() != format
+        {
+            return false
+        }
+        if let language = query.language?.lowercased(), !language.isEmpty {
+            // BCP 47 prefix match: `pt` matches `pt`, `pt-PT`, `pt-BR`.
+            let bookLocale = book.locale.lowercased()
+            if bookLocale != language && !bookLocale.hasPrefix(language + "-") {
+                return false
+            }
+        }
+        if let year = query.year, book.year != year {
+            return false
+        }
+        return true
     }
 
     private func matches(deviceFilter: DeviceFilter, book: Book) -> Bool {
@@ -97,12 +140,43 @@ struct LibraryView: View {
         // Productionisation will reuse the duplicate-detection logic from the
         // import path; for the spike, exact-ish equality is enough.
         let libraryFingerprints: Set<String> = Set(state.books.map(libraryFingerprint(forBook:)))
+        // Apply the parsed query's structured filters to plugin results too.
+        // Plugins are expected to honour `format` / `language` / `year` on
+        // their side, but not all do (gutenberg.js only consumes free text,
+        // for example). Filtering here is the safety net so a typed
+        // `format:pdf` doesn't leak EPUB-only plugin hits into the grid.
+        let parsedQuery = QueryParser.parse(searchText)
         let sourceItems: [LibraryItem] =
             pluginResults
             .filter { !libraryFingerprints.contains(libraryFingerprint(forResult: $0)) }
+            .filter { resultMatches(result: $0, query: parsedQuery) }
             .prefix(30)
             .map(LibraryItem.source)
         return libraryItems + sourceItems
+    }
+
+    private func resultMatches(result: PluginResult, query: PluginQuery) -> Bool {
+        if let format = query.format?.lowercased(), !format.isEmpty,
+            result.format.lowercased() != format
+        {
+            return false
+        }
+        if let language = query.language?.lowercased(), !language.isEmpty {
+            let resultLocale = result.language.lowercased()
+            // Empty-language plugin results are kept — the plugin didn't
+            // tell us, we don't second-guess. The library-side filter is
+            // strict; plugin results are advisory.
+            if !resultLocale.isEmpty,
+                resultLocale != language,
+                !resultLocale.hasPrefix(language + "-")
+            {
+                return false
+            }
+        }
+        if let year = query.year, let resultYear = result.year, resultYear != year {
+            return false
+        }
+        return true
     }
 
     private func libraryFingerprint(forBook book: Book) -> String {
@@ -253,6 +327,13 @@ struct LibraryView: View {
                 schedulePluginSearch(for: searchText)
             }
         }
+        // Switching sidebar scope (collection, language, device filter) clears
+        // the search bar. Persisting search across scope changes confused
+        // users — they'd land on an empty collection and not realise the
+        // search was still narrowing the results.
+        .onChange(of: selectedCollection) { _, _ in searchText = "" }
+        .onChange(of: selectedLanguage) { _, _ in searchText = "" }
+        .onChange(of: selectedDeviceFilter) { _, _ in searchText = "" }
         .confirmationDialog(
             deleteDialogTitle,
             isPresented: Binding(
@@ -327,6 +408,15 @@ struct LibraryView: View {
     // MARK: - Main pane
 
     private var mainPane: some View {
+        // ScrollViewReader wraps the ZStack so the keyboard-navigation
+        // handlers (siblings of the grid in the ZStack) can ask the grid's
+        // ScrollView to bring the new selection into view.
+        ScrollViewReader { scrollProxy in
+            mainPaneContent(scrollProxy: scrollProxy)
+        }
+    }
+
+    private func mainPaneContent(scrollProxy: ScrollViewProxy) -> some View {
         ZStack {
             Theme.canvas
                 .ignoresSafeArea()
@@ -383,7 +473,10 @@ struct LibraryView: View {
                 .id(toast.id)
             }
 
-            keyboardShortcuts
+            keyboardShortcuts(scrollProxy: scrollProxy)
+        }
+        .onPreferenceChange(GridColumnCountPreference.self) { count in
+            gridColumnCount = count
         }
         .animation(deviceTileAnimation, value: state.device?.displayName)
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.28), value: state.currentToast?.id)
@@ -566,6 +659,7 @@ struct LibraryView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+            .preference(key: GridColumnCountPreference.self, value: cols)
         }
     }
 
@@ -771,6 +865,21 @@ struct LibraryView: View {
             downloadStates[result.id] = .importing
             let importedBook = await state.importBook(from: tempURL)
             try? FileManager.default.removeItem(at: tempURL)
+            // Cover fallback for plugins that supply a `coverURL` but ship a
+            // book file without an embedded cover. The importer extracts
+            // covers from the file itself; if that path comes back empty
+            // and the plugin gave us a URL, fetch it. The user already
+            // initiated this network activity by clicking Download, so
+            // Principle 5 ("no network without user action") is satisfied.
+            if let importedBook,
+                importedBook.coverPath == nil,
+                let coverURL = result.coverURL
+            {
+                if let data = try? await fetchCoverBytes(from: coverURL) {
+                    let ext = inferCoverExtension(url: coverURL, data: data)
+                    await state.setCover(for: importedBook, fromData: data, ext: ext)
+                }
+            }
             // Hide the freshly-imported library card from the grid for the
             // celebration window. Without this, the user sees the source
             // card celebrating *and* the library card appearing in its
@@ -828,6 +937,20 @@ struct LibraryView: View {
     /// which collapses the capsule back to idle without a toast.
     private func cancelDownload(_ result: PluginResult) {
         downloadTasks[result.id]?.cancel()
+    }
+
+    /// Picks an extension for a cover fetched from a URL. URL path extension
+    /// is the cheap signal; a 4-byte magic-number sniff covers the case where
+    /// the URL has no extension or a misleading one (e.g. CDN-rewritten URLs).
+    private func inferCoverExtension(url: URL, data: Data) -> String {
+        if data.starts(with: [0x89, 0x50, 0x4E, 0x47]) { return "png" }
+        if data.starts(with: [0xFF, 0xD8, 0xFF]) { return "jpg" }
+        let urlExt = url.pathExtension.lowercased()
+        switch urlExt {
+        case "png": return "png"
+        case "jpg", "jpeg": return "jpg"
+        default: return "jpg"
+        }
     }
 
     private func fetchToTempFile(
@@ -1402,7 +1525,7 @@ struct LibraryView: View {
 
     // MARK: - Keyboard shortcuts
 
-    private var keyboardShortcuts: some View {
+    private func keyboardShortcuts(scrollProxy: ScrollViewProxy) -> some View {
         ZStack {
             Button("") { inspectorOpen.toggle() }
                 .keyboardShortcut("i", modifiers: .command)
@@ -1416,10 +1539,77 @@ struct LibraryView: View {
                 .keyboardShortcut(.delete, modifiers: .command)
             Button("") { handleEscape() }
                 .keyboardShortcut(.escape, modifiers: [])
+            // Arrow keys move the single selection within the library grid.
+            // No-op when the search field has focus (NSText consumes arrows
+            // first to move the cursor) or when there's no current selection
+            // — pressing arrows shouldn't yank the user into the grid out of
+            // nowhere. Single-selection only; Shift-extend can come later.
+            Button("") { navigateGrid(.left, scrollProxy: scrollProxy) }
+                .keyboardShortcut(.leftArrow, modifiers: [])
+            Button("") { navigateGrid(.right, scrollProxy: scrollProxy) }
+                .keyboardShortcut(.rightArrow, modifiers: [])
+            Button("") { navigateGrid(.up, scrollProxy: scrollProxy) }
+                .keyboardShortcut(.upArrow, modifiers: [])
+            Button("") { navigateGrid(.down, scrollProxy: scrollProxy) }
+                .keyboardShortcut(.downArrow, modifiers: [])
         }
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+
+    private enum ArrowDirection { case up, down, left, right }
+
+    private func navigateGrid(_ direction: ArrowDirection, scrollProxy: ScrollViewProxy) {
+        guard !searchFocused else { return }
+        let items = gridItems
+        guard !items.isEmpty else { return }
+
+        // Locate the current focus across both selection buckets. Source
+        // selection wins when set (it's mutually exclusive with library
+        // selection by construction). Falls back to library anchor → first
+        // selected book → no-op.
+        let currentIndex: Int? = {
+            if let sourceID = selectedSourceID {
+                return items.firstIndex { item in
+                    if case .source(let r) = item { return r.id == sourceID }
+                    return false
+                }
+            }
+            let bookID = selectionAnchor ?? selectedBookIDs.first
+            guard let bookID else { return nil }
+            return items.firstIndex { item in
+                if case .book(let b) = item { return b.id == bookID }
+                return false
+            }
+        }()
+        guard let currentIndex else { return }
+
+        let step: Int
+        switch direction {
+        case .left: step = -1
+        case .right: step = 1
+        case .up: step = -gridColumnCount
+        case .down: step = gridColumnCount
+        }
+        let newIndex = max(0, min(items.count - 1, currentIndex + step))
+        guard newIndex != currentIndex else { return }
+
+        let target = items[newIndex]
+        switch target {
+        case .book(let book):
+            handlePlainClick(book)
+        case .source(let result):
+            withAnimation(selectionAnimation) {
+                selectedBookIDs = []
+                selectionAnchor = nil
+                selectedSourceID = result.id
+                searchFocused = false
+            }
+        }
+        withAnimation(selectionAnimation) {
+            scrollProxy.scrollTo(target.id, anchor: .center)
+        }
     }
 
     private func handleSelectAll() {
@@ -1475,6 +1665,13 @@ struct CardFramePreference: PreferenceKey {
     static let defaultValue: [Book.ID: CGRect] = [:]
     static func reduce(value: inout [Book.ID: CGRect], nextValue: () -> [Book.ID: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+struct GridColumnCountPreference: PreferenceKey {
+    static let defaultValue: Int = 1
+    static func reduce(value: inout Int, nextValue: () -> Int) {
+        value = max(value, nextValue())
     }
 }
 

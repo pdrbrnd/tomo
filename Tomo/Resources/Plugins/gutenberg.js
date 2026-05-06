@@ -57,6 +57,12 @@
 const PG_BASE = "https://www.gutenberg.org";
 
 async function search(query) {
+    // Project Gutenberg only serves EPUB (their other formats — kindle,
+    // plain text, HTML — aren't first-class library imports for Tomo).
+    // If the user explicitly asked for a different format, skip the
+    // network round-trip and return empty.
+    if (query.format && query.format.toLowerCase() !== "epub") return [];
+
     const url = `${PG_BASE}/ebooks/search/?query=${encodeURIComponent(query.text || "")}`;
     console.log(`fetching ${url}`);
     const r = await fetch(url);
