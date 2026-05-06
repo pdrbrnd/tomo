@@ -25,7 +25,9 @@ struct BookInspector: View {
     var sourcePluginName: String? = nil
     var onSourceDownload: () -> Void = {}
 
-    /// Profiles available to the locale Picker. Plain data, OK to pass in.
+    /// Variant profiles available in the locale menu (e.g. pt-PT, en-GB).
+    /// All bundled profiles, regardless of enable state — manual selection
+    /// is unconstrained by the auto-detect toggle. Plain data, OK to pass in.
     let profiles: [LanguageProfile]
     /// Every collection in the library. Used to render chips for the
     /// book's memberships and to populate the "add to collection" popover.
@@ -63,14 +65,13 @@ struct BookInspector: View {
         let sendableCount: Int
     }
 
-    /// Sentinel tag for the "Auto-detect from text" Picker entry.
-    private static let autoDetectTag = "__autodetect__"
-
     /// Transient confidence read-out shown beneath the locale picker after
     /// auto-detect. Cleared after a few seconds — confidence isn't persisted.
     @State private var transientClassification: Classification?
     @State private var classifyingTask: Task<Void, Never>?
     @State private var clearConfidenceTask: Task<Void, Never>?
+
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ZStack {
@@ -297,44 +298,84 @@ struct BookInspector: View {
     }
 
     private func localePicker(for book: Book) -> some View {
-        Picker(selection: pickerSelection(for: book)) {
-            Text("Auto-detect from text").tag(Self.autoDetectTag)
+        Menu {
+            Button("Auto-detect from text") { runAutoDetect(for: book) }
             Divider()
-            Text(Locale.current.localizedString(forIdentifier: "und") ?? "Unknown").tag("und")
-            ForEach(profiles) { profile in
-                Text(profile.displayName).tag(profile.id)
+            Picker("Language", selection: localeBinding(for: book)) {
+                Text(Locale.current.localizedString(forIdentifier: "und") ?? "Unknown").tag("und")
+                ForEach(localeOptions(currentLocale: book.locale)) { option in
+                    Text(option.displayName).tag(option.id)
+                }
             }
-            // Keep the current value selectable when it isn't a known
-            // profile (e.g. "pt" without variant) so it isn't silently lost.
-            if shouldShowDeclaredOption(for: book) {
-                let baseName = Locale.current.localizedString(forIdentifier: book.locale) ?? book.locale
-                Text("\(baseName) (declared)").tag(book.locale)
+            .pickerStyle(.inline)
+            Divider()
+            Button("Language settings…") {
+                openWindow(id: TomoApp.settingsWindowID)
             }
         } label: {
-            EmptyView()
+            Text(menuLabel(for: book.locale))
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .pickerStyle(.menu)
-        .labelsHidden()
+        .menuStyle(.borderlessButton)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func pickerSelection(for book: Book) -> Binding<String> {
+    private func localeBinding(for book: Book) -> Binding<String> {
         Binding(
             get: { book.locale },
             set: { newValue in
-                if newValue == Self.autoDetectTag {
-                    runAutoDetect(for: book)
-                } else if newValue != book.locale {
-                    var updated = book
-                    updated.locale = newValue
-                    onUpdate(updated)
-                }
+                guard newValue != book.locale else { return }
+                var updated = book
+                updated.locale = newValue
+                onUpdate(updated)
             }
         )
     }
 
-    private func shouldShowDeclaredOption(for book: Book) -> Bool {
-        book.locale != "und" && !profiles.contains(where: { $0.id == book.locale })
+    private func menuLabel(for locale: String) -> String {
+        if locale.isEmpty || locale == "und" {
+            return Locale.current.localizedString(forIdentifier: "und") ?? "Unknown"
+        }
+        return Locale.current.localizedString(forIdentifier: locale) ?? locale
+    }
+
+    /// Builds the locale option list for the picker: every bundled variant
+    /// profile plus every ISO 639-1 base language, plus the current value as
+    /// a fallback if it isn't already in either set (e.g. an obscure tag).
+    /// Sorted by localized display name so variants land next to their base
+    /// (e.g. "Portuguese", "Portuguese (Brazil)", "Portuguese (Portugal)").
+    private func localeOptions(currentLocale: String) -> [LocaleOption] {
+        var seen: Set<String> = ["und"]
+        var options: [LocaleOption] = []
+
+        for profile in profiles where !seen.contains(profile.id) {
+            seen.insert(profile.id)
+            options.append(LocaleOption(id: profile.id, displayName: profile.displayName))
+        }
+
+        for code in Locale.LanguageCode.isoLanguageCodes {
+            let id = code.identifier
+            // ISO 639-1 only (2-letter codes). The full set runs into thousands
+            // of esoteric codes; the picker is for humans.
+            guard id.count == 2, !seen.contains(id) else { continue }
+            guard let name = Locale.current.localizedString(forIdentifier: id) else { continue }
+            seen.insert(id)
+            options.append(LocaleOption(id: id, displayName: name))
+        }
+
+        if !currentLocale.isEmpty, currentLocale != "und", !seen.contains(currentLocale) {
+            let baseName = Locale.current.localizedString(forIdentifier: currentLocale) ?? currentLocale
+            options.append(LocaleOption(id: currentLocale, displayName: "\(baseName) (declared)"))
+        }
+
+        return options.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+
+    private struct LocaleOption: Identifiable, Hashable {
+        let id: String
+        let displayName: String
     }
 
     private func runAutoDetect(for book: Book) {

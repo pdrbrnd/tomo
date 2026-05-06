@@ -20,11 +20,9 @@ enum LibraryImporterError: LocalizedError {
 
 actor LibraryImporter {
     private let index: BookIndex
-    private let profiles: [LanguageProfile]
 
-    init(index: BookIndex, profiles: [LanguageProfile]) {
+    init(index: BookIndex) {
         self.index = index
-        self.profiles = profiles
     }
 
     /// File extensions the importer knows how to read. Lowercase, no leading
@@ -50,7 +48,9 @@ actor LibraryImporter {
         }
     }
 
-    func importBook(from sourceURL: URL, into libraryFolder: URL) async throws -> Book {
+    func importBook(
+        from sourceURL: URL, into libraryFolder: URL, profiles: [LanguageProfile]
+    ) async throws -> Book {
         libraryLogger.info("importing \(sourceURL.lastPathComponent, privacy: .public)")
 
         let metadata: ImportedFileMetadata
@@ -76,7 +76,7 @@ actor LibraryImporter {
         // Past this point, any failure must roll back the partially-created folder.
         do {
             let coverFileName = writeCover(metadata.coverImage, for: metadata.title, in: bookFolder)
-            let locale = resolveLocale(declared: metadata.language, file: destFile)
+            let locale = Self.resolveLocale(declared: metadata.language, file: destFile, profiles: profiles)
 
             let book = Book(
                 id: UUID(),
@@ -150,7 +150,11 @@ actor LibraryImporter {
     /// confidence threshold — uncertain results would be coin flips), otherwise
     /// fall back to the declaration or "und". Classifier only inspects EPUB
     /// content; for non-EPUBs the EPUB path returns nil and we land at "und".
-    private func resolveLocale(declared: String?, file: URL) -> String {
+    /// `profiles` is the user-enabled set — disabled profiles never appear in
+    /// the declared-match shortcut nor in classifier output.
+    private static func resolveLocale(
+        declared: String?, file: URL, profiles: [LanguageProfile]
+    ) -> String {
         if let declared,
             let direct = profiles.first(where: { $0.id.caseInsensitiveCompare(declared) == .orderedSame })
         {

@@ -1,0 +1,22 @@
+{
+  "id": "es-MX",
+  "baseLanguage": "es",
+  "markers": [
+    { "pattern": "computadora", "isRegex": false, "weight": 2.0 },
+    { "pattern": "celular", "isRegex": false, "weight": 2.0 },
+    { "pattern": "carro", "isRegex": false, "weight": 1.5 },
+    { "pattern": "manejar", "isRegex": false, "weight": 1.0 },
+    { "pattern": "platicar", "isRegex": false, "weight": 1.5 },
+    { "pattern": "ahorita", "isRegex": false, "weight": 1.0 },
+    { "pattern": "chamarra", "isRegex": false, "weight": 1.5 },
+    { "pattern": "elote", "isRegex": false, "weight": 1.5 },
+    { "pattern": "vosotros", "isRegex": false, "weight": -2.0 },
+    { "pattern": "vuestro", "isRegex": false, "weight": -1.5 },
+    { "pattern": "vuestra", "isRegex": false, "weight": -1.5 },
+    { "pattern": "habéis", "isRegex": false, "weight": -1.5 },
+    { "pattern": "ordenador", "isRegex": false, "weight": -2.0 },
+    { "pattern": "móvil", "isRegex": false, "weight": -1.5 },
+    { "pattern": "coche", "isRegex": false, "weight": -0.8 },
+    { "pattern": "vale", "isRegex": false, "weight": -0.5 }
+  ]
+}

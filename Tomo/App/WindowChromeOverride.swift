@@ -30,8 +30,10 @@ import os
 ///   - App Store would reject this. Tomo ships via Homebrew cask
 ///     (sandbox off) per `CLAUDE.md`, so it's a non-issue.
 ///   - Replaces `NSThemeFrame`'s implementation globally for the process,
-///     i.e. *every* window in the app gets the same corner radius. We
-///     only have one window class, so this is fine.
+///     i.e. *every* window in the app gets the same corner radius. Any
+///     other window we add (Settings, About, etc.) needs to live with
+///     this radius and inset its traffic lights to match — see
+///     `WindowCustomizer.offsetTrafficLights` for the pattern.
 ///
 /// **Reference.** The four-selector pattern is documented at
 /// https://github.com/m4rkw/macos-corner-fix and discussed in Mark

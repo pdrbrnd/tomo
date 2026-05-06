@@ -33,6 +33,13 @@ struct TomoApp: App {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
+            // Hijack the standard "Settings…" menu item (and its ⌘,
+            // shortcut) to open our custom settings Window instead of the
+            // default `Settings { }` scene — we want full control of the
+            // chrome to match the library window.
+            CommandGroup(replacing: .appSettings) {
+                OpenSettingsButton()
+            }
             #if DEBUG
                 CommandMenu("Debug") {
                     Button("Toggle Fake Device") {
@@ -47,6 +54,33 @@ struct TomoApp: App {
                 }
             #endif
         }
+
+        Window("Settings", id: Self.settingsWindowID) {
+            SettingsRoot(state: state)
+        }
+        .windowStyle(.hiddenTitleBar)
+        // `.contentSize` + a fixed frame on the content view = the window
+        // sizes to the content and the user can't resize it.
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+    }
+
+    /// Stable identifier so `OpenSettingsButton` can target this window
+    /// via the `openWindow` environment.
+    static let settingsWindowID = "tomo.settings"
+}
+
+/// Menu item that opens the custom Settings window. Lives as a separate
+/// `View` so it can read `@Environment(\.openWindow)` — `commands` blocks
+/// are scenes and can't read view environment values directly.
+private struct OpenSettingsButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Settings…") {
+            openWindow(id: TomoApp.settingsWindowID)
+        }
+        .keyboardShortcut(",", modifiers: .command)
     }
 }
 

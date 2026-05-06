@@ -1,6 +1,12 @@
 import AppKit
 import SwiftUI
 
+extension NSUserInterfaceItemIdentifier {
+    /// Tags Tomo's primary library window so window-level customisations
+    /// (corner radius, traffic-light offsets) only apply where we want them.
+    static let libraryWindow = NSUserInterfaceItemIdentifier("tomo.libraryWindow")
+}
+
 /// Window-level chrome adjustments that need direct NSWindow access.
 ///
 /// The corner radius itself is *not* set here — AppKit's `NSThemeFrame` is
@@ -58,6 +64,11 @@ struct WindowCustomizer: NSViewRepresentable {
 
     private func apply(to view: NSView, coordinator: Coordinator) {
         guard let window = view.window else { return }
+
+        // Tag the library window so `WindowChromeOverride` can apply our
+        // custom corner radius only here — Settings (and any other
+        // standard-titled window) gets the system default.
+        window.identifier = .libraryWindow
 
         // Fill the rounded mask with our canvas colour. With NSThemeFrame
         // returning our radius, the system clips this to the right shape —

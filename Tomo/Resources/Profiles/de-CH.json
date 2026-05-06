@@ -1,0 +1,18 @@
+{
+  "id": "de-CH",
+  "baseLanguage": "de",
+  "markers": [
+    { "pattern": "velo", "isRegex": false, "weight": 2.0 },
+    { "pattern": "grüezi", "isRegex": false, "weight": 2.0 },
+    { "pattern": "brötli", "isRegex": false, "weight": 1.5 },
+    { "pattern": "znüni", "isRegex": false, "weight": 2.0 },
+    { "pattern": "zvieri", "isRegex": false, "weight": 2.0 },
+    { "pattern": "merci vielmal", "isRegex": false, "weight": 1.5 },
+    { "pattern": "parkieren", "isRegex": false, "weight": 1.5 },
+    { "pattern": "natel", "isRegex": false, "weight": 1.5 },
+    { "pattern": "trottoir", "isRegex": false, "weight": 1.0 },
+    { "pattern": "fahrrad", "isRegex": false, "weight": -1.5 },
+    { "pattern": "brötchen", "isRegex": false, "weight": -1.0 },
+    { "pattern": "tüte", "isRegex": false, "weight": -0.8 }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "fr-FR",
+  "baseLanguage": "fr",
+  "markers": [
+    { "pattern": "week-end", "isRegex": false, "weight": 1.5 },
+    { "pattern": "parking", "isRegex": false, "weight": 1.5 },
+    { "pattern": "shopping", "isRegex": false, "weight": 1.0 },
+    { "pattern": "smartphone", "isRegex": false, "weight": 0.8 },
+    { "pattern": "petit déjeuner", "isRegex": false, "weight": 0.8 },
+    { "pattern": "soixante-dix", "isRegex": false, "weight": 1.0 },
+    { "pattern": "quatre-vingt-dix", "isRegex": false, "weight": 1.0 },
+    { "pattern": "fin de semaine", "isRegex": false, "weight": -2.0 },
+    { "pattern": "magasiner", "isRegex": false, "weight": -2.0 },
+    { "pattern": "stationnement", "isRegex": false, "weight": -2.0 },
+    { "pattern": "courriel", "isRegex": false, "weight": -2.0 }
+  ]
+}

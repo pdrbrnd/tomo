@@ -27,7 +27,28 @@ final class AppState {
     }
     private(set) var index: BookIndex?
     private(set) var importer: LibraryImporter?
-    let profiles: [LanguageProfile]
+
+    /// Every bundled language profile, regardless of user enable/disable state.
+    /// Use this for the manual locale picker — manual selection is unconstrained
+    /// by what the user has chosen to auto-detect.
+    let allProfiles: [LanguageProfile]
+
+    /// IDs of profiles the user has switched off in Settings. Persisted in
+    /// UserDefaults via `DisabledProfilesStore`.
+    private(set) var disabledProfileIDs: Set<String> = []
+
+    /// Profiles eligible for auto-classification on import. Disabled profiles
+    /// are filtered out; they never appear in classifier output.
+    var enabledProfiles: [LanguageProfile] {
+        allProfiles.filter { !disabledProfileIDs.contains($0.id) }
+    }
+
+    /// Per-profile enable toggle from Settings. Persisted.
+    func setProfile(_ profileID: String, enabled: Bool) {
+        if enabled { disabledProfileIDs.remove(profileID) } else { disabledProfileIDs.insert(profileID) }
+        DisabledProfilesStore.save(disabledProfileIDs)
+    }
+
     var books: [Book] = [] {
         didSet { recomputeCounts() }
     }
@@ -104,7 +125,8 @@ final class AppState {
 
     init() {
         self.libraryFolder = LibraryFolder.load()
-        self.profiles = LanguageProfileStore.loadBundled()
+        self.allProfiles = LanguageProfileStore.loadBundled()
+        self.disabledProfileIDs = DisabledProfilesStore.load()
         let detected = DeviceScanner.detect()
         self.device = detected
         self.deviceFilenames = detected?.filenames() ?? []
@@ -359,7 +381,8 @@ final class AppState {
             return nil
         }
         do {
-            let imported = try await importer.importBook(from: url, into: libraryFolder)
+            let imported = try await importer.importBook(
+                from: url, into: libraryFolder, profiles: enabledProfiles)
             await loadBooks()
             return imported
         } catch {
@@ -749,7 +772,7 @@ final class AppState {
         do {
             let opened = try await Task.detached { try BookIndex() }.value
             self.index = opened
-            self.importer = LibraryImporter(index: opened, profiles: self.profiles)
+            self.importer = LibraryImporter(index: opened)
         } catch {
             indexLogger.error("failed to open index: \(error.localizedDescription, privacy: .public)")
         }

@@ -1216,7 +1216,7 @@ struct LibraryView: View {
                     Task { await downloadAndImport(source) }
                 }
             },
-            profiles: state.profiles,
+            profiles: state.allProfiles,
             allCollections: state.collections,
             onUpdate: { updated in
                 Task { await state.updateBook(updated) }
@@ -1224,7 +1224,7 @@ struct LibraryView: View {
             onClassify: {
                 guard let book = inspectorBook else { return nil }
                 let url = book.fileURL
-                let profiles = state.profiles
+                let profiles = state.enabledProfiles
                 return await Task.detached {
                     Classifier.classifyEPUB(at: url, profiles: profiles)
                 }.value

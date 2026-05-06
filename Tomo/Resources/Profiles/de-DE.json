@@ -1,0 +1,18 @@
+{
+  "id": "de-DE",
+  "baseLanguage": "de",
+  "markers": [
+    { "pattern": "fahrrad", "isRegex": false, "weight": 1.5 },
+    { "pattern": "brötchen", "isRegex": false, "weight": 1.5 },
+    { "pattern": "tüte", "isRegex": false, "weight": 1.0 },
+    { "pattern": "lecker", "isRegex": false, "weight": 0.8 },
+    { "pattern": "schau mal", "isRegex": false, "weight": 0.8 },
+    { "pattern": "tschüss", "isRegex": false, "weight": 0.8 },
+    { "pattern": "guten tag", "isRegex": false, "weight": 0.8 },
+    { "pattern": "velo", "isRegex": false, "weight": -1.5 },
+    { "pattern": "grüezi", "isRegex": false, "weight": -2.0 },
+    { "pattern": "brötli", "isRegex": false, "weight": -1.5 },
+    { "pattern": "znüni", "isRegex": false, "weight": -2.0 },
+    { "pattern": "merci vielmal", "isRegex": false, "weight": -1.5 }
+  ]
+}
