@@ -754,6 +754,7 @@ struct LibraryView: View {
             let tempURL = try await fetchToTempFile(
                 url: downloadURL,
                 format: result.format,
+                fallbackExpectedBytes: result.sizeBytes.map(Int64.init),
                 onTaskCreated: { task in
                     downloadTasks[result.id] = task
                 },
@@ -832,20 +833,30 @@ struct LibraryView: View {
     private func fetchToTempFile(
         url: URL,
         format: String,
+        fallbackExpectedBytes: Int64?,
         onTaskCreated: @MainActor @Sendable @escaping (URLSessionTask) -> Void,
         onProgress: @MainActor @Sendable @escaping (Double?) -> Void
     ) async throws -> URL {
-        let delegate = ProgressDownloadDelegate(onTaskCreated: onTaskCreated, onProgress: onProgress)
-        let (tempLocation, response) = try await URLSession.shared.download(from: url, delegate: delegate)
-        defer { try? FileManager.default.removeItem(at: tempLocation) }
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        // Apple gotcha: `URLSession.download(from:delegate:)` internally uses a
+        // completion handler, which per Apple's docs disables the
+        // `URLSessionDownloadDelegate` data callbacks (didWriteData et al). To
+        // get reliable progress updates we need a custom session with a
+        // session-level delegate plus a plain `downloadTask(with:)` (no
+        // completion handler), bridged to async via a continuation.
         let ext = format.lowercased().isEmpty ? "epub" : format.lowercased()
         let dest = FileManager.default.temporaryDirectory
             .appending(path: "tomo-source-\(UUID().uuidString.prefix(8)).\(ext)")
-        try FileManager.default.moveItem(at: tempLocation, to: dest)
-        return dest
+        let delegate = ProgressDownloadDelegate(
+            destination: dest,
+            fallbackExpectedBytes: fallbackExpectedBytes,
+            onTaskCreated: onTaskCreated,
+            onProgress: onProgress
+        )
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+        return try await withCheckedThrowingContinuation { continuation in
+            delegate.setContinuation(continuation)
+            session.downloadTask(with: url).resume()
+        }
     }
 
     private func bookCell(_ book: Book, cardWidth: CGFloat) -> some View {
@@ -1467,26 +1478,70 @@ struct CardFramePreference: PreferenceKey {
     }
 }
 
-/// Per-task delegate that reports `URLSession` download progress as a
-/// fraction in [0, 1] and surfaces the underlying task at creation time so
-/// the caller can cancel it. Drives the source-card capsule's progress
-/// label and bar for plugin-sourced downloads.
+/// Session-level delegate for a one-shot download. Owns:
+///  - the destination URL (file is moved out of the per-task temp location
+///    inside `didFinishDownloadingTo` because the temp file is removed
+///    synchronously when that callback returns),
+///  - the continuation that resumes the awaiting `fetchToTempFile`,
+///  - the progress callback that drives the source-card capsule.
+///
+/// Used with a *custom* `URLSession` (not `.shared`) and a plain
+/// `downloadTask(with:)` — Apple's completion-handler-based downloads
+/// (including the `download(from:)` async wrapper) suppress
+/// `URLSessionDownloadDelegate` data callbacks, so this is the only path
+/// that actually delivers `didWriteData` updates.
+///
+/// Progress denominator preference:
+/// 1. Server's `Content-Length` (`totalBytesExpectedToWrite > 0`).
+/// 2. Plugin-declared `sizeBytes` (`fallbackExpectedBytes`) — common when
+///    the CDN uses chunked transfer encoding and omits Content-Length.
+/// 3. Neither — progress stays nil and the capsule shows "Downloading"
+///    without a percentage.
 private final class ProgressDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    let destination: URL
+    let fallbackExpectedBytes: Int64?
     let onTaskCreated: @MainActor @Sendable (URLSessionTask) -> Void
     let onProgress: @MainActor @Sendable (Double?) -> Void
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<URL, Error>?
+
     init(
+        destination: URL,
+        fallbackExpectedBytes: Int64?,
         onTaskCreated: @MainActor @Sendable @escaping (URLSessionTask) -> Void,
         onProgress: @MainActor @Sendable @escaping (Double?) -> Void
     ) {
+        self.destination = destination
+        self.fallbackExpectedBytes = fallbackExpectedBytes
         self.onTaskCreated = onTaskCreated
         self.onProgress = onProgress
     }
+
+    func setContinuation(_ c: CheckedContinuation<URL, Error>) {
+        lock.lock()
+        defer { lock.unlock() }
+        continuation = c
+    }
+
+    /// Resumes the awaiting caller exactly once. Subsequent calls (e.g.
+    /// `didCompleteWithError(nil)` after a successful `didFinishDownloadingTo`)
+    /// are no-ops.
+    private func consumeContinuation() -> CheckedContinuation<URL, Error>? {
+        lock.lock()
+        defer { lock.unlock() }
+        let c = continuation
+        continuation = nil
+        return c
+    }
+
     // Fires the moment URLSession instantiates the task — before the first
     // byte arrives. Lets the caller register the task for cancellation so a
     // fast click on X is honored even if no progress callback has fired yet.
     func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
         Task { @MainActor in onTaskCreated(task) }
     }
+
     func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
@@ -1495,15 +1550,48 @@ private final class ProgressDownloadDelegate: NSObject, URLSessionDownloadDelega
         totalBytesExpectedToWrite: Int64
     ) {
         // NSURLSessionTransferSizeUnknown (-1) when Content-Length is missing.
-        // Stay nil so the capsule shows "Downloading" without a bogus 0%.
-        let progress: Double? =
-            totalBytesExpectedToWrite > 0
-            ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-            : nil
+        let denominator: Int64? = {
+            if totalBytesExpectedToWrite > 0 { return totalBytesExpectedToWrite }
+            if let f = fallbackExpectedBytes, f > 0 { return f }
+            return nil
+        }()
+        // Clamp at 1.0 — a slightly-low plugin estimate (compressed-on-disk
+        // size vs. wire bytes, etc.) shouldn't print "Downloading 103%".
+        let progress: Double? = denominator.map { d in
+            min(1.0, Double(totalBytesWritten) / Double(d))
+        }
         Task { @MainActor in onProgress(progress) }
     }
-    // Required by URLSessionDownloadDelegate; the async return on
-    // download(from:delegate:) handles completion for us.
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        // Move the file out of the per-task temp location *before* returning;
+        // URLSession deletes `location` the moment this callback exits.
+        do {
+            if let http = downloadTask.response as? HTTPURLResponse,
+                !(200..<300).contains(http.statusCode)
+            {
+                consumeContinuation()?.resume(throwing: URLError(.badServerResponse))
+                return
+            }
+            try FileManager.default.moveItem(at: location, to: destination)
+            consumeContinuation()?.resume(returning: destination)
+        } catch {
+            consumeContinuation()?.resume(throwing: error)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        // Success path: didFinishDownloadingTo already resumed the
+        // continuation; consumeContinuation() returns nil here. Failure path
+        // (including URLError.cancelled): resume with the error. Always
+        // invalidate the session so the delegate is released.
+        if let error {
+            consumeContinuation()?.resume(throwing: error)
+        }
+        session.finishTasksAndInvalidate()
     }
 }
