@@ -24,6 +24,11 @@ struct BookInspector: View {
     var sourceDownloadState: CardDownloadState = .idle
     var sourcePluginName: String? = nil
     var onSourceDownload: () -> Void = {}
+    /// Called when the user clicks the action row while a download is in
+    /// flight. Cancels the underlying `URLSessionTask`; the resulting
+    /// `URLError.cancelled` collapses the inspector row back to idle without
+    /// surfacing as an error.
+    var onSourceCancel: () -> Void = {}
 
     /// Variant profiles available in the locale menu (e.g. pt-PT, en-GB).
     /// All bundled profiles, regardless of enable state — manual selection
@@ -600,10 +605,21 @@ struct BookInspector: View {
     @ViewBuilder
     private func sourceActions(for result: PluginResult) -> some View {
         VStack(spacing: 0) {
-            Button(action: onSourceDownload) {
-                actionLabel(icon: sourceActionIcon, title: sourceActionTitle)
+            if case .downloading = sourceDownloadState {
+                // Same row, different action: while downloading the row
+                // becomes a cancel target. Title still shows progress so the
+                // primary feedback is preserved; hovering swaps icon+title to
+                // make cancel obvious.
+                SourceCancelRow(
+                    progressTitle: sourceActionTitle,
+                    onCancel: onSourceCancel
+                )
+            } else {
+                Button(action: onSourceDownload) {
+                    actionLabel(icon: sourceActionIcon, title: sourceActionTitle)
+                }
+                .disabled(sourceDownloadState == .importing || sourceDownloadState == .added)
             }
-            .disabled(sourceDownloadState != .idle && sourceDownloadState != .error)
 
             if let url = result.detailURL {
                 Link(destination: url) {
@@ -634,6 +650,28 @@ struct BookInspector: View {
         case .added: return "Added to library"
         case .error: return "Try again"
         }
+    }
+}
+
+/// Inspector action row for the in-flight download state. Resting label
+/// shows "Downloading 42%" so progress stays the primary signal; on hover,
+/// icon and title swap to "Cancel download" so the cancel affordance only
+/// reveals when the user is reaching for it.
+private struct SourceCancelRow: View {
+    let progressTitle: String
+    let onCancel: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onCancel) {
+            HStack(spacing: 9) {
+                Icon(symbol: isHovering ? "xmark" : "arrow.down", weight: .regular, size: 13)
+                    .frame(width: 14)
+                Text(isHovering ? "Cancel download" : progressTitle)
+            }
+        }
+        .onHover { isHovering = $0 }
+        .help("Cancel download")
     }
 }
 

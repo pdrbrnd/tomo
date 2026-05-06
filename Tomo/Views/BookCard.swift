@@ -44,8 +44,13 @@ struct BookCard: View {
     /// badge expecting download — the badge looks like a button, so it
     /// is one.
     var onSourceDownload: (() -> Void)? = nil
+    /// When set and the card is in a `.downloading` state, the capsule
+    /// becomes a cancel target — hovering swaps the down-arrow icon for
+    /// an xmark and clicking calls this.
+    var onCancelDownload: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHoveringCancel: Bool = false
 
     private var cardHeight: CGFloat { cardWidth * Theme.Library.bookHeightMultiplier }
     private var isDimmed: Bool { deviceStatus == .missingFromDevice }
@@ -208,10 +213,25 @@ struct BookCard: View {
     // DeviceTile-shaped morph. Capsule body stays constant across states so
     // SwiftUI can interpolate label, fill, and progress rather than swap.
 
+    @ViewBuilder
     private var stateCapsule: some View {
+        if case .downloading = downloadState, let onCancelDownload {
+            Button(action: onCancelDownload) {
+                stateCapsuleBody
+            }
+            .buttonStyle(.plain)
+            .onHover { isHoveringCancel = $0 }
+            .help("Cancel download")
+        } else {
+            stateCapsuleBody
+        }
+    }
+
+    private var stateCapsuleBody: some View {
         HStack(spacing: 6) {
             Image(systemName: capsuleSymbol)
                 .font(.system(size: 10, weight: .semibold))
+                .contentTransition(.symbolEffect(.replace))
             Text(capsuleLabel)
                 .font(.system(size: 11, weight: .semibold))
                 .lineLimit(1)
@@ -231,7 +251,11 @@ struct BookCard: View {
     private var capsuleSymbol: String {
         switch downloadState {
         case .idle: return "icloud.and.arrow.down"
-        case .downloading: return "arrow.down"
+        case .downloading:
+            // Hover-swap: the capsule itself is the cancel target while
+            // downloading, but the affordance only reveals on hover so the
+            // resting capsule stays visually about *progress*, not "cancel".
+            return (onCancelDownload != nil && isHoveringCancel) ? "xmark" : "arrow.down"
         case .importing: return "checkmark"
         case .added: return "checkmark"
         case .error: return "exclamationmark.triangle.fill"

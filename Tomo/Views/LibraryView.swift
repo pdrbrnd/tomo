@@ -33,6 +33,10 @@ struct LibraryView: View {
     /// Per-source-card download state, keyed by `PluginResult.id`. Drives the
     /// in-place card morph when downloading + importing.
     @State private var downloadStates: [String: CardDownloadState] = [:]
+    /// In-flight `URLSessionTask`s keyed by `PluginResult.id`, captured the
+    /// instant the task is created so the user's cancel click can hit
+    /// `task.cancel()` even before the first byte arrives.
+    @State private var downloadTasks: [String: URLSessionTask] = [:]
     /// Library books that just landed via a source download and whose source
     /// card is still showing its "Added" celebration. The library card is
     /// filtered out of the grid for the celebration window so the user sees
@@ -576,6 +580,9 @@ struct LibraryView: View {
             cardWidth: cardWidth,
             onSourceDownload: {
                 Task { await downloadAndImport(result) }
+            },
+            onCancelDownload: {
+                cancelDownload(result)
             }
         )
         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
@@ -744,7 +751,22 @@ struct LibraryView: View {
         }
         do {
             let downloadURL = try await source.download(result)
-            let tempURL = try await fetchToTempFile(url: downloadURL, format: result.format)
+            let tempURL = try await fetchToTempFile(
+                url: downloadURL,
+                format: result.format,
+                onTaskCreated: { task in
+                    downloadTasks[result.id] = task
+                },
+                onProgress: { progress in
+                    // Late callbacks may land after we've moved past `.downloading`
+                    // (e.g. into .importing or .error). Only update if we're still
+                    // in the downloading phase to avoid clobbering a later state.
+                    if case .downloading = downloadStates[result.id] {
+                        downloadStates[result.id] = .downloading(progress: progress)
+                    }
+                }
+            )
+            downloadTasks[result.id] = nil
             downloadStates[result.id] = .importing
             let importedBook = await state.importBook(from: tempURL)
             try? FileManager.default.removeItem(at: tempURL)
@@ -778,6 +800,15 @@ struct LibraryView: View {
                 selectedSourceID = nil
             }
         } catch {
+            downloadTasks[result.id] = nil
+            // User-initiated cancel surfaces as URLError.cancelled. Treat it
+            // silently: no toast, no red "Failed" capsule — just collapse the
+            // card back to its idle state. The user pressed X; they don't
+            // need to be told what they just did.
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                downloadStates[result.id] = nil
+                return
+            }
             downloadStates[result.id] = .error
             state.showToast(.error("Download failed: \(error.localizedDescription)"))
             pluginLogger.error("download/import failed: \(error.localizedDescription, privacy: .public)")
@@ -791,8 +822,21 @@ struct LibraryView: View {
         }
     }
 
-    private func fetchToTempFile(url: URL, format: String) async throws -> URL {
-        let (tempLocation, response) = try await URLSession.shared.download(from: url)
+    /// User-initiated cancel for an in-flight plugin download. Cancelling the
+    /// `URLSessionTask` surfaces as `URLError.cancelled` in `downloadAndImport`,
+    /// which collapses the capsule back to idle without a toast.
+    private func cancelDownload(_ result: PluginResult) {
+        downloadTasks[result.id]?.cancel()
+    }
+
+    private func fetchToTempFile(
+        url: URL,
+        format: String,
+        onTaskCreated: @MainActor @Sendable @escaping (URLSessionTask) -> Void,
+        onProgress: @MainActor @Sendable @escaping (Double?) -> Void
+    ) async throws -> URL {
+        let delegate = ProgressDownloadDelegate(onTaskCreated: onTaskCreated, onProgress: onProgress)
+        let (tempLocation, response) = try await URLSession.shared.download(from: url, delegate: delegate)
         defer { try? FileManager.default.removeItem(at: tempLocation) }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
@@ -1216,6 +1260,11 @@ struct LibraryView: View {
                     Task { await downloadAndImport(source) }
                 }
             },
+            onSourceCancel: {
+                if let source = inspectedSource {
+                    cancelDownload(source)
+                }
+            },
             profiles: state.allProfiles,
             allCollections: state.collections,
             onUpdate: { updated in
@@ -1415,5 +1464,46 @@ struct CardFramePreference: PreferenceKey {
     static let defaultValue: [Book.ID: CGRect] = [:]
     static func reduce(value: inout [Book.ID: CGRect], nextValue: () -> [Book.ID: CGRect]) {
         value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+/// Per-task delegate that reports `URLSession` download progress as a
+/// fraction in [0, 1] and surfaces the underlying task at creation time so
+/// the caller can cancel it. Drives the source-card capsule's progress
+/// label and bar for plugin-sourced downloads.
+private final class ProgressDownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    let onTaskCreated: @MainActor @Sendable (URLSessionTask) -> Void
+    let onProgress: @MainActor @Sendable (Double?) -> Void
+    init(
+        onTaskCreated: @MainActor @Sendable @escaping (URLSessionTask) -> Void,
+        onProgress: @MainActor @Sendable @escaping (Double?) -> Void
+    ) {
+        self.onTaskCreated = onTaskCreated
+        self.onProgress = onProgress
+    }
+    // Fires the moment URLSession instantiates the task — before the first
+    // byte arrives. Lets the caller register the task for cancellation so a
+    // fast click on X is honored even if no progress callback has fired yet.
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        Task { @MainActor in onTaskCreated(task) }
+    }
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        // NSURLSessionTransferSizeUnknown (-1) when Content-Length is missing.
+        // Stay nil so the capsule shows "Downloading" without a bogus 0%.
+        let progress: Double? =
+            totalBytesExpectedToWrite > 0
+            ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            : nil
+        Task { @MainActor in onProgress(progress) }
+    }
+    // Required by URLSessionDownloadDelegate; the async return on
+    // download(from:delegate:) handles completion for us.
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
     }
 }
