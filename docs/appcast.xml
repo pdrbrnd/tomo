@@ -5,5 +5,16 @@
         <link>https://tomolibrary.com/appcast.xml</link>
         <description>Updates for Tomo, a native macOS e-book library manager.</description>
         <language>en</language>
+        <item>
+            <title>v1.3.0</title>
+            <pubDate>Tue, 05 May 2026 20:43:54 +0000</pubDate>
+            <sparkle:version>10300</sparkle:version>
+            <sparkle:shortVersionString>1.3.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+**Full Changelog**: https://github.com/pdrbrnd/tomo/compare/v1.2.0...v1.3.0
+            ]]></description>
+            <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.3.0/Tomo-v1.3.0.dmg" type="application/octet-stream" sparkle:edSignature="Dxk0RVVhrhgQTOXOHBXHBgYY3fQq2xvLG6UgMRhssxK9hV9YoM4DNxk0oDKYpnivhedKjYqUD8MLnmpcss6aDQ==" length="9242343" />
+        </item>
     </channel>
 </rss>
