@@ -12,8 +12,6 @@ natively and treats device delivery as a first-class workflow.
 ## What this is NOT
 
 - Not an e-book reader (no in-app reading; double-click → Show details)
-- Not a sync service (single-user, single-Mac)
-- Not a Calibre clone (no news, no server mode, no Tomo-app plugin system)
 - Not a DRM tool (out of scope; books arrive DRM-free or they don't arrive)
 
 Source plugins (JS files in `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`) are a separate concept — they search external catalogues; they don't extend the app itself.
@@ -99,28 +97,6 @@ Fast and snappy is not negotiable:
 - Index SQLite columns you'll search on
 - Use LazyVStack/List with stable IDs
 
-## Folder layout (in-app)
-
-```
-Tomo/
-  App/                    # @main, app lifecycle, AppState
-  Views/                  # SwiftUI views, one per file
-  Models/                 # plain structs: Book, BookOrigin, Collection, LanguageProfile
-  Core/
-    Library/              # library folder operations, CollectionsFile
-    Index/                # SQLite index (GRDB)
-    Metadata/             # EPUB parsing, sidecar I/O, cover lookup
-    Classifier/           # language profile engine
-    Delivery/             # Kindle USB driver + thumbnail writer
-    Conversion/           # EPUB→AZW3 adapter (delegates to swift-azw3)
-    Plugins/              # JS source-plugin host (JavaScriptCore)
-  Resources/
-    Profiles/             # bundled language profile JSON files
-    Plugins/              # bundled JS plugins (gutenberg.js)
-```
-
-The AZW3 writer itself lives in [`pdrbrnd/swift-azw3`](https://github.com/pdrbrnd/swift-azw3) (extracted from this repo as a standalone SwiftPM package). The in-tree `Core/Conversion/` folder is just the adapter that bridges Tomo's `EPUBSource` to `AZW3.AZW3Writer`.
-
 ## Data model
 
 Models live in `Tomo/Models/`. Read those files for the current shapes
@@ -145,10 +121,6 @@ Not "pt-PT detection." A general system: weighted-marker classifier per
 profile, profiles grouped by base language. Implementation lives in
 `Tomo/Core/Classifier/` — read `Classifier.swift` and the bundled
 profiles in `Resources/Profiles/` for current shape.
-
-The principle to preserve: **manual user override is persisted and
-never overwritten.** Bulk re-classify is a deliberate user action; the
-system never silently changes a locale the user has already accepted.
 
 For non-EPUB formats: classifier doesn't reach into MOBI/AZW3/PDF
 contents. Books in those formats either get a manually-set locale or
@@ -225,22 +197,14 @@ For Kindle home-screen covers, the writer's EXTH 201 alone isn't enough on most 
 
 We do not bundle Calibre, KindleGen, or Amazon's Send to Kindle Mac app, and we don't route through SMTP / Amazon servers.
 
-## v2 (later, not now)
-
-- Reading progress sync from `My Clippings.txt`
-- Saved searches
-- Series support
-- Library subset export
 
 ## Out of scope (don't add without discussion)
 
 - DRM removal of any kind
 - In-app reading
 - Multi-device sync logic beyond "iCloud folder works fine"
-- A *Tomo-app* plugin system (source plugins are JS only — they search and download; they don't extend the app itself)
 - News / RSS / feed fetching (Calibre-style)
 - iOS companion app
-- App Store distribution (sandbox is off; Homebrew cask is the channel)
 
 ## Architectural layers
 
