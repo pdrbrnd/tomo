@@ -368,7 +368,7 @@ final class AppState {
     /// that don't need the imported book can ignore the return value —
     /// the standard refresh still happens.
     @discardableResult
-    func importBook(from url: URL) async -> Book? {
+    func importBook(from url: URL, origin: BookOrigin) async -> Book? {
         await openIndexIfNeeded()
         guard let importer else {
             libraryLogger.error("import called without index/importer")
@@ -382,7 +382,7 @@ final class AppState {
         }
         do {
             let imported = try await importer.importBook(
-                from: url, into: libraryFolder, profiles: enabledProfiles)
+                from: url, into: libraryFolder, profiles: enabledProfiles, origin: origin)
             await loadBooks()
             return imported
         } catch {

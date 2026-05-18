@@ -49,7 +49,10 @@ actor LibraryImporter {
     }
 
     func importBook(
-        from sourceURL: URL, into libraryFolder: URL, profiles: [LanguageProfile]
+        from sourceURL: URL,
+        into libraryFolder: URL,
+        profiles: [LanguageProfile],
+        origin: BookOrigin
     ) async throws -> Book {
         libraryLogger.info("importing \(sourceURL.lastPathComponent, privacy: .public)")
 
@@ -64,7 +67,8 @@ actor LibraryImporter {
         }
 
         let bookFolder = bookFolderURL(in: libraryFolder, metadata: metadata)
-        let destFile = bookFolder.appending(component: sourceURL.lastPathComponent)
+        let ext = sourceURL.pathExtension.lowercased()
+        let destFile = bookFolder.appending(component: "book.\(ext)")
 
         if FileManager.default.fileExists(atPath: destFile.path(percentEncoded: false)) {
             throw LibraryImporterError.destinationExists
@@ -87,7 +91,7 @@ actor LibraryImporter {
                 coverPath: coverFileName,
                 dateAdded: .now,
                 fileURL: destFile,
-                origin: .manualImport
+                origin: origin
             )
 
             // Fresh import: no collections yet. Membership is added later

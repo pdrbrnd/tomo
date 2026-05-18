@@ -502,7 +502,7 @@ struct LibraryView: View {
             guard !accepted.isEmpty else { return !rejected.isEmpty }
             Task {
                 for url in accepted {
-                    await state.importBook(from: url)
+                    await state.importBook(from: url, origin: .manualImport)
                 }
             }
             return true
@@ -863,7 +863,10 @@ struct LibraryView: View {
             )
             downloadTasks[result.id] = nil
             downloadStates[result.id] = .importing
-            let importedBook = await state.importBook(from: tempURL)
+            let importedBook = await state.importBook(
+                from: tempURL,
+                origin: .source(id: result.pluginID, ref: result.id)
+            )
             try? FileManager.default.removeItem(at: tempURL)
             // Cover fallback for plugins that supply a `coverURL` but ship a
             // book file without an embedded cover. The importer extracts
