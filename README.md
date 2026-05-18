@@ -38,6 +38,22 @@ xcodebuild -project Tomo.xcodeproj -scheme Tomo -configuration Debug build
 xcodebuild -project Tomo.xcodeproj -scheme Tomo -destination 'platform=macOS' test
 ```
 
+## Release
+
+Pushing a tag matching `vX.Y.Z` (or `vX.Y.Z-foo` for pre-releases) to `origin` triggers `.github/workflows/release.yml`, which does the rest:
+
+1. Archives at Release config, signs with Developer ID, notarizes, staples
+2. Builds a DMG with `create-dmg`
+3. Signs the DMG with the Sparkle ed25519 key
+4. Creates a GitHub Release with auto-generated notes and attaches the DMG + SHA256
+5. Appends an `<item>` to `docs/appcast.xml` and rewrites `docs/index.html`'s download link, commits to `main`
+6. Bumps `version` and `sha256` in `pdrbrnd/homebrew-tap` `Casks/tomo.rb`
+
+```sh
+git tag v1.5.0
+git push origin v1.5.0
+```
+
 ## Plugins
 
 Tomo's source-search system loads plugins from `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`. Project Gutenberg ships bundled and is seeded on first launch.
