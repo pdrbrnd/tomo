@@ -68,7 +68,15 @@ actor LibraryImporter {
 
         let bookFolder = bookFolderURL(in: libraryFolder, metadata: metadata)
         let ext = sourceURL.pathExtension.lowercased()
-        let destFile = bookFolder.appending(component: "book.\(ext)")
+        let bookID = UUID()
+        let filename = bookFileSlug(
+            title: metadata.title,
+            author: metadata.authors.first,
+            year: metadata.year,
+            ext: ext,
+            id: bookID
+        )
+        let destFile = bookFolder.appending(component: filename)
 
         if FileManager.default.fileExists(atPath: destFile.path(percentEncoded: false)) {
             throw LibraryImporterError.destinationExists
@@ -83,7 +91,7 @@ actor LibraryImporter {
             let locale = Self.resolveLocale(declared: metadata.language, file: destFile, profiles: profiles)
 
             let book = Book(
-                id: UUID(),
+                id: bookID,
                 title: metadata.title,
                 authors: metadata.authors,
                 year: metadata.year,

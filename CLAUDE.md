@@ -49,12 +49,16 @@ should migrate to code over time.
 These are load-bearing. Don't violate them without flagging it.
 
 1. **Library on disk is the source of truth.** Flat folder structure:
-   `Library/Author/Title (Year)/book.epub`. Human-readable. Survives the
-   app being deleted. Each book carries a `metadata.json` sidecar with
-   everything the index needs (title, authors, locale, collections by
-   name, id, etc.). Collection *definitions* (id, sortOrder, dateCreated)
-   live in `<library>/.tomo/collections.json` so empty collections and
-   sortOrder also survive a rebuild.
+   `Library/Author/Title (Year)/<author-title-year>.epub`. The folder
+   carries human-readable identity; the file is a kebab-case ASCII slug
+   built by `bookFileSlug` so every book has a unique, identity-bearing
+   filename — devices like Kindle dedupe by filename, so the legacy
+   `book.epub` shape collided on every send. Survives the app being
+   deleted. Each book carries a `metadata.json` sidecar with everything
+   the index needs (title, authors, locale, collections by name, id,
+   etc.) including the on-disk filename. Collection *definitions* (id,
+   sortOrder, dateCreated) live in `<library>/.tomo/collections.json`
+   so empty collections and sortOrder also survive a rebuild.
 
 2. **The SQLite index is disposable.** Stored outside the library folder
    at `~/Library/Application Support/[app-bundle-id]/index.db`. Never in

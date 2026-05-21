@@ -10,6 +10,41 @@ private nonisolated func pngData(from image: NSImage) -> Data? {
     return bitmap.representation(using: .png, properties: [:])
 }
 
+private nonisolated func renamedToSlugIfChanged(_ book: Book) -> (book: Book, didRename: Bool) {
+    let ext = book.fileURL.pathExtension.lowercased()
+    let target = bookFileSlug(
+        title: book.title,
+        author: book.authors.first,
+        year: book.year,
+        ext: ext,
+        id: book.id
+    )
+    guard target != book.fileURL.lastPathComponent else {
+        return (book, false)
+    }
+    let folder = book.fileURL.deletingLastPathComponent()
+    let newURL = folder.appending(component: target)
+    let fm = FileManager.default
+    if fm.fileExists(atPath: newURL.path(percentEncoded: false)) {
+        libraryLogger.warning(
+            "rename skipped, target exists: \(target, privacy: .public)")
+        return (book, false)
+    }
+    do {
+        try fm.moveItem(at: book.fileURL, to: newURL)
+        var updated = book
+        updated.fileURL = newURL
+        libraryLogger.info(
+            "renamed: \(book.fileURL.lastPathComponent, privacy: .public) -> \(target, privacy: .public)"
+        )
+        return (updated, true)
+    } catch {
+        libraryLogger.error(
+            "rename failed: \(error.localizedDescription, privacy: .public)")
+        return (book, false)
+    }
+}
+
 /// Drives the device tile's morphing UI for the send-to-device flow.
 /// Distinct from the drag-active scale-up: this only covers the post-drop
 /// progress + success/failure stretch.
@@ -399,17 +434,28 @@ final class AppState {
             libraryLogger.error("update: no index")
             return
         }
-        let bookFolder = book.fileURL.deletingLastPathComponent()
-        let bookForSidecar = book
-        let names = collectionNames(for: book.collectionIDs)
+        let renamed = await Task.detached { renamedToSlugIfChanged(book) }.value
+        let bookForSidecar = renamed.book
+        let bookFolder = bookForSidecar.fileURL.deletingLastPathComponent()
+        let originalURL = book.fileURL
+        let names = collectionNames(for: bookForSidecar.collectionIDs)
         do {
             try await Task.detached {
                 try MetadataSidecar.write(bookForSidecar, collectionNames: names, to: bookFolder)
             }.value
-            try await index.update(book)
+            try await index.update(bookForSidecar)
             await loadBooks()
-            libraryLogger.info("updated: \(book.title, privacy: .public)")
+            libraryLogger.info("updated: \(bookForSidecar.title, privacy: .public)")
         } catch {
+            // Sidecar / index write failed after a successful rename — undo
+            // the rename so the sidecar's stale fileName still resolves.
+            // Otherwise the book becomes an orphan on next sync.
+            if renamed.didRename {
+                try? await Task.detached {
+                    try FileManager.default.moveItem(
+                        at: bookForSidecar.fileURL, to: originalURL)
+                }.value
+            }
             libraryLogger.error("update failed: \(error.localizedDescription, privacy: .public)")
         }
     }
@@ -729,10 +775,54 @@ final class AppState {
             libraryLogger.info(
                 "sync: \(sidecars.count) on disk, +\(toAdd.count) -\(orphans.count)")
             await loadBooks()
+            await migrateBookFilenames()
         } catch is CancellationError {
             libraryLogger.info("sync cancelled")
         } catch {
             libraryLogger.error("sync failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// One-time per-book migration: books imported before the slug-filename
+    /// change live on disk as `book.epub` / `book.pdf`. Rename them in place
+    /// so they carry a unique, identity-bearing name that Kindle (and other
+    /// downstream consumers that key off filename) won't collide on.
+    /// Failures are logged and skipped — the book stays at its legacy name
+    /// and gets retried on the next sync. After the first successful run,
+    /// the cheap `hasPrefix` filter makes this a no-op.
+    private func migrateBookFilenames() async {
+        let legacy = books.filter { $0.fileURL.lastPathComponent.hasPrefix("book.") }
+        guard !legacy.isEmpty, let index else { return }
+        var migrated = 0
+        for book in legacy {
+            let renamed = await Task.detached { renamedToSlugIfChanged(book) }.value
+            guard renamed.didRename else { continue }
+            let bookForPersist = renamed.book
+            let bookFolder = bookForPersist.fileURL.deletingLastPathComponent()
+            let names = collectionNames(for: bookForPersist.collectionIDs)
+            do {
+                try await Task.detached {
+                    try MetadataSidecar.write(
+                        bookForPersist, collectionNames: names, to: bookFolder)
+                }.value
+                try await index.update(bookForPersist)
+                migrated += 1
+            } catch {
+                // Sidecar / index write failed after a successful rename —
+                // roll the rename back so the on-disk state stays consistent.
+                try? await Task.detached {
+                    try FileManager.default.moveItem(
+                        at: bookForPersist.fileURL, to: book.fileURL)
+                }.value
+                libraryLogger.error(
+                    "filename migration failed for \(book.title, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+        if migrated > 0 {
+            libraryLogger.info(
+                "filename migration: renamed \(migrated, privacy: .public) book(s)")
+            await loadBooks()
         }
     }
 
