@@ -778,7 +778,6 @@ struct LibraryView: View {
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             SearchSectionHeader(
                 title: plugin.displayName,
-                subtitle: sourceSectionSubtitle,
                 isLoading: isLoading,
                 failureMessage: pluginState?.failureMessage,
                 resultCount: isLoading ? nil : results.count
@@ -863,13 +862,16 @@ struct LibraryView: View {
         return "Library"
     }
 
-    /// "Downloads will add to <collection>" subtitle shown on source section
-    /// headers when a collection is the active scope. Nothing otherwise.
-    private var sourceSectionSubtitle: String? {
-        guard let id = selectedCollection,
+    /// Context-menu label for the source download action. Surfaces the
+    /// active collection so the user knows where the book will land, without
+    /// needing a separate subtitle in the section header.
+    private var downloadMenuLabel: String {
+        if let id = selectedCollection,
             let collection = state.collections.first(where: { $0.id == id })
-        else { return nil }
-        return "Downloads will add to \(collection.name)"
+        {
+            return "Download to \(collection.name)"
+        }
+        return "Download to Library"
     }
 
     /// Drops plugin results that fingerprint-match a library book and caps
@@ -962,7 +964,7 @@ struct LibraryView: View {
             dismiss()
         }
         let state = downloadStates[result.id] ?? .idle
-        bookMenuItem("Download to Library", icon: "icloud.and.arrow.down") {
+        bookMenuItem(downloadMenuLabel, icon: "icloud.and.arrow.down") {
             if state == .idle || state == .error {
                 Task { await downloadAndImport(result) }
             }
@@ -1677,6 +1679,7 @@ struct LibraryView: View {
             sourceResult: inspectedSource,
             sourceDownloadState: inspectedSource.flatMap { downloadStates[$0.id] } ?? .idle,
             sourcePluginName: inspectedSource.flatMap { state.plugin(withID: $0.pluginID)?.displayName },
+            sourceDownloadIdleTitle: downloadMenuLabel,
             onSourceDownload: {
                 if let source = inspectedSource {
                     Task { await downloadAndImport(source) }

@@ -44,10 +44,16 @@ enum LibraryItem: Identifiable {
     }
 
     var year: Int? {
+        let raw: Int?
         switch self {
-        case .book(let b): return b.year
-        case .source(let r): return r.year
+        case .book(let b): raw = b.year
+        case .source(let r): raw = r.year
         }
+        // Plugins occasionally surface `0` or negative years as a stand-in
+        // for "unknown"; treat those as missing so the row doesn't show "0"
+        // where a year would go.
+        guard let raw, raw > 0 else { return nil }
+        return raw
     }
 
     /// BCP 47 tag (books) or plugin-provided language string (sources).
@@ -91,11 +97,20 @@ enum LibraryItem: Identifiable {
     /// Publisher (sources only — surfaced from the plugin's freeform metadata
     /// bag under any `publisher`-like key). The Book model doesn't carry a
     /// publisher field today, so library rows return nil here.
+    ///
+    /// Falsy / junk values get dropped: empty strings, literal "0", and
+    /// pure-numeric values (some plugins duplicate the year into the
+    /// publisher slot — "1959" sitting in publisher isn't a publisher name).
     var publisher: String? {
         guard case .source(let r) = self else { return nil }
         let needle = "publisher"
         let field = r.metadata.first { $0.key.lowercased() == needle }
-        let value = field?.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (value?.isEmpty == false) ? value : nil
+        guard let raw = field?.value.trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty,
+            raw != "0"
+        else { return nil }
+        // All-digits → year masquerading as publisher, drop it.
+        if raw.allSatisfy(\.isNumber) { return nil }
+        return raw
     }
 }
