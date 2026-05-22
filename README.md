@@ -11,7 +11,6 @@ A native macOS e-book library manager. Single-user, local-first. Native handling
 - **Send to Kindle over USB.** EPUB→AZW3 conversion happens in-app — no Amazon round-trip, no Send-to-Kindle bundle, no `ebook-convert`. The writer is its own Swift package: [swift-azw3](https://github.com/pdrbrnd/swift-azw3).
 - **Sources are JS plugins.** Search external book catalogues from inside the app. Project Gutenberg ships bundled; see [docs/plugins.md](docs/plugins.md) for authoring your own.
 - **Open Library cover lookup** by ISBN, paste, or file picker.
-- **Duplicate detection** (title + author fuzzy match), format preference (EPUB > AZW3 > MOBI > PDF).
 
 ## Install
 
