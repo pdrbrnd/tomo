@@ -402,8 +402,15 @@ final class AppState {
     /// Returns nil on failure and surfaces a toast to the user. Callers
     /// that don't need the imported book can ignore the return value —
     /// the standard refresh still happens.
+    ///
+    /// `collection` is the optional collection to add the new book to right
+    /// after import — used by the source-download flow to honour the active
+    /// sidebar collection ("downloads will add to <collection>"). Manual
+    /// imports leave it nil and the book lands at the library root.
     @discardableResult
-    func importBook(from url: URL, origin: BookOrigin) async -> Book? {
+    func importBook(
+        from url: URL, origin: BookOrigin, collection: UUID? = nil
+    ) async -> Book? {
         await openIndexIfNeeded()
         guard let importer else {
             libraryLogger.error("import called without index/importer")
@@ -419,6 +426,15 @@ final class AppState {
             let imported = try await importer.importBook(
                 from: url, into: libraryFolder, profiles: enabledProfiles, origin: origin)
             await loadBooks()
+            if let collection {
+                // Resolve the up-to-date Book (loadBooks may have replaced
+                // the imported instance with a sidecar-driven copy) and
+                // add it to the collection. addBook re-loads on its own,
+                // so a second loadBooks call here would be redundant.
+                if let resolved = books.first(where: { $0.id == imported.id }) {
+                    await addBook(resolved, to: collection)
+                }
+            }
             return imported
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

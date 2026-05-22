@@ -23,6 +23,10 @@ struct BookInspector: View {
     var sourceResult: PluginResult? = nil
     var sourceDownloadState: CardDownloadState = .idle
     var sourcePluginName: String? = nil
+    /// Idle-state label for the source download action. Carries the active
+    /// collection name when one is selected ("Download to Existential"); the
+    /// caller composes the string so the inspector stays presentational.
+    var sourceDownloadIdleTitle: String = "Download to library"
     var onSourceDownload: () -> Void = {}
     /// Called when the user clicks the action row while a download is in
     /// flight. Cancels the underlying `URLSessionTask`; the resulting
@@ -642,7 +646,7 @@ struct BookInspector: View {
 
     private var sourceActionTitle: String {
         switch sourceDownloadState {
-        case .idle: return "Download to library"
+        case .idle: return sourceDownloadIdleTitle
         case .downloading(let progress):
             if let progress { return "Downloading \(Int(progress * 100))%" }
             return "Downloading…"

@@ -27,9 +27,19 @@ struct LibraryView: View {
     @State private var dragEndPollingTask: Task<Void, Never>?
     @FocusState private var searchFocused: Bool
 
-    /// Results from the configured plugin source for the current `searchText`.
-    /// Populated by a debounced task; cleared when the search text is empty.
-    @State private var pluginResults: [PluginResult] = []
+    /// Per-plugin search state keyed by plugin id. Empty when no search is
+    /// active. Each enabled plugin gets an entry the moment a search kicks
+    /// off (`.loading`), then transitions to `.loaded(_)` or `.failed(_)`.
+    /// Section views read state per plugin to render their own headers and
+    /// rows without the parent needing to fan out signals.
+    @State private var pluginSearchStates: [String: PluginSearchState] = [:]
+    /// Section ids the user has manually collapsed within the current search
+    /// session. Cleared when the search field empties so each new search
+    /// session starts with every section expanded.
+    @State private var collapsedSectionIDs: Set<String> = []
+    /// Source sections the user has "shown all" for. Same persistence rule
+    /// as `collapsedSectionIDs` — within-session, reset on search-empty.
+    @State private var expandedSectionIDs: Set<String> = []
     /// Cancellable handle to the in-flight plugin search. Replaced on every
     /// keystroke so older queries can't clobber newer ones.
     @State private var pluginSearchTask: Task<Void, Never>?
@@ -40,11 +50,6 @@ struct LibraryView: View {
     /// instant the task is created so the user's cancel click can hit
     /// `task.cancel()` even before the first byte arrives.
     @State private var downloadTasks: [String: URLSessionTask] = [:]
-    /// Library books that just landed via a source download and whose source
-    /// card is still showing its "Added" celebration. The library card is
-    /// filtered out of the grid for the celebration window so the user sees
-    /// one card (the source celebrating) rather than two simultaneously.
-    @State private var celebratingBookIDs: Set<UUID> = []
     /// Selection slot for source results — separate from `selectedBookIDs`
     /// because source items aren't part of the multi-select model. Setting
     /// this clears `selectedBookIDs` (and vice versa) so only one item can
@@ -59,6 +64,25 @@ struct LibraryView: View {
 
     private static let sidebarWidth: CGFloat = 232
     private static let sidebarPaneWidth: CGFloat = sidebarWidth + paneInset * 2
+
+    /// Flat list of every loaded plugin result, in the order plugins are
+    /// enabled. Derived from `pluginSearchStates` — never mutate the array
+    /// directly; mutate the state map.
+    private var pluginResults: [PluginResult] {
+        state.enabledPlugins.flatMap { pluginSearchStates[$0.id]?.results ?? [] }
+    }
+
+    /// Loaded results for one plugin, in plugin-returned order. Source
+    /// sections in the search list read this.
+    private func results(forPluginID id: String) -> [PluginResult] {
+        pluginSearchStates[id]?.results ?? []
+    }
+
+    /// True while we're searching but the user hasn't typed enough to start a
+    /// query (e.g. the field is empty). Drives the grid/list switch.
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     /// Collection + language are independent axes AND'd with each other and
     /// with the search query. Standard "OR within an axis, AND between axes"
@@ -75,8 +99,7 @@ struct LibraryView: View {
             bySearch = state.books.filter { bookMatches(book: $0, query: parsedQuery) }
         }
         return bySearch.filter { book in
-            !celebratingBookIDs.contains(book.id)
-                && (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
+            (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
                 && (selectedLanguage.map { book.locale == $0 } ?? true)
                 && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
         }
@@ -301,7 +324,6 @@ struct LibraryView: View {
                 searchPlaceholder: searchPlaceholder,
                 sidebarOpen: sidebarOpen,
                 inspectorOpen: inspectorOpen,
-                searchScopeRestricted: selectedCollection != nil || selectedLanguage != nil,
                 onToggleSidebar: { sidebarOpen.toggle() },
                 onToggleInspector: { inspectorOpen.toggle() }
             )
@@ -313,16 +335,23 @@ struct LibraryView: View {
         .task(id: state.libraryFolder) { await state.syncWithDisk() }
         .onChange(of: searchText) { _, newValue in
             schedulePluginSearch(for: newValue)
+            // Each new search session starts fresh. Within a session
+            // (incremental keystrokes) the collapse / show-more state
+            // persists so a refined query doesn't undo the user's choices.
+            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                collapsedSectionIDs = []
+                expandedSectionIDs = []
+            }
         }
         .onChange(of: state.enabledPluginIDs) { _, newSet in
-            // Drop results from plugins that are no longer enabled.
-            pluginResults = pluginResults.filter { newSet.contains($0.pluginID) }
+            // Drop state for plugins that are no longer enabled.
+            pluginSearchStates = pluginSearchStates.filter { newSet.contains($0.key) }
             if newSet.isEmpty {
                 pluginSearchTask?.cancel()
-                pluginResults = []
+                pluginSearchStates = [:]
                 selectedSourceID = nil
                 state.pluginSearchInFlight = false
-            } else if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            } else if isSearching {
                 // Re-run search to pick up any newly-enabled plugins.
                 schedulePluginSearch(for: searchText)
             }
@@ -519,7 +548,9 @@ struct LibraryView: View {
     private var gridArea: some View {
         if state.libraryFolder == nil {
             emptyLibraryCTA
-        } else if state.books.isEmpty && pluginResults.isEmpty && !state.pluginSearchInFlight {
+        } else if isSearching {
+            searchResultsList
+        } else if state.books.isEmpty {
             placeholderText("Drop a book to begin")
         } else if gridItems.isEmpty {
             placeholderText(emptyFilteredMessage)
@@ -665,6 +696,273 @@ struct LibraryView: View {
 
     private static let gridCoordinateSpace = "library.grid"
 
+    // MARK: - Search results list
+
+    /// Sectioned list rendered in place of the grid while a search is active.
+    /// Section order: Library first, then one section per enabled plugin in
+    /// the order the user enabled them. The library section is always
+    /// present (with a quiet "No matches" if empty); plugin sections appear
+    /// only for enabled plugins.
+    private var searchResultsList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Self.sectionSpacing) {
+                librarySection
+                ForEach(state.enabledPlugins) { plugin in
+                    sourceSection(for: plugin)
+                }
+            }
+            .padding(.horizontal, Theme.Library.gridMargin)
+            .padding(.top, Theme.Library.gridMargin)
+            .padding(.bottom, Theme.Library.gridMargin)
+            .frame(maxWidth: Self.searchListMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .scrollContentBackground(.hidden)
+    }
+
+    /// Cap so the rich rows don't stretch across an ultrawide window
+    /// (where they'd read as one continuous strip rather than a list).
+    /// Still gives a lot more room than the previous 880pt cap.
+    private static let searchListMaxWidth: CGFloat = 1200
+
+    /// Breathing room between sections — bigger than between rows so the
+    /// eye reads each section as a separate block.
+    private static let sectionSpacing: CGFloat = Theme.Spacing.xl
+
+    /// Vertical gap between rows inside a section.
+    private static let rowSpacing: CGFloat = 4
+
+    // MARK: Library section
+
+    private static let librarySectionKey = "__library__"
+
+    @ViewBuilder
+    private var librarySection: some View {
+        let books = filteredBooks
+        let isCollapsed = collapsedSectionIDs.contains(Self.librarySectionKey)
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            SearchSectionHeader(
+                title: librarySectionTitle,
+                resultCount: books.count,
+                isCollapsed: isCollapsed,
+                onToggle: { toggleSection(Self.librarySectionKey) }
+            )
+            if isCollapsed {
+                EmptyView()
+            } else if books.isEmpty {
+                rowPlaceholder("No matches")
+            } else {
+                ForEach(books) { book in
+                    SearchResultRow(
+                        item: .book(book),
+                        isSelected: selectedBookIDs.contains(book.id),
+                        deviceStatus: deviceStatus(for: book),
+                        onSelect: { handlePlainClick(book) },
+                        onActivate: {
+                            handlePlainClick(book)
+                            inspectorOpen = true
+                        }
+                    )
+                    .overlay(
+                        RightClickCatcher {
+                            if !selectedBookIDs.contains(book.id) {
+                                selectedBookIDs = [book.id]
+                                selectionAnchor = book.id
+                            }
+                            contextMenuBookID = book.id
+                        }
+                    )
+                    .popover(
+                        isPresented: Binding(
+                            get: { contextMenuBookID == book.id },
+                            set: { if !$0 { contextMenuBookID = nil } }
+                        ),
+                        arrowEdge: .top
+                    ) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            bookMenu(for: book) { contextMenuBookID = nil }
+                        }
+                        .menuPopoverContainer()
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Source section
+
+    @ViewBuilder
+    private func sourceSection(for plugin: PluginSource) -> some View {
+        let pluginState = pluginSearchStates[plugin.id]
+        let allDeduped = dedupedSourceResults(pluginState?.results ?? [])
+        let isExpanded = expandedSectionIDs.contains(plugin.id)
+        let visible = isExpanded ? allDeduped : Array(allDeduped.prefix(Self.sourceVisibleCap))
+        let hiddenCount = max(0, allDeduped.count - visible.count)
+        let isLoading = pluginState?.isLoading ?? false
+        let isCollapsed = collapsedSectionIDs.contains(plugin.id)
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            SearchSectionHeader(
+                title: plugin.displayName,
+                isLoading: isLoading,
+                failureMessage: pluginState?.failureMessage,
+                // Total deduped count, not visible — signals "there's more
+                // here" when the cap is in effect.
+                resultCount: isLoading ? nil : allDeduped.count,
+                isCollapsed: isCollapsed,
+                onToggle: { toggleSection(plugin.id) }
+            )
+            if isCollapsed {
+                EmptyView()
+            } else if isLoading && visible.isEmpty {
+                // Quiet placeholder while the plugin is still working — keeps
+                // the section weight present so the user doesn't see the
+                // layout jump as results land.
+                rowPlaceholder("Searching…")
+            } else if visible.isEmpty, pluginState?.failureMessage == nil {
+                rowPlaceholder("No matches")
+            } else {
+                ForEach(visible) { result in
+                    sourceRow(for: result, plugin: plugin)
+                }
+                if hiddenCount > 0 {
+                    showMoreFooter(remaining: hiddenCount) {
+                        expandedSectionIDs.insert(plugin.id)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Maximum source results shown by default. Plugins return whatever they
+    /// want; the cap keeps the section scannable. The "Show N more" footer
+    /// lifts the cap for that one section when the user wants the full list.
+    private static let sourceVisibleCap = 30
+
+    /// Footer button rendered at the bottom of a source section when more
+    /// results were fetched than the visible cap.
+    private func showMoreFooter(remaining: Int, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                Icon(symbol: "chevron.down", weight: .semibold, size: 10)
+                Text("Show \(remaining) more")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(.primary.opacity(Theme.Text.muted))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Toggles a section's collapsed state. Section ids: plugin id for
+    /// source sections, `librarySectionKey` for the library section.
+    private func toggleSection(_ key: String) {
+        if collapsedSectionIDs.contains(key) {
+            collapsedSectionIDs.remove(key)
+        } else {
+            collapsedSectionIDs.insert(key)
+        }
+    }
+
+    private func sourceRow(for result: PluginResult, plugin: PluginSource) -> some View {
+        SearchResultRow(
+            item: .source(result),
+            isSelected: selectedSourceID == result.id,
+            downloadState: downloadStates[result.id] ?? .idle,
+            onSelect: {
+                withAnimation(selectionAnimation) {
+                    selectedBookIDs = []
+                    selectionAnchor = nil
+                    selectedSourceID = result.id
+                    searchFocused = false
+                }
+            },
+            onActivate: {
+                withAnimation(selectionAnimation) {
+                    selectedBookIDs = []
+                    selectionAnchor = nil
+                    selectedSourceID = result.id
+                    searchFocused = false
+                }
+                inspectorOpen = true
+            },
+            onDownload: {
+                Task { await downloadAndImport(result) }
+            },
+            onCancelDownload: {
+                cancelDownload(result)
+            }
+        )
+        .overlay(
+            RightClickCatcher {
+                selectedBookIDs = []
+                selectionAnchor = nil
+                selectedSourceID = result.id
+                contextMenuSourceID = result.id
+            }
+        )
+        .popover(
+            isPresented: Binding(
+                get: { contextMenuSourceID == result.id },
+                set: { if !$0 { contextMenuSourceID = nil } }
+            ),
+            arrowEdge: .top
+        ) {
+            VStack(alignment: .leading, spacing: 0) {
+                sourceMenu(for: result) { contextMenuSourceID = nil }
+            }
+            .menuPopoverContainer()
+        }
+    }
+
+    // MARK: Section helpers
+
+    /// Active-collection name wins, otherwise generic "Library". Language
+    /// scope doesn't change the header — the sidebar already tells the user
+    /// which language is active, so we don't repeat it here.
+    private var librarySectionTitle: String {
+        if let id = selectedCollection,
+            let collection = state.collections.first(where: { $0.id == id })
+        {
+            return collection.name
+        }
+        return "Library"
+    }
+
+    /// Context-menu label for the source download action. Surfaces the
+    /// active collection so the user knows where the book will land, without
+    /// needing a separate subtitle in the section header.
+    private var downloadMenuLabel: String {
+        if let id = selectedCollection,
+            let collection = state.collections.first(where: { $0.id == id })
+        {
+            return "Download to \(collection.name)"
+        }
+        return "Download to Library"
+    }
+
+    /// Drops plugin results that fingerprint-match a library book. Doesn't
+    /// cap — `sourceSection` applies the visible cap with a "Show N more"
+    /// expansion so the user can see everything the plugin actually returned.
+    private func dedupedSourceResults(_ results: [PluginResult]) -> [PluginResult] {
+        guard !results.isEmpty else { return [] }
+        let libraryFingerprints: Set<String> = Set(state.books.map(libraryFingerprint(forBook:)))
+        return results.filter {
+            !libraryFingerprints.contains(libraryFingerprint(forResult: $0))
+        }
+    }
+
+    private func rowPlaceholder(_ message: String) -> some View {
+        Text(message)
+            .font(.system(size: 12))
+            .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
+            // Same horizontal padding as a row so empty-state copy sits
+            // under the section title (not indented past the thumb).
+            .padding(.horizontal, 12)
+            .padding(.vertical, Theme.Spacing.md)
+    }
+
     private func sourceCell(_ result: PluginResult, cardWidth: CGFloat) -> some View {
         BookCard(
             item: .source(result),
@@ -734,7 +1032,7 @@ struct LibraryView: View {
             dismiss()
         }
         let state = downloadStates[result.id] ?? .idle
-        bookMenuItem("Download to Library", icon: "icloud.and.arrow.down") {
+        bookMenuItem(downloadMenuLabel, icon: "icloud.and.arrow.down") {
             if state == .idle || state == .error {
                 Task { await downloadAndImport(result) }
             }
@@ -751,76 +1049,137 @@ struct LibraryView: View {
         }
     }
 
-    /// Debounces plugin search by 300ms then runs every enabled plugin
-    /// concurrently, accumulating results as they land. Cancels any
-    /// in-flight task so older queries can't overwrite newer ones. One
-    /// failing plugin doesn't take down the others — it logs and the rest
-    /// proceed.
+    /// Debounces plugin search by 300ms then runs every enabled plugin in
+    /// turn, transitioning each plugin's per-section state from `.loading`
+    /// → `.loaded` / `.failed` as its call settles. Cancels any in-flight
+    /// task so older queries can't overwrite newer ones. One failing plugin
+    /// surfaces in its own section header without taking down the others.
     private func schedulePluginSearch(for query: String) {
         pluginSearchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let plugins = state.enabledPlugins
         guard !trimmed.isEmpty, !plugins.isEmpty else {
-            pluginResults = []
+            pluginSearchStates = [:]
+            state.pluginSearchInFlight = false
             return
         }
         // Parse the search bar into structured fields. `field:value` tokens
         // become `query.title`, `query.author`, etc.; everything else stays
-        // in `query.text`. Plugins consume what they understand.
-        let parsedQuery = QueryParser.parse(trimmed)
-        guard !parsedQuery.isEmpty else {
-            pluginResults = []
+        // in `query.text`. The sidebar's selected language is layered on
+        // top of any user-typed `language:` token — explicit syntax wins.
+        let typedQuery = QueryParser.parse(trimmed)
+        guard !typedQuery.isEmpty else {
+            pluginSearchStates = [:]
+            state.pluginSearchInFlight = false
             return
         }
-        // Clear stale results immediately so a previous query's hits don't
-        // linger while the new one debounces + fetches. Combined with the
-        // in-flight flag flipping *before* the sleep below, the user sees
-        // "Searching sources…" during the whole window between keystroke
-        // and results landing — not 1s of stale hits followed by a swap.
-        pluginResults = []
+        let parsedQuery = mergeSidebarScope(into: typedQuery)
+        // Flip every enabled plugin to .loading up front so the section
+        // headers spin from the first keystroke after debounce, not only
+        // once results land. Disabled plugins get pruned out of the dict.
+        var initial: [String: PluginSearchState] = [:]
+        for plugin in plugins {
+            initial[plugin.id] = .loading
+        }
+        pluginSearchStates = initial
         state.pluginSearchInFlight = true
         pluginSearchTask = Task { @MainActor in
-            state.pluginSearchInFlight = true
             defer { state.pluginSearchInFlight = false }
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
 
-            // Run each enabled plugin in turn and accumulate results. With
-            // 2-3 plugins typical, sequential is plenty fast (~1s worst
-            // case after the 300ms debounce) and dodges the cross-actor
-            // region-isolation gymnastics a TaskGroup would need under
-            // Swift 6 strict concurrency. One slow plugin will block the
-            // next; revisit if/when that becomes a real problem.
+            // Run each enabled plugin in turn. With 2-3 plugins typical,
+            // sequential is plenty fast (~1s worst case after the 300ms
+            // debounce) and dodges the cross-actor region-isolation gymnastics
+            // a TaskGroup would need under Swift 6 strict concurrency. One
+            // slow plugin blocks the next; revisit when that becomes a real
+            // problem.
             for plugin in plugins {
                 if Task.isCancelled { break }
                 do {
-                    let results = try await plugin.search(parsedQuery)
+                    let raw = try await plugin.search(parsedQuery)
                     if Task.isCancelled { break }
-                    pluginResults.append(contentsOf: results)
+                    // Client-side language filter for plugins that don't
+                    // honour `query.language` server-side. Empty result
+                    // language is kept — plugin didn't tell us, we don't
+                    // second-guess.
+                    let filtered = filterByLanguage(raw, language: parsedQuery.language)
+                    pluginSearchStates[plugin.id] = .loaded(filtered)
                 } catch {
+                    let message =
+                        (error as? LocalizedError)?.errorDescription
+                        ?? error.localizedDescription
+                    pluginSearchStates[plugin.id] = .failed(message)
                     pluginLogger.error(
-                        "plugin \(plugin.id, privacy: .public) search failed: \(error.localizedDescription, privacy: .public)"
+                        "plugin \(plugin.id, privacy: .public) search failed: \(message, privacy: .public)"
                     )
                 }
             }
 
             guard !Task.isCancelled else { return }
-            // Cover enrichment is part of the same task — keeps the
-            // search-bar spinner running until covers are settled, so the
-            // user sees one continuous "loading" state rather than the
-            // spinner ending mid-blink as covers swap in.
-            let snapshot = pluginResults
+            // Cover enrichment runs against the union of loaded results.
+            // Per-plugin states are updated in place so each section's rows
+            // refresh independently as covers land.
+            let snapshot = pluginSearchStates.values.flatMap(\.results)
             if snapshot.contains(where: { $0.coverURL == nil }) {
                 let enrichments = await PluginCoverEnricher.enrich(snapshot)
                 guard !Task.isCancelled else { return }
-                pluginResults = pluginResults.map { existing in
-                    guard existing.coverURL == nil,
-                        let url = enrichments[existing.id]
-                    else { return existing }
-                    return existing.with(coverURL: url)
+                for (id, state) in pluginSearchStates {
+                    guard case .loaded(let results) = state else { continue }
+                    let enriched = results.map { result in
+                        guard result.coverURL == nil,
+                            let url = enrichments[result.id]
+                        else { return result }
+                        return result.with(coverURL: url)
+                    }
+                    pluginSearchStates[id] = .loaded(enriched)
                 }
             }
         }
+    }
+
+    /// Layers the sidebar's selected language into a parsed query. Explicit
+    /// `language:` tokens typed by the user win — sidebar scope is the
+    /// default, not an override.
+    private func mergeSidebarScope(into query: PluginQuery) -> PluginQuery {
+        guard query.language == nil, let lang = selectedLanguage, !lang.isEmpty else {
+            return query
+        }
+        return PluginQuery(
+            text: query.text,
+            title: query.title,
+            author: query.author,
+            language: lang,
+            isbn: query.isbn,
+            format: query.format,
+            year: query.year,
+            publisher: query.publisher
+        )
+    }
+
+    /// Drops plugin results whose declared language disagrees with the
+    /// requested filter. BCP 47 prefix match — `pt` matches `pt`, `pt-PT`,
+    /// `pt-BR`. Results with no declared language stay; the plugin didn't
+    /// tell us, so we don't filter them out.
+    private func filterByLanguage(
+        _ results: [PluginResult], language: String?
+    ) -> [PluginResult] {
+        guard let language, !language.isEmpty else { return results }
+        let needle = language.lowercased()
+        return results.filter { result in
+            let tag = result.language.lowercased()
+            if tag.isEmpty { return true }
+            return tag == needle || tag.hasPrefix(needle + "-")
+        }
+    }
+
+    /// Removes a single result from its plugin's `.loaded` list. Used when a
+    /// source result is converted into a library book after download and
+    /// the source card should disappear in the same frame the library row
+    /// appears.
+    private func removeSourceResult(id: String, pluginID: String) {
+        guard case .loaded(let results) = pluginSearchStates[pluginID] else { return }
+        pluginSearchStates[pluginID] = .loaded(results.filter { $0.id != id })
     }
 
     /// Click → inspect → download path and the double-click direct-download
@@ -865,7 +1224,8 @@ struct LibraryView: View {
             downloadStates[result.id] = .importing
             let importedBook = await state.importBook(
                 from: tempURL,
-                origin: .source(id: result.pluginID, ref: result.id)
+                origin: .source(id: result.pluginID, ref: result.id),
+                collection: selectedCollection
             )
             try? FileManager.default.removeItem(at: tempURL)
             // Cover fallback for plugins that supply a `coverURL` but ship a
@@ -874,39 +1234,34 @@ struct LibraryView: View {
             // and the plugin gave us a URL, fetch it. The user already
             // initiated this network activity by clicking Download, so
             // Principle 5 ("no network without user action") is satisfied.
+            //
+            // Pass the *current* book from state.books (which carries the
+            // collection memberships assigned by importBook), not the stale
+            // `importedBook` returned by the importer. setCover → updateBook
+            // rewrites the sidecar based on the passed book's collectionIDs;
+            // using the empty-membership reference would corrupt the sidecar
+            // and lose the collection assignment on the next disk sync.
             if let importedBook,
-                importedBook.coverPath == nil,
+                let current = state.books.first(where: { $0.id == importedBook.id }),
+                current.coverPath == nil,
                 let coverURL = result.coverURL
             {
                 if let data = try? await fetchCoverBytes(from: coverURL) {
                     let ext = inferCoverExtension(url: coverURL, data: data)
-                    await state.setCover(for: importedBook, fromData: data, ext: ext)
+                    await state.setCover(for: current, fromData: data, ext: ext)
                 }
-            }
-            // Hide the freshly-imported library card from the grid for the
-            // celebration window. Without this, the user sees the source
-            // card celebrating *and* the library card appearing in its
-            // sorted position simultaneously — reads like the source
-            // generated a separate book, not "the source became this
-            // library book". With it: source card celebrates alone, fades
-            // out, and the library card appears in its place once the
-            // window ends. One journey, not two.
-            if let importedBook {
-                celebratingBookIDs.insert(importedBook.id)
             }
             downloadStates[result.id] = .added
             try? await Task.sleep(for: .milliseconds(700))
-            // Instant swap. The library card was hidden during the celebration
-            // window; releasing both the plugin result and the celebrating
-            // book ID *without* animation makes the source card disappear and
-            // the library card take its sorted spot in the same frame.
+            // Source row disappears after the brief "Added" pulse. The
+            // library section already shows the new book in its sorted
+            // position — sections are visually distinct in list mode, so
+            // showing both transitions reads naturally as "source delivered
+            // this book to my library."
             var t = Transaction()
             t.disablesAnimations = true
             withTransaction(t) {
-                pluginResults.removeAll { $0.id == result.id }
-                if let importedBook {
-                    celebratingBookIDs.remove(importedBook.id)
-                }
+                removeSourceResult(id: result.id, pluginID: result.pluginID)
             }
             downloadStates[result.id] = nil
             if selectedSourceID == result.id {
@@ -1392,6 +1747,7 @@ struct LibraryView: View {
             sourceResult: inspectedSource,
             sourceDownloadState: inspectedSource.flatMap { downloadStates[$0.id] } ?? .idle,
             sourcePluginName: inspectedSource.flatMap { state.plugin(withID: $0.pluginID)?.displayName },
+            sourceDownloadIdleTitle: downloadMenuLabel,
             onSourceDownload: {
                 if let source = inspectedSource {
                     Task { await downloadAndImport(source) }
@@ -1588,12 +1944,15 @@ struct LibraryView: View {
         }()
         guard let currentIndex else { return }
 
+        // List mode (search) is a single column; the grid's column count
+        // doesn't refresh while the list is on screen, so use 1 explicitly.
+        let columnsForNav = isSearching ? 1 : gridColumnCount
         let step: Int
         switch direction {
-        case .left: step = -1
-        case .right: step = 1
-        case .up: step = -gridColumnCount
-        case .down: step = gridColumnCount
+        case .left: step = isSearching ? 0 : -1
+        case .right: step = isSearching ? 0 : 1
+        case .up: step = -columnsForNav
+        case .down: step = columnsForNav
         }
         let newIndex = max(0, min(items.count - 1, currentIndex + step))
         guard newIndex != currentIndex else { return }
