@@ -10,11 +10,23 @@ nonisolated struct EPUBToAZW3Converter: FormatConverter {
     let output: FileFormat = .azw3
 
     func convert(source: URL, into scratchDir: URL) async throws -> URL {
+        try await convert(source: source, into: scratchDir, coverSource: .epub)
+    }
+
+    /// EPUB-specific entry point that lets the delivery layer override
+    /// the cover (so user cover edits — including explicit removal —
+    /// reach the AZW3 instead of the writer always picking the EPUB's
+    /// embedded cover).
+    func convert(
+        source: URL,
+        into scratchDir: URL,
+        coverSource: EPUBSource.CoverSource
+    ) async throws -> URL {
         // Both `EPUBSource.read` and `AZW3Writer.encode()` are
         // synchronous and `nonisolated`; calling them from this
         // async method runs them on the cooperative pool without
         // any task-hop ceremony.
-        let manifest = try EPUBSource.read(from: source)
+        let manifest = try EPUBSource.read(from: source, coverSource: coverSource)
         let bytes = AZW3Writer(manifest: manifest).encode()
 
         let outputURL =

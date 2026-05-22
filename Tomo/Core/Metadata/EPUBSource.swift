@@ -5,7 +5,17 @@ import os
 /// Reads an EPUB and produces a `BookManifest` ready for the AZW3 writer.
 nonisolated enum EPUBSource {
 
-    static func read(from url: URL) throws -> BookManifest {
+    /// Where the manifest's cover bytes come from. Callers that don't
+    /// care (tests, generic conversion) use `.epub`. The delivery path
+    /// uses `.override` so that user cover edits — including explicit
+    /// "Remove Cover" (URL nil) — reach the AZW3 and the Kindle
+    /// home-screen thumbnail.
+    enum CoverSource: Sendable {
+        case epub
+        case override(URL?)
+    }
+
+    static func read(from url: URL, coverSource: CoverSource = .epub) throws -> BookManifest {
         let epub = try EPUBArchive.open(url)
         guard let title = epub.opf.title else {
             throw EPUBArchiveError.missingTitle
@@ -29,7 +39,11 @@ nonisolated enum EPUBSource {
 
         // Pass 2: rewrite `<img src>` to `kindle:embed:NNNN` and collect
         // the referenced body images.
-        let cover = extractCover(from: epub)
+        let cover: ImageData? =
+            switch coverSource {
+            case .epub: extractCover(from: epub)
+            case .override(let url): loadOverrideCover(url: url)
+            }
         let coverArchivePath = epub.opf.coverItem.map {
             EPUBArchive.resolvePath($0.href, baseDir: epub.opfDir)
         }
@@ -74,6 +88,34 @@ nonisolated enum EPUBSource {
 }
 
 // MARK: - Cover extraction
+
+/// Loads a user-edited cover from disk for the override path. JPEG/PNG/GIF
+/// are passed through; other formats (HEIC, TIFF, WebP) are re-encoded to
+/// JPEG because the AZW3 cover record only supports the three KF8-native
+/// types. Returns nil when the URL is nil (user removed the cover), the
+/// file is unreadable, or the bytes can't be decoded as an image — in
+/// every case the manifest carries no cover, which is the correct
+/// "manual override always wins" outcome.
+private nonisolated func loadOverrideCover(url: URL?) -> ImageData? {
+    guard let url else { return nil }
+    guard let bytes = try? Data(contentsOf: url) else {
+        metadataLogger.warning(
+            "cover override unreadable: \(url.path, privacy: .public)")
+        return nil
+    }
+    let mime = mimeFromExtension(url.path)
+    switch mime {
+    case "image/jpeg", "image/png", "image/gif":
+        return ImageData(bytes: bytes, mimeType: mime)
+    default:
+        guard let jpeg = CoverRasterizer.reencodeToJPEG(bytes) else {
+            metadataLogger.warning(
+                "cover override could not be decoded; dropping (was \(mime, privacy: .public))")
+            return nil
+        }
+        return ImageData(bytes: jpeg, mimeType: "image/jpeg")
+    }
+}
 
 private nonisolated func extractCover(from epub: EPUBArchive) -> ImageData? {
     guard let item = epub.opf.coverItem else { return nil }

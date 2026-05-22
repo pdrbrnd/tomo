@@ -137,6 +137,79 @@ struct EPUBSourceTests {
         }
     }
 
+    @Test func coverOverrideReplacesEPUBExtraction() throws {
+        // EPUB has no embedded cover. The override URL points at a file
+        // whose bytes the loader should pass through unchanged for the
+        // JPEG MIME path.
+        let url = try EPUBFixture.minimal(
+            title: "T", authors: [], language: "en",
+            spineDocs: [("ch1.xhtml", "<p>Body</p>")]
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let overrideBytes = Data("override-cover-bytes".utf8)
+        let overrideURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jpg")
+        try overrideBytes.write(to: overrideURL)
+        defer { try? FileManager.default.removeItem(at: overrideURL) }
+
+        let manifest = try EPUBSource.read(
+            from: url, coverSource: .override(overrideURL))
+        #expect(manifest.cover?.bytes == overrideBytes)
+        #expect(manifest.cover?.mimeType == "image/jpeg")
+    }
+
+    @Test func coverOverrideNilProducesNoCover() throws {
+        // User explicitly removed the cover — `.override(nil)` means
+        // "no cover" rather than "fall back to whatever the EPUB had".
+        let url = try EPUBFixture.minimal(
+            title: "T", authors: [], language: "en",
+            spineDocs: [("ch1.xhtml", "<p>Body</p>")]
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let manifest = try EPUBSource.read(from: url, coverSource: .override(nil))
+        #expect(manifest.cover == nil)
+    }
+
+    @Test func coverOverrideMissingFileProducesNoCover() throws {
+        // Stale `coverPath` pointing at a deleted file — fail gracefully
+        // (no cover) rather than throwing or falling back to the EPUB.
+        let url = try EPUBFixture.minimal(
+            title: "T", authors: [], language: "en",
+            spineDocs: [("ch1.xhtml", "<p>Body</p>")]
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString)-missing.jpg")
+
+        let manifest = try EPUBSource.read(
+            from: url, coverSource: .override(missing))
+        #expect(manifest.cover == nil)
+    }
+
+    @Test func coverOverrideUnsupportedMIMEThatCantDecodeProducesNoCover() throws {
+        // `.heic` extension lands the bytes in the re-encode branch.
+        // The bytes here aren't a real image, so `NSImage` can't decode
+        // them — the loader returns nil rather than passing junk through.
+        let url = try EPUBFixture.minimal(
+            title: "T", authors: [], language: "en",
+            spineDocs: [("ch1.xhtml", "<p>Body</p>")]
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let junk = Data("not-an-image".utf8)
+        let overrideURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).heic")
+        try junk.write(to: overrideURL)
+        defer { try? FileManager.default.removeItem(at: overrideURL) }
+
+        let manifest = try EPUBSource.read(
+            from: url, coverSource: .override(overrideURL))
+        #expect(manifest.cover == nil)
+    }
+
     @Test func nonEpubArchiveThrows() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(UUID().uuidString).epub")

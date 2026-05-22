@@ -8,6 +8,22 @@ nonisolated enum CoverRasterizer {
     private static let kindleCoverSize = CGSize(width: 1200, height: 1600)
     private static let jpegQuality: Double = 0.85
 
+    /// Re-encodes arbitrary `NSImage`-decodable bytes (HEIC, TIFF, WebP,
+    /// BMP, etc.) to JPEG at the source image's natural dimensions.
+    /// Used by the cover-override path so user-picked images in formats
+    /// the AZW3 writer doesn't support still reach the Kindle. Returns
+    /// nil if the bytes can't be decoded.
+    static func reencodeToJPEG(_ data: Data) -> Data? {
+        guard let image = NSImage(data: data),
+            let tiff = image.tiffRepresentation,
+            let rep = NSBitmapImageRep(data: tiff)
+        else { return nil }
+        return rep.representation(
+            using: .jpeg,
+            properties: [.compressionFactor: NSNumber(value: jpegQuality)]
+        )
+    }
+
     /// Renders SVG bytes to JPEG at a Kindle-friendly resolution.
     /// Returns nil if the input can't be decoded as an image.
     static func rasterizeSVG(

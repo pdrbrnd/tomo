@@ -85,7 +85,21 @@ nonisolated struct Kindle: BookDevice {
                 )
             }
             try await ConversionScratch.withScratchDirectory { scratch in
-                let converted = try await converter.convert(source: book.fileURL, into: scratch)
+                // For EPUB→AZW3, route through the EPUB-specific overload
+                // so the user's on-disk cover override (or its explicit
+                // removal) flows into both the AZW3 cover record and the
+                // home-screen thumbnail. Other source formats keep the
+                // generic registry path.
+                let converted: URL
+                if let epubConverter = converter as? EPUBToAZW3Converter {
+                    converted = try await epubConverter.convert(
+                        source: book.fileURL,
+                        into: scratch,
+                        coverSource: .override(book.coverURL)
+                    )
+                } else {
+                    converted = try await converter.convert(source: book.fileURL, into: scratch)
+                }
                 try await self.performCopy(from: converted, to: dest)
                 // Best-effort home-screen cover. Calibre's thumbnail-folder
                 // approach is the reliable path on modern firmwares — EXTH 201
@@ -93,7 +107,10 @@ nonisolated struct Kindle: BookDevice {
                 // home-screen scanner. Failures are non-fatal; the book is
                 // usable either way.
                 if sourceFormat == .epub {
-                    await self.writeKindleCoverThumbnail(epubURL: book.fileURL)
+                    await self.writeKindleCoverThumbnail(
+                        epubURL: book.fileURL,
+                        coverOverride: book.coverURL
+                    )
                 }
             }
 
@@ -135,12 +152,17 @@ nonisolated struct Kindle: BookDevice {
     /// Reads the EPUB to extract its cover and computed ASIN, then writes a
     /// resized JPEG to the Kindle's `system/thumbnails/` folder. Logs and
     /// returns on any failure — the home-screen cover is a nice-to-have, not
-    /// a delivery contract.
-    private func writeKindleCoverThumbnail(epubURL: URL) async {
+    /// a delivery contract. `coverOverride` mirrors the conversion path: when
+    /// set, the user's on-disk cover (or its explicit removal via `nil`)
+    /// drives the thumbnail rather than the EPUB's embedded cover.
+    private func writeKindleCoverThumbnail(epubURL: URL, coverOverride: URL?) async {
         let volumeURL = self.volumeURL
         do {
             try await Task.detached {
-                let manifest = try EPUBSource.read(from: epubURL)
+                let manifest = try EPUBSource.read(
+                    from: epubURL,
+                    coverSource: .override(coverOverride)
+                )
                 try KindleCoverThumbnail.write(manifest: manifest, volumeURL: volumeURL)
             }.value
         } catch {
