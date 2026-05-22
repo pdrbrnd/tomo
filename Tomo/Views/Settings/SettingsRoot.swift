@@ -68,24 +68,29 @@ struct SettingsRoot: View {
         switch section {
         case .languages:
             LanguageSettingsView(state: state)
+        case .privacy:
+            PrivacySettingsView()
         }
     }
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     case languages
+    case privacy
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .languages: "Languages"
+        case .privacy: "Privacy"
         }
     }
 
     var symbol: String {
         switch self {
         case .languages: "character.bubble"
+        case .privacy: "hand.raised"
         }
     }
 }

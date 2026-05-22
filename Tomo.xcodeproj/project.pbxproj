@@ -11,6 +11,7 @@
 		EB5500A1FA6F644000455500 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = EB5500A2FA6F644000455500 /* SwiftSoup */; };
 		EBA6776C2FAA0188003CB7DE /* AZW3 in Frameworks */ = {isa = PBXBuildFile; productRef = EBA6776B2FAA0188003CB7DE /* AZW3 */; };
 		EBA67C4D2FAA7CAC003CB7DE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = EBA67C4C2FAA7CAC003CB7DE /* Sparkle */; };
+		EBE57001300000010055EB01 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = EBE57002300000010055EB01 /* Sentry */; };
 		EBF14F862FA6F64400045D30 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = EBF14F852FA6F64400045D30 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -72,6 +73,7 @@
 				EBA6776C2FAA0188003CB7DE /* AZW3 in Frameworks */,
 				EB1F1F1F1F1F1F1F1F1F1F01 /* ZIPFoundation in Frameworks */,
 				EB5500A1FA6F644000455500 /* SwiftSoup in Frameworks */,
+				EBE57001300000010055EB01 /* Sentry in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -144,6 +146,7 @@
 				EB5500A2FA6F644000455500 /* SwiftSoup */,
 				EBA6776B2FAA0188003CB7DE /* AZW3 */,
 				EBA67C4C2FAA7CAC003CB7DE /* Sparkle */,
+				EBE57002300000010055EB01 /* Sentry */,
 			);
 			productName = Tomo;
 			productReference = EB4E9A582FA6F23B0015E496 /* Tomo.app */;
@@ -183,6 +186,7 @@
 				EB5500A3FA6F644000455500 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				EBA6776A2FAA0188003CB7DE /* XCRemoteSwiftPackageReference "swift-azw3" */,
 				EBA67C4B2FAA7CAC003CB7DE /* XCRemoteSwiftPackageReference "Sparkle" */,
+				EBE57003300000010055EB01 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EB4E9A592FA6F23B0015E496 /* Products */;
@@ -539,6 +543,14 @@
 				minimumVersion = 2.9.1;
 			};
 		};
+		EBE57003300000010055EB01 /* XCRemoteSwiftPackageReference "sentry-cocoa" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/getsentry/sentry-cocoa";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.14.0;
+			};
+		};
 		EBF14F842FA6F64400045D30 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
@@ -569,6 +581,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EBA67C4B2FAA7CAC003CB7DE /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		EBE57002300000010055EB01 /* Sentry */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EBE57003300000010055EB01 /* XCRemoteSwiftPackageReference "sentry-cocoa" */;
+			productName = Sentry;
 		};
 		EBF14F852FA6F64400045D30 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;

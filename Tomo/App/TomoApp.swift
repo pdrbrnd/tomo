@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Sparkle
 import SwiftUI
@@ -12,6 +13,10 @@ struct TomoApp: App {
         // value the first time it lays out. macOS Tahoe doesn't expose a
         // public knob for window corner radius — see WindowChromeOverride.
         WindowChromeOverride.install(cornerRadius: Theme.Radius.window)
+
+        // Crash reporting before Sparkle so it catches updater errors too.
+        // No-op if user opted out or no DSN is baked into Info.plist.
+        CrashReporter.start()
 
         // Sparkle owns its own lifecycle once started. Feed URL + public
         // EdDSA key live in Info.plist (`SUFeedURL`, `SUPublicEDKey`).
@@ -41,6 +46,9 @@ struct TomoApp: App {
                 OpenSettingsButton()
             }
             LibraryMenuCommands(state: state)
+            CommandGroup(replacing: .help) {
+                FeedbackMenuItems()
+            }
             #if DEBUG
                 CommandMenu("Debug") {
                     Button("Toggle Fake Device") {
@@ -52,6 +60,12 @@ struct TomoApp: App {
                         state.cycleFakeSendState()
                     }
                     .keyboardShortcut("d", modifiers: [.command, .control, .shift])
+
+                    Divider()
+
+                    Button("Send Test Sentry Event") {
+                        CrashReporter.captureTestEvent()
+                    }
                 }
             #endif
         }
@@ -82,6 +96,22 @@ private struct OpenSettingsButton: View {
             openWindow(id: TomoApp.settingsWindowID)
         }
         .keyboardShortcut(",", modifiers: .command)
+    }
+}
+
+/// Help menu contents. Replaces the default "Tomo Help" item (no help
+/// bundle exists) with the two real channels: mail and GitHub issues.
+private struct FeedbackMenuItems: View {
+    private static let feedbackEmail = URL(string: "mailto:feedback@tomolibrary.com?subject=Tomo%20Feedback")!
+    private static let issuesURL = URL(string: "https://github.com/pdrbrnd/tomo/issues/new")!
+
+    var body: some View {
+        Button("Send Feedback…") {
+            NSWorkspace.shared.open(Self.feedbackEmail)
+        }
+        Button("Report an Issue on GitHub") {
+            NSWorkspace.shared.open(Self.issuesURL)
+        }
     }
 }
 
