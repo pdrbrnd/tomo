@@ -54,6 +54,13 @@ main {
   gap: 60px;
 }
 
+.header-logo {
+  display: block;
+  width: 64px;
+  height: 64px;
+  margin: -8px 0 12px -8px;
+}
+
 header h1 {
   font-size: 44px;
   font-weight: 600;
@@ -227,6 +234,12 @@ footer .dot {
   main {
     padding: 64px 20px 32px;
     gap: 64px;
+  }
+
+  .header-logo {
+    width: 56px;
+    height: 56px;
+    margin: -8px 0 8px -8px;
   }
 
   header h1 {
