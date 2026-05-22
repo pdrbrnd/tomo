@@ -16,6 +16,8 @@ struct LibraryFocusContext {
     var hasDevice: Bool
     var isSidebarOpen: Bool
     var isInspectorOpen: Bool
+    var sortKey: BookSort
+    var sortAscending: Bool
 
     var showSelectedInFinder: () -> Void
     var moveSelectedToTrash: () -> Void
@@ -25,6 +27,8 @@ struct LibraryFocusContext {
     var beginNewCollection: () -> Void
     var toggleSidebar: () -> Void
     var toggleInspector: () -> Void
+    var setSortKey: (BookSort) -> Void
+    var setSortAscending: (Bool) -> Void
 }
 
 private struct LibraryFocusKey: FocusedValueKey {
@@ -146,6 +150,47 @@ private struct ViewMenuCommands: Commands {
                 ctx?.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: .command)
+            .disabled(ctx == nil)
+
+            Divider()
+
+            Menu("Sort By") {
+                // Inline Picker renders each option as a menu item with a
+                // checkmark on the current choice — standard macOS behaviour
+                // for radio-style menu groups. `labelsHidden` suppresses the
+                // Picker's own label from appearing as a header above the
+                // items so we get a clean Finder-style list.
+                Picker(
+                    selection: Binding(
+                        get: { ctx?.sortKey ?? .title },
+                        set: { ctx?.setSortKey($0) }
+                    )
+                ) {
+                    ForEach(BookSort.allCases) { option in
+                        Text(option.label).tag(option)
+                    }
+                } label: {
+                    Text("Sort key")
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+
+                Divider()
+
+                Picker(
+                    selection: Binding(
+                        get: { ctx?.sortAscending ?? true },
+                        set: { ctx?.setSortAscending($0) }
+                    )
+                ) {
+                    Text("Ascending").tag(true)
+                    Text("Descending").tag(false)
+                } label: {
+                    Text("Direction")
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            }
             .disabled(ctx == nil)
         }
     }

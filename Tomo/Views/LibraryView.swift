@@ -9,6 +9,8 @@ struct LibraryView: View {
     @State private var selectionAnchor: Book.ID?
     @State private var inspectorOpen = false
     @AppStorage("sidebar.open") private var sidebarOpen = false
+    @AppStorage("library.sort.key") private var sortKeyRaw = BookSort.title.rawValue
+    @AppStorage("library.sort.ascending") private var sortAscending = true
     /// Bumped by the menu bar's "New Collection…" action — `LibrarySidebar`
     /// watches this so the inline-create field gets focused without lifting
     /// its create state up.
@@ -91,6 +93,10 @@ struct LibraryView: View {
     /// Collection + language are independent axes AND'd with each other and
     /// with the search query. Standard "OR within an axis, AND between axes"
     /// — degenerate to single-select since each axis only holds one value.
+    private var sortKey: BookSort {
+        BookSort(rawValue: sortKeyRaw) ?? .title
+    }
+
     private var filteredBooks: [Book] {
         // Same parser used for plugin search. Library books get the same
         // structured filters (`format:epub`, `author:saramago`, etc.) so the
@@ -102,11 +108,12 @@ struct LibraryView: View {
         } else {
             bySearch = state.books.filter { bookMatches(book: $0, query: parsedQuery) }
         }
-        return bySearch.filter { book in
+        let filtered = bySearch.filter { book in
             (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
                 && (selectedLanguage.map { matchesSidebarLanguage(book: book, base: $0) } ?? true)
                 && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
         }
+        return filtered.sorted(by: sortKey, ascending: sortAscending)
     }
 
     /// Sidebar language selections are base BCP 47 codes ("pt", "en"). A
@@ -1921,6 +1928,8 @@ struct LibraryView: View {
             hasDevice: device != nil,
             isSidebarOpen: sidebarOpen,
             isInspectorOpen: inspectorOpen,
+            sortKey: sortKey,
+            sortAscending: sortAscending,
             showSelectedInFinder: {
                 state.showInFinder(books: selectedBooks)
             },
@@ -1949,7 +1958,9 @@ struct LibraryView: View {
             focusSearch: { searchFocused = true },
             beginNewCollection: { newCollectionTrigger = UUID() },
             toggleSidebar: { sidebarOpen.toggle() },
-            toggleInspector: { inspectorOpen.toggle() }
+            toggleInspector: { inspectorOpen.toggle() },
+            setSortKey: { sortKeyRaw = $0.rawValue },
+            setSortAscending: { sortAscending = $0 }
         )
     }
 
