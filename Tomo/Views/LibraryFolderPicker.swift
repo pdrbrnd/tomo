@@ -51,7 +51,7 @@ struct LibraryFolderPicker: View {
         HStack(spacing: 6) {
             Icon(symbol: "folder", weight: .regular, size: 11)
                 .foregroundStyle(.primary.opacity(Theme.Text.muted))
-            Text(folder?.lastPathComponent ?? "Choose Library…")
+            Text(folder?.lastPathComponent ?? "Choose folder...")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.primary.opacity(Theme.Text.primary))
                 .lineLimit(1)
