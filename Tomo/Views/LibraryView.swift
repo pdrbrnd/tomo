@@ -33,6 +33,13 @@ struct LibraryView: View {
     /// Section views read state per plugin to render their own headers and
     /// rows without the parent needing to fan out signals.
     @State private var pluginSearchStates: [String: PluginSearchState] = [:]
+    /// Section ids the user has manually collapsed within the current search
+    /// session. Cleared when the search field empties so each new search
+    /// session starts with every section expanded.
+    @State private var collapsedSectionIDs: Set<String> = []
+    /// Source sections the user has "shown all" for. Same persistence rule
+    /// as `collapsedSectionIDs` — within-session, reset on search-empty.
+    @State private var expandedSectionIDs: Set<String> = []
     /// Cancellable handle to the in-flight plugin search. Replaced on every
     /// keystroke so older queries can't clobber newer ones.
     @State private var pluginSearchTask: Task<Void, Never>?
@@ -328,6 +335,13 @@ struct LibraryView: View {
         .task(id: state.libraryFolder) { await state.syncWithDisk() }
         .onChange(of: searchText) { _, newValue in
             schedulePluginSearch(for: newValue)
+            // Each new search session starts fresh. Within a session
+            // (incremental keystrokes) the collapse / show-more state
+            // persists so a refined query doesn't undo the user's choices.
+            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                collapsedSectionIDs = []
+                expandedSectionIDs = []
+            }
         }
         .onChange(of: state.enabledPluginIDs) { _, newSet in
             // Drop state for plugins that are no longer enabled.
@@ -720,15 +734,22 @@ struct LibraryView: View {
 
     // MARK: Library section
 
+    private static let librarySectionKey = "__library__"
+
     @ViewBuilder
     private var librarySection: some View {
         let books = filteredBooks
+        let isCollapsed = collapsedSectionIDs.contains(Self.librarySectionKey)
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             SearchSectionHeader(
                 title: librarySectionTitle,
-                resultCount: books.count
+                resultCount: books.count,
+                isCollapsed: isCollapsed,
+                onToggle: { toggleSection(Self.librarySectionKey) }
             )
-            if books.isEmpty {
+            if isCollapsed {
+                EmptyView()
+            } else if books.isEmpty {
                 rowPlaceholder("No matches")
             } else {
                 ForEach(books) { book in
@@ -773,27 +794,74 @@ struct LibraryView: View {
     @ViewBuilder
     private func sourceSection(for plugin: PluginSource) -> some View {
         let pluginState = pluginSearchStates[plugin.id]
-        let results = dedupedSourceResults(pluginState?.results ?? [])
+        let allDeduped = dedupedSourceResults(pluginState?.results ?? [])
+        let isExpanded = expandedSectionIDs.contains(plugin.id)
+        let visible = isExpanded ? allDeduped : Array(allDeduped.prefix(Self.sourceVisibleCap))
+        let hiddenCount = max(0, allDeduped.count - visible.count)
         let isLoading = pluginState?.isLoading ?? false
+        let isCollapsed = collapsedSectionIDs.contains(plugin.id)
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             SearchSectionHeader(
                 title: plugin.displayName,
                 isLoading: isLoading,
                 failureMessage: pluginState?.failureMessage,
-                resultCount: isLoading ? nil : results.count
+                // Total deduped count, not visible — signals "there's more
+                // here" when the cap is in effect.
+                resultCount: isLoading ? nil : allDeduped.count,
+                isCollapsed: isCollapsed,
+                onToggle: { toggleSection(plugin.id) }
             )
-            if isLoading && results.isEmpty {
+            if isCollapsed {
+                EmptyView()
+            } else if isLoading && visible.isEmpty {
                 // Quiet placeholder while the plugin is still working — keeps
                 // the section weight present so the user doesn't see the
                 // layout jump as results land.
                 rowPlaceholder("Searching…")
-            } else if results.isEmpty, pluginState?.failureMessage == nil {
+            } else if visible.isEmpty, pluginState?.failureMessage == nil {
                 rowPlaceholder("No matches")
             } else {
-                ForEach(results) { result in
+                ForEach(visible) { result in
                     sourceRow(for: result, plugin: plugin)
                 }
+                if hiddenCount > 0 {
+                    showMoreFooter(remaining: hiddenCount) {
+                        expandedSectionIDs.insert(plugin.id)
+                    }
+                }
             }
+        }
+    }
+
+    /// Maximum source results shown by default. Plugins return whatever they
+    /// want; the cap keeps the section scannable. The "Show N more" footer
+    /// lifts the cap for that one section when the user wants the full list.
+    private static let sourceVisibleCap = 30
+
+    /// Footer button rendered at the bottom of a source section when more
+    /// results were fetched than the visible cap.
+    private func showMoreFooter(remaining: Int, onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                Icon(symbol: "chevron.down", weight: .semibold, size: 10)
+                Text("Show \(remaining) more")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(.primary.opacity(Theme.Text.muted))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Toggles a section's collapsed state. Section ids: plugin id for
+    /// source sections, `librarySectionKey` for the library section.
+    private func toggleSection(_ key: String) {
+        if collapsedSectionIDs.contains(key) {
+            collapsedSectionIDs.remove(key)
+        } else {
+            collapsedSectionIDs.insert(key)
         }
     }
 
@@ -874,15 +942,15 @@ struct LibraryView: View {
         return "Download to Library"
     }
 
-    /// Drops plugin results that fingerprint-match a library book and caps
-    /// the visible run so a chatty plugin can't blow out the section.
+    /// Drops plugin results that fingerprint-match a library book. Doesn't
+    /// cap — `sourceSection` applies the visible cap with a "Show N more"
+    /// expansion so the user can see everything the plugin actually returned.
     private func dedupedSourceResults(_ results: [PluginResult]) -> [PluginResult] {
         guard !results.isEmpty else { return [] }
         let libraryFingerprints: Set<String> = Set(state.books.map(libraryFingerprint(forBook:)))
-        let deduped = results.filter {
+        return results.filter {
             !libraryFingerprints.contains(libraryFingerprint(forResult: $0))
         }
-        return Array(deduped.prefix(30))
     }
 
     private func rowPlaceholder(_ message: String) -> some View {
