@@ -63,7 +63,7 @@ private struct SourcesPopoverContent: View {
             }
             if !state.pluginSources.isEmpty {
                 Button {
-                    state.reloadPluginSource()
+                    Task { await state.reloadPluginSource() }
                 } label: {
                     rowLabel(icon: "arrow.clockwise", title: "Reload")
                 }

@@ -354,6 +354,7 @@ struct LibraryView: View {
         .animation(paneAnimation, value: inspectorOpen)
         .animation(paneAnimation, value: sidebarOpen)
         .focusedSceneValue(\.libraryContext, libraryFocusContext)
+        .task { await state.bootstrap() }
         .task(id: state.libraryFolder) { await state.syncWithDisk() }
         .onChange(of: searchText) { _, newValue in
             schedulePluginSearch(for: newValue)

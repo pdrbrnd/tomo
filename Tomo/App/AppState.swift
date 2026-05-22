@@ -65,8 +65,9 @@ final class AppState {
 
     /// Every bundled language profile, regardless of user enable/disable state.
     /// Use this for the manual locale picker — manual selection is unconstrained
-    /// by what the user has chosen to auto-detect.
-    let allProfiles: [LanguageProfile]
+    /// by what the user has chosen to auto-detect. Empty until `bootstrap()`
+    /// finishes loading the bundled JSONs off-main.
+    private(set) var allProfiles: [LanguageProfile] = []
 
     /// IDs of profiles the user has switched off in Settings. Persisted in
     /// UserDefaults via `DisabledProfilesStore`.
@@ -147,7 +148,7 @@ final class AppState {
 
     /// User-loaded JS plugins used as search sources. All `.js` files in the
     /// plugins directory; replaced wholesale on reload. Empty until
-    /// `loadPluginsIfPresent()` runs.
+    /// `reloadPluginSource()` runs (via `bootstrap()` or a user-triggered reload).
     private(set) var pluginSources: [PluginSource] = []
 
     /// IDs of plugins currently enabled for search. Persisted in
@@ -181,24 +182,34 @@ final class AppState {
 
     init() {
         self.libraryFolder = LibraryFolder.load()
-        self.allProfiles = LanguageProfileStore.loadBundled()
         self.disabledProfileIDs = DisabledProfilesStore.load()
-        let detected = DeviceScanner.detect()
-        self.device = detected
-        self.deviceFilenames = detected?.filenames() ?? []
-        startVolumeMonitoring()
         if let stored = UserDefaults.standard.array(forKey: Self.enabledPluginIDsKey) as? [String] {
             self.enabledPluginIDs = Set(stored)
         }
-        PluginDirectory.seedBundledPluginsIfNeeded()
-        loadPluginsIfPresent()
-        // First-run for the per-plugin toggle: enable everything that loaded
-        // so the user gets working search out of the box without a tour.
-        if !UserDefaults.standard.bool(forKey: Self.didInitPluginEnableStateKey) {
-            self.enabledPluginIDs = Set(pluginSources.map(\.id))
-            persistEnabledPluginIDs()
-            UserDefaults.standard.set(true, forKey: Self.didInitPluginEnableStateKey)
+        startVolumeMonitoring()
+    }
+
+    /// Heavy startup work, kept out of `init()` so MainActor stays unblocked
+    /// during the first SwiftUI render. Invoked from `LibraryView.task` so the
+    /// window draws empty-state UI immediately and fills in as each step lands.
+    ///
+    /// Background: Sentry app-hang reports (TOMO-MACOS-2) sampled main mid-way
+    /// through the first SwiftUI update pass. The cumulative cost of doing
+    /// profile loading, device scanning, plugin JS reads, and JSContext parsing
+    /// inside `init()` pushed startup past the 2 s threshold on slower hosts.
+    func bootstrap() async {
+        self.allProfiles = await Task.detached { LanguageProfileStore.loadBundled() }.value
+
+        let detected = await Task.detached { DeviceScanner.detect() }.value
+        self.device = detected
+        if let detected {
+            self.deviceFilenames = await Task.detached { detected.filenames() }.value
+        } else {
+            self.deviceFilenames = []
         }
+
+        await Task.detached { PluginDirectory.seedBundledPluginsIfNeeded() }.value
+        await reloadPluginSource()
     }
 
     private func persistEnabledPluginIDs() {
@@ -211,10 +222,14 @@ final class AppState {
         persistEnabledPluginIDs()
     }
 
-    /// Loads every plugin in the plugins directory. Folder is source of
-    /// truth — rename / delete on disk takes effect on the next reload.
+    /// Re-runs plugin loading off-main: reads JS source files in a detached
+    /// task, then constructs `PluginSource` instances on MainActor (where
+    /// `JSContext` must live). Call after the user adds or removes a plugin
+    /// file in the plugins directory, or from `bootstrap()`.
+    ///
     /// One broken plugin doesn't prevent others from loading; the first
-    /// error surfaces as a toast.
+    /// error surfaces as a toast. Also applies the first-run "enable
+    /// everything" default exactly once via a UserDefaults flag.
     ///
     /// Note: replacing `pluginSources` doesn't actively cancel in-flight
     /// `fetch` Tasks owned by prior `PluginHost`s. Those Tasks hop back to
@@ -222,8 +237,9 @@ final class AppState {
     /// have been replaced — harmless (the resolved value is discarded by
     /// an abandoned Promise) but worth knowing. Productionisation should
     /// track in-flight tasks per host and cancel on reload.
-    private func loadPluginsIfPresent() {
-        let result = PluginDirectory.loadAllPlugins()
+    func reloadPluginSource() async {
+        let read = await Task.detached { PluginDirectory.readAllPluginSources() }.value
+        let result = PluginDirectory.loadAllPlugins(from: read.sources)
         self.pluginSources = result.plugins
         // Drop enabled IDs whose plugin file is gone so the set stays
         // tight to actually-loaded plugins.
@@ -232,16 +248,17 @@ final class AppState {
             enabledPluginIDs.formIntersection(loadedIDs)
             persistEnabledPluginIDs()
         }
+        // First-run for the per-plugin toggle: enable everything that loaded
+        // so the user gets working search out of the box without a tour.
+        if !UserDefaults.standard.bool(forKey: Self.didInitPluginEnableStateKey) {
+            self.enabledPluginIDs = Set(pluginSources.map(\.id))
+            persistEnabledPluginIDs()
+            UserDefaults.standard.set(true, forKey: Self.didInitPluginEnableStateKey)
+        }
         pluginLogger.info("loaded \(result.plugins.count, privacy: .public) plugin(s)")
-        if let err = result.firstError {
+        if let err = read.firstError ?? result.firstError {
             showToast(.error("Plugin failed to load: \(err.localizedDescription)"))
         }
-    }
-
-    /// Re-runs plugin loading. Call after the user adds or removes a plugin
-    /// file in the plugins directory.
-    func reloadPluginSource() {
-        loadPluginsIfPresent()
     }
 
     /// Copies a user-chosen `.js` into the plugins directory, preserving the
@@ -262,7 +279,7 @@ final class AppState {
                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
             }.value
             let installedID = sourceURL.deletingPathExtension().lastPathComponent
-            reloadPluginSource()
+            await reloadPluginSource()
             if let installed = plugin(withID: installedID) {
                 // Newly installed plugins start enabled. Existing plugins
                 // overwritten by the same name keep whatever state they had.

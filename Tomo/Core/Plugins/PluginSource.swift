@@ -14,17 +14,11 @@ final class PluginSource: Identifiable {
     let displayName: String
     private let host: PluginHost
 
-    /// Loads `pluginPath` as a JS source file and instantiates a host. Throws
-    /// `PluginError.loadFailed` if the file can't be read, parsed, or doesn't
-    /// expose the required `search` / `download` functions.
-    init(displayName: String, pluginPath: URL) throws {
-        let source: String
-        do {
-            source = try String(contentsOf: pluginPath, encoding: .utf8)
-        } catch {
-            throw PluginError.loadFailed(
-                "could not read \(pluginPath.lastPathComponent): \(error.localizedDescription)")
-        }
+    /// Instantiates a host from already-read JS source. Splitting file I/O
+    /// from host construction lets `PluginDirectory.readAllPluginSources`
+    /// hit disk off-main while keeping `PluginHost` (and its `JSContext`)
+    /// pinned to MainActor.
+    init(displayName: String, source: String) throws {
         self.host = try PluginHost(pluginSource: source)
         self.displayName = displayName
         self.id = displayName
@@ -64,7 +58,11 @@ final class PluginSource: Identifiable {
 /// The folder is the source of truth: every `.js` at that path is a candidate
 /// plugin. Spike loads the first one (alphabetical) — multi-plugin merging is
 /// productionisation work.
-enum PluginDirectory {
+///
+/// `nonisolated` so disk reads and bundle seeding can run from `Task.detached`
+/// during `AppState.bootstrap`. The MainActor-only step (constructing
+/// `PluginSource` from pre-read JS) is `loadAllPlugins(from:)`.
+nonisolated enum PluginDirectory {
     static func directoryURL() -> URL? {
         guard
             let appSupport = FileManager.default.urls(
@@ -92,20 +90,57 @@ enum PluginDirectory {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// Loads every plugin found in the directory. Continues past individual
-    /// failures so one broken plugin doesn't take down the rest; returns the
-    /// successfully-loaded plugins plus the first error encountered (if any)
-    /// for the caller to surface as a toast.
-    static func loadAllPlugins() -> (plugins: [PluginSource], firstError: Error?) {
-        var plugins: [PluginSource] = []
+    /// One plugin's display name + JS source, ready to feed into `PluginSource`
+    /// on MainActor. `Sendable` so the array can cross actor boundaries when
+    /// `readAllPluginSources` runs detached.
+    struct LoadedPluginSource: Sendable {
+        let displayName: String
+        let source: String
+    }
+
+    /// Reads every `.js` file in the plugins directory off-main. Returns the
+    /// successfully-read sources plus the first read error (if any) — JS
+    /// parsing happens later in `loadAllPlugins(from:)` on MainActor.
+    static func readAllPluginSources() -> (sources: [LoadedPluginSource], firstError: Error?) {
+        var sources: [LoadedPluginSource] = []
         var firstError: Error?
         for url in availablePluginURLs() {
             let displayName = url.deletingPathExtension().lastPathComponent
             do {
-                plugins.append(try PluginSource(displayName: displayName, pluginPath: url))
+                let source = try String(contentsOf: url, encoding: .utf8)
+                sources.append(LoadedPluginSource(displayName: displayName, source: source))
             } catch {
                 pluginLogger.error(
-                    "loading \(url.lastPathComponent, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                    "reading \(url.lastPathComponent, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                )
+                if firstError == nil {
+                    firstError = PluginError.loadFailed(
+                        "could not read \(url.lastPathComponent): \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+        return (sources, firstError)
+    }
+
+    /// Instantiates a `PluginSource` for each pre-read JS source. Runs on
+    /// MainActor because `PluginSource` / `PluginHost` are `@MainActor` (the
+    /// underlying `JSContext` is single-threaded). Continues past individual
+    /// failures so one broken plugin doesn't take down the rest.
+    @MainActor
+    static func loadAllPlugins(
+        from sources: [LoadedPluginSource]
+    ) -> (plugins: [PluginSource], firstError: Error?) {
+        var plugins: [PluginSource] = []
+        var firstError: Error?
+        for entry in sources {
+            do {
+                plugins.append(
+                    try PluginSource(displayName: entry.displayName, source: entry.source)
+                )
+            } catch {
+                pluginLogger.error(
+                    "loading \(entry.displayName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
                 )
                 if firstError == nil { firstError = error }
             }

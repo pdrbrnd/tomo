@@ -240,7 +240,7 @@ private struct LibraryMenuLibraryMenu: Commands {
             }
 
             Button("Reload Plugins") {
-                state.reloadPluginSource()
+                Task { await state.reloadPluginSource() }
             }
         }
     }
