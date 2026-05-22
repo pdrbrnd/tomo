@@ -43,11 +43,6 @@ struct LibraryView: View {
     /// instant the task is created so the user's cancel click can hit
     /// `task.cancel()` even before the first byte arrives.
     @State private var downloadTasks: [String: URLSessionTask] = [:]
-    /// Library books that just landed via a source download and whose source
-    /// card is still showing its "Added" celebration. The library card is
-    /// filtered out of the grid for the celebration window so the user sees
-    /// one card (the source celebrating) rather than two simultaneously.
-    @State private var celebratingBookIDs: Set<UUID> = []
     /// Selection slot for source results — separate from `selectedBookIDs`
     /// because source items aren't part of the multi-select model. Setting
     /// this clears `selectedBookIDs` (and vice versa) so only one item can
@@ -97,8 +92,7 @@ struct LibraryView: View {
             bySearch = state.books.filter { bookMatches(book: $0, query: parsedQuery) }
         }
         return bySearch.filter { book in
-            !celebratingBookIDs.contains(book.id)
-                && (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
+            (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
                 && (selectedLanguage.map { book.locale == $0 } ?? true)
                 && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
         }
@@ -697,29 +691,39 @@ struct LibraryView: View {
     /// only for enabled plugins.
     private var searchResultsList: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 librarySection
                 ForEach(state.enabledPlugins) { plugin in
                     sourceSection(for: plugin)
                 }
-                // Tail spacer so the bottom chrome doesn't sit on the last
-                // row when the list is short.
-                Color.clear.frame(height: Theme.Spacing.xxl)
             }
-            .padding(.horizontal, Theme.Library.gridMargin - Theme.Spacing.md)
-            .padding(.top, Theme.Spacing.lg)
-            .frame(maxWidth: 880, alignment: .leading)
+            .padding(.horizontal, Theme.Library.gridMargin)
+            .padding(.top, Theme.Library.gridMargin)
+            .padding(.bottom, Theme.Library.gridMargin)
+            .frame(maxWidth: Self.searchListMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .scrollContentBackground(.hidden)
     }
+
+    /// Cap so the rich rows don't stretch across an ultrawide window
+    /// (where they'd read as one continuous strip rather than a list).
+    /// Still gives a lot more room than the previous 880pt cap.
+    private static let searchListMaxWidth: CGFloat = 1200
+
+    /// Breathing room between sections — bigger than between rows so the
+    /// eye reads each section as a separate block.
+    private static let sectionSpacing: CGFloat = Theme.Spacing.xl
+
+    /// Vertical gap between rows inside a section.
+    private static let rowSpacing: CGFloat = 4
 
     // MARK: Library section
 
     @ViewBuilder
     private var librarySection: some View {
         let books = filteredBooks
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
             SearchSectionHeader(
                 title: librarySectionTitle,
                 resultCount: books.count
@@ -732,7 +736,6 @@ struct LibraryView: View {
                         item: .book(book),
                         isSelected: selectedBookIDs.contains(book.id),
                         deviceStatus: deviceStatus(for: book),
-                        bookCollections: collections(excludingActive: book.collectionIDs),
                         onSelect: { handlePlainClick(book) },
                         onActivate: {
                             handlePlainClick(book)
@@ -772,7 +775,7 @@ struct LibraryView: View {
         let pluginState = pluginSearchStates[plugin.id]
         let results = dedupedSourceResults(pluginState?.results ?? [])
         let isLoading = pluginState?.isLoading ?? false
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
             SearchSectionHeader(
                 title: plugin.displayName,
                 subtitle: sourceSectionSubtitle,
@@ -869,15 +872,6 @@ struct LibraryView: View {
         return "Downloads will add to \(collection.name)"
     }
 
-    /// Collections this book is in, with the currently-scoped collection
-    /// removed (showing it as a chip on a row already inside it would be
-    /// redundant noise).
-    private func collections(excludingActive memberships: Set<UUID>) -> [Collection] {
-        var ids = memberships
-        if let active = selectedCollection { ids.remove(active) }
-        return state.collections.filter { ids.contains($0.id) }
-    }
-
     /// Drops plugin results that fingerprint-match a library book and caps
     /// the visible run so a chatty plugin can't blow out the section.
     private func dedupedSourceResults(_ results: [PluginResult]) -> [PluginResult] {
@@ -893,7 +887,9 @@ struct LibraryView: View {
         Text(message)
             .font(.system(size: 12))
             .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
-            .padding(.horizontal, Theme.Spacing.menuInset + Theme.Spacing.md + Theme.Spacing.md)
+            // Same horizontal padding as a row so empty-state copy sits
+            // under the section title (not indented past the thumb).
+            .padding(.horizontal, 12)
             .padding(.vertical, Theme.Spacing.md)
     }
 
@@ -1168,39 +1164,34 @@ struct LibraryView: View {
             // and the plugin gave us a URL, fetch it. The user already
             // initiated this network activity by clicking Download, so
             // Principle 5 ("no network without user action") is satisfied.
+            //
+            // Pass the *current* book from state.books (which carries the
+            // collection memberships assigned by importBook), not the stale
+            // `importedBook` returned by the importer. setCover → updateBook
+            // rewrites the sidecar based on the passed book's collectionIDs;
+            // using the empty-membership reference would corrupt the sidecar
+            // and lose the collection assignment on the next disk sync.
             if let importedBook,
-                importedBook.coverPath == nil,
+                let current = state.books.first(where: { $0.id == importedBook.id }),
+                current.coverPath == nil,
                 let coverURL = result.coverURL
             {
                 if let data = try? await fetchCoverBytes(from: coverURL) {
                     let ext = inferCoverExtension(url: coverURL, data: data)
-                    await state.setCover(for: importedBook, fromData: data, ext: ext)
+                    await state.setCover(for: current, fromData: data, ext: ext)
                 }
-            }
-            // Hide the freshly-imported library card from the grid for the
-            // celebration window. Without this, the user sees the source
-            // card celebrating *and* the library card appearing in its
-            // sorted position simultaneously — reads like the source
-            // generated a separate book, not "the source became this
-            // library book". With it: source card celebrates alone, fades
-            // out, and the library card appears in its place once the
-            // window ends. One journey, not two.
-            if let importedBook {
-                celebratingBookIDs.insert(importedBook.id)
             }
             downloadStates[result.id] = .added
             try? await Task.sleep(for: .milliseconds(700))
-            // Instant swap. The library card was hidden during the celebration
-            // window; releasing both the plugin result and the celebrating
-            // book ID *without* animation makes the source card disappear and
-            // the library card take its sorted spot in the same frame.
+            // Source row disappears after the brief "Added" pulse. The
+            // library section already shows the new book in its sorted
+            // position — sections are visually distinct in list mode, so
+            // showing both transitions reads naturally as "source delivered
+            // this book to my library."
             var t = Transaction()
             t.disablesAnimations = true
             withTransaction(t) {
                 removeSourceResult(id: result.id, pluginID: result.pluginID)
-                if let importedBook {
-                    celebratingBookIDs.remove(importedBook.id)
-                }
             }
             downloadStates[result.id] = nil
             if selectedSourceID == result.id {

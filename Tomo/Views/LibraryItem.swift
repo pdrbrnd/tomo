@@ -87,4 +87,15 @@ enum LibraryItem: Identifiable {
         case .source(let r): return r.sizeBytes
         }
     }
+
+    /// Publisher (sources only — surfaced from the plugin's freeform metadata
+    /// bag under any `publisher`-like key). The Book model doesn't carry a
+    /// publisher field today, so library rows return nil here.
+    var publisher: String? {
+        guard case .source(let r) = self else { return nil }
+        let needle = "publisher"
+        let field = r.metadata.first { $0.key.lowercased() == needle }
+        let value = field?.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (value?.isEmpty == false) ? value : nil
+    }
 }

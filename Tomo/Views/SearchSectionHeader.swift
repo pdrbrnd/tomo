@@ -33,8 +33,11 @@ struct SearchSectionHeader: View {
                     .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
             }
         }
-        .padding(.horizontal, Theme.Spacing.menuInset + Theme.Spacing.md)
-        .padding(.top, Theme.Spacing.lg)
+        // 12pt horizontal padding aligns with `SearchResultRow`'s outer
+        // padding so the header title sits directly above the rows' thumb
+        // column. Vertical breathing room is on the bottom only — the
+        // outer LazyVStack provides the gap above.
+        .padding(.horizontal, 12)
         .padding(.bottom, Theme.Spacing.sm)
     }
 

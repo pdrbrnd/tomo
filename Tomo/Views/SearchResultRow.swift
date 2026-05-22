@@ -12,10 +12,6 @@ struct SearchResultRow: View {
     let isSelected: Bool
     var deviceStatus: BookCardDeviceStatus = .noDevice
     var downloadState: CardDownloadState = .idle
-    /// Collections this book belongs to. Library rows render up to a couple
-    /// as inline chips; the active collection (if any) is filtered out by
-    /// the caller to avoid redundancy with the active scope.
-    var bookCollections: [Collection] = []
     /// Source rows: true when a library book already matches this result.
     /// Replaces the "Get" button with an "In library" indicator.
     var isDuplicateInLibrary: Bool = false
@@ -28,26 +24,37 @@ struct SearchResultRow: View {
     @State private var isHoveringCancel: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let thumbWidth: CGFloat = 44
+    /// Wider/taller thumb than a typical list row. Three text lines + a gap
+    /// look anaemic against a tiny thumbnail; the larger cover anchors the
+    /// row and reads as "this is a book, not a directory entry."
+    private static let thumbWidth: CGFloat = 52
     private static var thumbHeight: CGFloat { thumbWidth * Theme.Library.bookHeightMultiplier }
-    private static let rowVerticalPadding: CGFloat = 8
+    private static let rowVerticalPadding: CGFloat = 10
     private static let rowHorizontalPadding: CGFloat = 12
 
     var body: some View {
         HStack(alignment: .top, spacing: Theme.Spacing.md) {
             thumb
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 0) {
                 title
-                metaLine
-                if !chips.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(chips, id: \.self) { chip in
-                            RowChip(label: chip)
-                        }
-                    }
-                    .padding(.top, 2)
+                if !identityParts.isEmpty {
+                    Spacer().frame(height: 3)
+                    identityLine
+                }
+                if !technicalParts.isEmpty {
+                    // Flexible spacer so the technical line hugs the bottom
+                    // of the row regardless of how tall the row ends up
+                    // (driven by the thumb). Minimum 6pt keeps a visible
+                    // gap even when the row is unusually short.
+                    Spacer(minLength: 6)
+                    technicalLine
                 }
             }
+            // Match the thumb's height so the trailing Spacer above has
+            // somewhere to grow into — without this the VStack hugs its
+            // content and the technical line packs immediately under the
+            // identity line.
+            .frame(minHeight: Self.thumbHeight, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
             actionSlot
                 .frame(minWidth: 64, alignment: .trailing)
@@ -90,15 +97,27 @@ struct SearchResultRow: View {
             .truncationMode(.tail)
     }
 
-    private var metaLine: some View {
-        Text(metaParts.joined(separator: " · "))
+    /// First meta line — "identity" facts the user matches against in their
+    /// head: who wrote it, when, in what format.
+    private var identityLine: some View {
+        Text(identityParts.joined(separator: " · "))
             .font(.system(size: 11.5))
             .foregroundStyle(.primary.opacity(Theme.Text.muted))
             .lineLimit(1)
             .truncationMode(.tail)
     }
 
-    private var metaParts: [String] {
+    /// Second meta line — "technical" facts the user uses to pick between
+    /// duplicates: publisher (where available), language, file size.
+    private var technicalLine: some View {
+        Text(technicalParts.joined(separator: " · "))
+            .font(.system(size: 11))
+            .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
+    private var identityParts: [String] {
         var parts: [String] = []
         if let author = item.firstAuthor, !author.isEmpty {
             parts.append(author)
@@ -108,6 +127,14 @@ struct SearchResultRow: View {
         }
         if let format = item.format {
             parts.append(format)
+        }
+        return parts
+    }
+
+    private var technicalParts: [String] {
+        var parts: [String] = []
+        if let publisher = item.publisher {
+            parts.append(publisher)
         }
         if let localeTag = item.localeTag {
             parts.append(Self.localeDisplay(for: localeTag))
@@ -127,22 +154,6 @@ struct SearchResultRow: View {
         fmt.allowedUnits = [.useKB, .useMB, .useGB]
         fmt.countStyle = .file
         return fmt.string(fromByteCount: Int64(bytes))
-    }
-
-    // MARK: - Chips
-
-    /// Inline chips shown under the meta line. Library rows surface on-device
-    /// + collection memberships; source rows currently show nothing (the
-    /// section header already names the source).
-    private var chips: [String] {
-        guard case .book = item else { return [] }
-        var out: [String] = []
-        if deviceStatus == .onDevice { out.append("On device") }
-        out.append(contentsOf: bookCollections.prefix(3).map(\.name))
-        if bookCollections.count > 3 {
-            out.append("+\(bookCollections.count - 3)")
-        }
-        return out
     }
 
     // MARK: - Action slot
@@ -260,24 +271,5 @@ struct SearchResultRow: View {
         if isSelected { return .primary.opacity(Theme.Surface.selected) }
         if isHovering { return .primary.opacity(Theme.Surface.hoverSoft) }
         return .clear
-    }
-}
-
-/// Small text chip rendered inline under the meta line. Visual weight
-/// intentionally low — chips are scanning hints, not affordances.
-private struct RowChip: View {
-    let label: String
-
-    var body: some View {
-        Text(label)
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(.primary.opacity(Theme.Text.muted))
-            .tracking(0.1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(.primary.opacity(Theme.Surface.hoverSoft))
-            )
     }
 }
