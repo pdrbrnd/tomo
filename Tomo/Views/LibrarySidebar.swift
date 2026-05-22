@@ -24,6 +24,10 @@ struct LibrarySidebar: View {
     let deviceConnected: Bool
     let onDeviceCount: Int
     let notOnDeviceCount: Int
+    /// Bumped by `LibraryView` when the user picks File → New Collection
+    /// from the menu bar. Drives the same inline-create field as the `+`
+    /// button so the menu path doesn't need a separate dialog.
+    let newCollectionTrigger: UUID
     let onCreateCollection: (String) -> Void
     let onRenameCollection: (UUID, String) -> Void
     let onRequestDeleteCollection: (Collection) -> Void
@@ -82,6 +86,10 @@ struct LibrarySidebar: View {
                     .padding(.horizontal, Theme.Spacing.menuInset)
                     .padding(.bottom, Theme.Chrome.paneBottomReserve)
                 }
+            }
+            .onChange(of: newCollectionTrigger) { _, _ in
+                beginCreate()
+                focusedField = .newCollection
             }
     }
 

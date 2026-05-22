@@ -40,6 +40,7 @@ struct TomoApp: App {
             CommandGroup(replacing: .appSettings) {
                 OpenSettingsButton()
             }
+            LibraryMenuCommands(state: state)
             #if DEBUG
                 CommandMenu("Debug") {
                     Button("Toggle Fake Device") {

@@ -9,6 +9,10 @@ struct LibraryView: View {
     @State private var selectionAnchor: Book.ID?
     @State private var inspectorOpen = false
     @AppStorage("sidebar.open") private var sidebarOpen = false
+    /// Bumped by the menu bar's "New Collection…" action — `LibrarySidebar`
+    /// watches this so the inline-create field gets focused without lifting
+    /// its create state up.
+    @State private var newCollectionTrigger = UUID()
     @State private var searchText = ""
     @State private var selectedLanguage: String?
     @State private var selectedCollection: UUID?
@@ -342,6 +346,7 @@ struct LibraryView: View {
         .frame(minWidth: 880, minHeight: 600)
         .animation(paneAnimation, value: inspectorOpen)
         .animation(paneAnimation, value: sidebarOpen)
+        .focusedSceneValue(\.libraryContext, libraryFocusContext)
         .task(id: state.libraryFolder) { await state.syncWithDisk() }
         .onChange(of: searchText) { _, newValue in
             schedulePluginSearch(for: newValue)
@@ -1707,6 +1712,7 @@ struct LibraryView: View {
             deviceConnected: state.device != nil,
             onDeviceCount: state.books.filter { isOnDevice($0) }.count,
             notOnDeviceCount: state.books.filter { !isOnDevice($0) }.count,
+            newCollectionTrigger: newCollectionTrigger,
             onCreateCollection: { name in
                 Task { await state.createCollection(named: name) }
             },
@@ -1892,20 +1898,71 @@ struct LibraryView: View {
         return isOnDevice(book) ? .onDevice : .missingFromDevice
     }
 
+    // MARK: - Menu bar integration
+
+    /// Snapshot of state + closures published to the menu bar via
+    /// `.focusedSceneValue(\.libraryContext, …)`. Reconstructed on every
+    /// body eval — closures capture the current view state at that moment,
+    /// so the menu items always act on what's on screen now.
+    private var libraryFocusContext: LibraryFocusContext {
+        let selectedBooks = selectedBooksInOrder
+        let device = state.device
+        let canSend =
+            device != nil && selectedBooks.contains(where: { device!.canAccept($0) })
+        let canRemove =
+            device != nil && selectedBooks.contains { device!.canAccept($0) && isOnDevice($0) }
+
+        return LibraryFocusContext(
+            hasSelection: !selectedBookIDs.isEmpty,
+            selectionCount: selectedBookIDs.count,
+            deviceName: device?.displayName,
+            canSendSelection: canSend,
+            canRemoveSelectionFromDevice: canRemove,
+            hasDevice: device != nil,
+            isSidebarOpen: sidebarOpen,
+            isInspectorOpen: inspectorOpen,
+            showSelectedInFinder: {
+                state.showInFinder(books: selectedBooks)
+            },
+            moveSelectedToTrash: {
+                guard !selectedBooks.isEmpty else { return }
+                booksPendingDelete = selectedBooks
+            },
+            sendSelectedToDevice: {
+                guard let device else { return }
+                let sendable = selectedBooks.filter { device.canAccept($0) }
+                guard !sendable.isEmpty else { return }
+                Task { await state.sendBooksToDevice(sendable) }
+            },
+            removeSelectedFromDevice: {
+                guard let device else { return }
+                let onDevice = selectedBooks.filter {
+                    device.canAccept($0) && state.deviceFilenames.contains(device.deviceFilename(for: $0))
+                }
+                guard !onDevice.isEmpty else { return }
+                Task {
+                    for book in onDevice {
+                        await state.removeFromDevice(book: book)
+                    }
+                }
+            },
+            focusSearch: { searchFocused = true },
+            beginNewCollection: { newCollectionTrigger = UUID() },
+            toggleSidebar: { sidebarOpen.toggle() },
+            toggleInspector: { inspectorOpen.toggle() }
+        )
+    }
+
     // MARK: - Keyboard shortcuts
 
     private func keyboardShortcuts(scrollProxy: ScrollViewProxy) -> some View {
+        // ⌘I, ⌃⌘S, ⌘F, ⌘⌫ — handled by the menu-bar items in
+        // `MenuCommands.swift`. They route back here through
+        // `LibraryFocusContext` closures. Keeping a second hidden owner here
+        // would double-fire.
         ZStack {
-            Button("") { inspectorOpen.toggle() }
-                .keyboardShortcut("i", modifiers: .command)
-            Button("") { sidebarOpen.toggle() }
-                .keyboardShortcut("s", modifiers: [.control, .command])
-            Button("") { searchFocused = true }
-                .keyboardShortcut("f", modifiers: .command)
             Button("") { handleSelectAll() }
                 .keyboardShortcut("a", modifiers: .command)
-            Button("") { handleDeleteShortcut() }
-                .keyboardShortcut(.delete, modifiers: .command)
             Button("") { handleEscape() }
                 .keyboardShortcut(.escape, modifiers: [])
             // Arrow keys move the single selection within the library grid.
