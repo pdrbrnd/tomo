@@ -51,7 +51,14 @@ struct LibrarySidebar: View {
     }
 
     private var sortedLocales: [String] {
-        languageCounts.keys.sorted()
+        // Sort by the localized display name so the user sees an
+        // alphabetical list of language names ("English", "German",
+        // "Portuguese") rather than alphabetised codes ("de", "en", "pt").
+        languageCounts.keys.sorted { lhs, rhs in
+            let lname = Locale.current.localizedString(forIdentifier: lhs) ?? lhs
+            let rname = Locale.current.localizedString(forIdentifier: rhs) ?? rhs
+            return lname.localizedCaseInsensitiveCompare(rname) == .orderedAscending
+        }
     }
 
     var body: some View {

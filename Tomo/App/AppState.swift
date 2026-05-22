@@ -106,7 +106,28 @@ final class AppState {
             }
         }
         collectionCounts = coll
-        languageCounts = Dictionary(grouping: books, by: \.locale).mapValues(\.count)
+
+        // Aggregate by base BCP 47 code so the sidebar shows "Portuguese"
+        // (summing pt, pt-PT, pt-BR) rather than each variant as a separate
+        // row. Variant precision is still expressible via the search bar's
+        // `language:pt-PT` syntax — sidebar is for navigation, search is
+        // for filtering. `und` and empty tags are dropped: they're not a
+        // navigable language.
+        var lang: [String: Int] = [:]
+        for book in books {
+            guard let base = Self.baseLanguageCode(book.locale) else { continue }
+            lang[base, default: 0] += 1
+        }
+        languageCounts = lang
+    }
+
+    /// Strips a BCP 47 tag down to its base language subtag. Returns nil
+    /// for empty / "und" so unclassified books don't pollute the sidebar.
+    private static func baseLanguageCode(_ tag: String) -> String? {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.isEmpty || trimmed == "und" { return nil }
+        let base = trimmed.split(separator: "-").first.map(String.init) ?? trimmed
+        return base.isEmpty ? nil : base
     }
 
     /// Number of items currently being dragged inside the app. Zero when

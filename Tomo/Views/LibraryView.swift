@@ -100,9 +100,19 @@ struct LibraryView: View {
         }
         return bySearch.filter { book in
             (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
-                && (selectedLanguage.map { book.locale == $0 } ?? true)
+                && (selectedLanguage.map { matchesSidebarLanguage(book: book, base: $0) } ?? true)
                 && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
         }
+    }
+
+    /// Sidebar language selections are base BCP 47 codes ("pt", "en"). A
+    /// book matches when its locale equals the base ("pt") or starts with
+    /// it as a hyphenated variant ("pt-PT", "pt-BR"). Variant-specific
+    /// filtering still works through the search syntax (`language:pt-PT`).
+    private func matchesSidebarLanguage(book: Book, base: String) -> Bool {
+        let needle = base.lowercased()
+        let locale = book.locale.lowercased()
+        return locale == needle || locale.hasPrefix(needle + "-")
     }
 
     /// Applies parsed search-bar tokens to a single library book. Free text
