@@ -264,7 +264,7 @@ struct PluginsSettingsView: View {
 
     private var addRegistryRow: some View {
         HStack(spacing: Theme.Spacing.sm) {
-            TextField("https://…/registry.json", text: $newRegistryURL)
+            TextField("https://your-registry.example.com", text: $newRegistryURL)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .disabled(addingRegistry)
@@ -287,9 +287,16 @@ struct PluginsSettingsView: View {
 
     private func submitAddRegistry() {
         let trimmed = newRegistryURL.trimmingCharacters(in: .whitespaces)
-        guard let url = URL(string: trimmed), url.scheme?.hasPrefix("http") == true else {
-            state.showToast(.error("Enter a full https:// URL to the registry.json."))
+        guard var url = URL(string: trimmed), url.scheme?.hasPrefix("http") == true else {
+            state.showToast(.error("Enter a full https:// URL."))
             return
+        }
+        // Accept either the bare host (https://foo.pages.dev) or the full
+        // path. If the URL doesn't already end in `registry.json`, append it
+        // — the registry filename is convention, not something the user
+        // should have to remember.
+        if url.lastPathComponent != "registry.json" {
+            url = url.appending(path: "registry.json")
         }
         addingRegistry = true
         Task {
