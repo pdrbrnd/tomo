@@ -40,12 +40,6 @@ nonisolated struct Kindle: BookDevice {
         ["azw", "azw3", "mobi", "prc", "pdf", "txt"]
     }
 
-    /// No persistent warning: EPUBs are routed through the EPUB→AZW3
-    /// converter when the user drops them, so the UI doesn't need to
-    /// pre-warn about format support. Surface real conversion failures
-    /// at copy time instead.
-    var compatibilityWarning: String? { nil }
-
     func filenames() -> Set<String> {
         let documents = volumeURL.appending(component: "documents")
         guard

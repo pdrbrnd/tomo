@@ -420,11 +420,7 @@ struct BookInspector: View {
         let available = allCollections.filter { !book.collectionIDs.contains($0.id) }
 
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Collections")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
-                .tracking(0.2)
-                .textCase(.uppercase)
+            SectionHeader(title: "Collections")
 
             FlowLayout(horizontalSpacing: 6, verticalSpacing: 6) {
                 ForEach(memberships) { collection in

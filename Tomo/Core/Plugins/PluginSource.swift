@@ -56,8 +56,8 @@ final class PluginSource: Identifiable {
 
 /// Filesystem layout for plugins: `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`.
 /// The folder is the source of truth: every `.js` at that path is a candidate
-/// plugin. Spike loads the first one (alphabetical) — multi-plugin merging is
-/// productionisation work.
+/// plugin. All discovered plugins are loaded; per-plugin enable/disable lives
+/// in the sources popover (persisted in `UserDefaults`).
 ///
 /// `nonisolated` so disk reads and bundle seeding can run from `Task.detached`
 /// during `AppState.bootstrap`. The MainActor-only step (constructing

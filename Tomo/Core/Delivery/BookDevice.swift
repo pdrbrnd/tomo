@@ -15,10 +15,6 @@ nonisolated protocol BookDevice: Sendable {
     /// Mounted volume URL — used by `eject` and for the user to see in the UI.
     var volumeURL: URL { get }
 
-    /// Optional warning surfaced in the UI when the device can't actually
-    /// receive books (e.g. firmware too old for EPUB). Non-nil = warn.
-    var compatibilityWarning: String? { get }
-
     /// File extensions (lowercase, no dot) the device's home-screen indexer
     /// will actually recognise. A book whose extension isn't in this set will
     /// be silently ignored by the device even if copied successfully — so we

@@ -12,9 +12,9 @@ A plugin is a single `.js` file. Drop it in:
 ~/Library/Application Support/com.pdrbrnd.tomo/plugins/
 ```
 
-Tomo loads the first plugin alphabetically on launch (and on the "Reload" action in the sources popover). One active plugin at a time in v1; multi-plugin merging is a v2 concern.
+Tomo loads every `.js` file in that directory on launch (and on the "Reload" action in the sources popover). Each plugin can be enabled/disabled independently in the sources popover; enabled plugins run in parallel on every search and their results land in their own section.
 
-> **v1 note.** Plugins are bare `.js` files with no manifest. A `plugin.json` format may be introduced later; nothing else about the contract is expected to change.
+> Plugins are bare `.js` files with no manifest. A `plugin.json` format may be introduced later.
 
 ## Contract
 

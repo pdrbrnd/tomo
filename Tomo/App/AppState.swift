@@ -67,16 +67,22 @@ private struct FolderRelocateResult {
 /// Moves `<library>/OldAuthor/OldTitle (year)/` to
 /// `<library>/NewAuthor/NewTitle (year)/` when the book's title / first
 /// author / year produce a different canonical folder. The entire folder
-/// moves — file, sidecar, cover, anything else in it. `book.fileURL` is
-/// updated so the caller can continue using it.
+/// moves — file, sidecar, cover, anything else in it. The returned
+/// `Book.fileURL` is rewritten to point into the new folder.
 ///
-/// Skips (returns `didMove: false`) when:
-///  - the current folder already matches the canonical one, or
-///  - the canonical target exists with different contents (collision —
-///    we refuse rather than merge or clobber).
+/// Returns a `FolderRelocateOutcome`:
+///  - `.noChange` when the folder is already canonical, *or* when the
+///    move attempt failed at the FileManager level (logged but
+///    swallowed — the next save will retry).
+///  - `.moved(originalFolder:)` on success; the original URL is the
+///    caller's handle for rolling back if a later step (slug rename,
+///    sidecar write, index update) fails.
+///  - `.collision(target:)` when the target folder already exists. The
+///    caller is expected to surface this to the user and *not* persist
+///    the edit, so on-disk layout and metadata stay in sync.
 ///
-/// On failure the move is rolled back; caller still gets back the original
-/// book unchanged.
+/// Rollback is the caller's responsibility — this function only does the
+/// forward move and reports what happened.
 private nonisolated func relocateBookFolderIfChanged(
     _ book: Book,
     libraryRoot: URL

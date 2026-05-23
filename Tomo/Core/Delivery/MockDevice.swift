@@ -9,7 +9,6 @@
         let id = "mock-kindle"
         let displayName = "Kindle"
         let volumeURL = URL(fileURLWithPath: "/tmp/MockKindle")
-        let compatibilityWarning: String? = nil
         let supportedFormats: Set<String> = ["epub", "azw3", "mobi"]
 
         /// Pretend the device already has these — useful to test the

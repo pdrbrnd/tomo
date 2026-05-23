@@ -25,7 +25,6 @@ private struct StubDevice: BookDevice {
     var id: String { "stub" }
     var displayName: String { "Stub" }
     var volumeURL: URL { URL(fileURLWithPath: "/Volumes/Stub") }
-    var compatibilityWarning: String? { nil }
     func filenames() -> Set<String> { [] }
     func deviceFilename(for book: Book) -> String { book.fileURL.lastPathComponent }
     func copy(_ book: Book) async throws {}
