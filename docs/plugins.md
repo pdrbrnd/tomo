@@ -2,7 +2,7 @@
 
 Tomo's source plugins are JavaScript files that search external book catalogues and resolve download URLs. Tomo runs them in JavaScriptCore and lifts results into the library UI.
 
-The bundled `gutenberg.js` is the canonical example — read it alongside this doc.
+`gutenberg.js` in [`pdrbrnd/tomo-plugins`](https://github.com/pdrbrnd/tomo-plugins/blob/main/plugins/gutenberg.js) is the canonical example — read it alongside this doc.
 
 ## File format
 
@@ -17,9 +17,9 @@ Tomo loads every `.js` file in that directory on launch (and on the "Reload" act
 ### How plugins get there
 
 - **Registry install** (recommended). Open Settings → Plugins, click "Check for updates," then "Install" on any registry entry. Tomo fetches the `.js`, verifies its sha256 against the registry, and writes it to your plugins folder. Updates flow the same way.
-- **Manual drop**. Drop a `.js` file into the plugins folder (or use "Install Plugin…" in the sources popover). Manually-installed plugins never auto-update — Tomo doesn't know where they came from.
+- **Manual drop**. Drop a `.js` file into the plugins folder (or use "Install Plugin…" in the sources popover). Manually-installed plugins never auto-update — they're your responsibility.
 
-Install records are persisted at `<plugins-dir>/.tomo/installed.json`. You can delete it; Tomo will rebuild it on next launch (every plugin will be classified as `manual` unless its bytes match a bundled file).
+No plugins ship with the app. There's no install ledger either — whether a plugin came from a registry is derived from `sha256(file) == registry_entry.sha256`. Delete a plugin: delete its `.js` file.
 
 ## Manifest
 
@@ -181,7 +181,7 @@ result.coverURL = `file://${path}`;
 
 Use this when the cover URL is hotlink-protected (requires Referer / custom headers) or when a plain `fetch` won't do because the host browser would redirect or block. The bytes are written to an on-disk cache. Returns a local path; reject on non-2xx, empty body, or network error.
 
-The bundled `gutenberg.js` doesn't need this — Project Gutenberg covers load directly. The `libgen` plugin uses `cacheImage` because libgen.li's cover CDN requires a `Referer` header.
+The `gutenberg` plugin doesn't need this — Project Gutenberg covers load directly. A `libgen`-style plugin uses `cacheImage` because libgen.li's cover CDN requires a `Referer` header.
 
 ### `console.log(msg)` / `console.error(msg)`
 
@@ -248,6 +248,5 @@ This doc is a guide. The authoritative shapes live in:
 - `Tomo/Core/Plugins/PluginSource.swift` — load semantics + `PluginDirectory` install/update/remove.
 - `Tomo/Core/Plugins/PluginManifest.swift` — manifest extraction.
 - `Tomo/Core/Plugins/PluginRegistry.swift` — registry shape, fetch, cache.
-- `Tomo/Core/Plugins/PluginInstallRecords.swift` — `installed.json` ledger.
 
 If this doc and the code disagree, the code wins.

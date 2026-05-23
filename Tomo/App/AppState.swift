@@ -317,7 +317,6 @@ final class AppState {
     /// and the "searching…" empty state.
     var pluginSearchInFlight: Bool = false
 
-    private(set) var installRecords: [String: PluginInstallRecord] = [:]
     private(set) var cachedRegistries: [URL: CachedRegistry] = [:]
     var pluginRegistryRefreshInFlight: Bool = false
     private(set) var pluginUpdatesAvailable: Set<String> = []
@@ -366,11 +365,10 @@ final class AppState {
             Task.detached { await KindleSync.run(volumeURL: kindle.volumeURL) }
         }
 
-        await Task.detached { PluginDirectory.seedBundledIfNeeded() }.value
         await reloadPluginSource()
         // Cached registry data only — Principle 5 forbids touching the
-        // network without an explicit user action. Discovery / update checks
-        // happen from Plugins settings ("Check for updates" button).
+        // network without explicit user action. Refresh happens via the
+        // "Check for updates" button in Plugins settings.
         loadCachedRegistryState()
     }
 
@@ -417,11 +415,6 @@ final class AppState {
             persistEnabledPluginIDs()
             UserDefaults.standard.set(true, forKey: Self.didInitPluginEnableStateKey)
         }
-        // Backfill install records for any loaded plugin we don't already
-        // track — first-launch bundled seed, legacy plugins from before the
-        // records ledger existed, and manual file-drops.
-        PluginDirectory.reconcileInstallRecords(for: result.plugins)
-        self.installRecords = await Task.detached { PluginInstallRecords.read() }.value
         recomputePluginUpdateAvailable()
         pluginLogger.info("loaded \(result.plugins.count, privacy: .public) plugin(s)")
         if let err = read.firstError ?? result.firstError {
@@ -477,28 +470,58 @@ final class AppState {
         recomputePluginUpdateAvailable()
     }
 
-    /// Re-derives `pluginUpdatesAvailable` from `installRecords` +
-    /// `cachedRegistries`. An update is available when a registry knows the
-    /// installed plugin's id and ships a newer `version` (lex compare —
-    /// versions are ISO-8601 timestamps set by the registry's build script).
-    /// Bundled / manual plugins get update offers from the registry when
-    /// their id matches (bundled gutenberg → registry gutenberg) *as long
-    /// as* the host satisfies `minAppVersion`.
+    /// An update is available when a registry has an entry for this plugin's
+    /// id, the host satisfies its `minAppVersion`, and its `sha256` differs
+    /// from what's installed. Sha is the change signal — there's no separate
+    /// "installed version" to track.
     private func recomputePluginUpdateAvailable() {
         var updates: Set<String> = []
         for plugin in pluginSources {
-            guard let installedVersion = installRecords[plugin.id]?.installedVersion
-            else { continue }
             for cached in cachedRegistries.values {
                 guard let entry = cached.registry.plugins.first(where: { $0.id == plugin.id })
                 else { continue }
                 guard isCompatible(entry: entry) else { continue }
-                if PluginVersion.updateAvailable(installed: installedVersion, available: entry.version) {
+                if entry.sha256.caseInsensitiveCompare(plugin.sha256) != .orderedSame {
                     updates.insert(plugin.id)
                 }
             }
         }
         self.pluginUpdatesAvailable = updates
+    }
+
+    /// Finds the registry entry whose `id` and `sha256` match the installed
+    /// plugin — that's the canonical "where did this come from" lookup,
+    /// used to label rows and route Update clicks. Nil for manually-installed
+    /// plugins or plugins whose source registry isn't currently cached.
+    func registryOrigin(for plugin: PluginSource) -> (entry: PluginRegistryEntry, registryURL: URL)? {
+        for (registryURL, cached) in cachedRegistries {
+            if let entry = cached.registry.plugins.first(where: {
+                $0.id == plugin.id
+                    && $0.sha256.caseInsensitiveCompare(plugin.sha256) == .orderedSame
+            }) {
+                return (entry, registryURL)
+            }
+        }
+        return nil
+    }
+
+    /// Latest registry entry for this id across all cached registries (newest
+    /// version wins), regardless of sha. Used by the Update button to find
+    /// what to fetch.
+    func latestRegistryEntry(forID id: String) -> (entry: PluginRegistryEntry, registryURL: URL)? {
+        var best: (PluginRegistryEntry, URL)?
+        for (registryURL, cached) in cachedRegistries {
+            guard let entry = cached.registry.plugins.first(where: { $0.id == id })
+            else { continue }
+            if let current = best {
+                if PluginVersion.updateAvailable(installed: current.0.version, available: entry.version) {
+                    best = (entry, registryURL)
+                }
+            } else {
+                best = (entry, registryURL)
+            }
+        }
+        return best
     }
 
     func isCompatible(entry: PluginRegistryEntry) -> Bool {
@@ -533,46 +556,14 @@ final class AppState {
     }
 
     func installPluginFromRegistry(_ entry: PluginRegistryEntry, from registryURL: URL) async {
-        guard isCompatible(entry: entry) else {
-            showToast(
-                .error(
-                    "\(entry.name) needs Tomo \(entry.minAppVersion ?? "?")+ — you have \(AppVersion.current)."
-                ))
-            return
-        }
-        do {
-            let bytes = try await PluginRegistryStore.fetchPluginJS(entry)
-            _ = try await Task.detached {
-                try PluginDirectory.writePluginFile(id: entry.id, bytes: bytes, replace: false)
-            }.value
-            PluginInstallRecords.upsert(
-                PluginInstallRecord(
-                    id: entry.id,
-                    source: .registry,
-                    registryURL: registryURL,
-                    installedVersion: entry.version,
-                    sha256: entry.sha256,
-                    installedAt: Date()
-                )
-            )
-            await reloadPluginSource()
-            if let installed = plugin(withID: entry.id),
-                !enabledPluginIDs.contains(installed.id)
-            {
-                setPluginEnabled(installed.id, enabled: true)
-            }
-            showToast(.info("Installed \(entry.name)."))
-        } catch {
-            pluginLogger.error(
-                "registry install failed for \(entry.id, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-            showToast(.error("Couldn't install \(entry.name): \(error.localizedDescription)"))
-        }
+        await fetchAndWrite(entry: entry, replace: false)
     }
 
-    /// Also upgrades a `.bundled` install record to `.registry` since the
-    /// bundle file is now overwritten by the fetched bytes.
     func updatePluginFromRegistry(_ entry: PluginRegistryEntry, from registryURL: URL) async {
+        await fetchAndWrite(entry: entry, replace: true)
+    }
+
+    private func fetchAndWrite(entry: PluginRegistryEntry, replace: Bool) async {
         guard isCompatible(entry: entry) else {
             showToast(
                 .error(
@@ -583,25 +574,18 @@ final class AppState {
         do {
             let bytes = try await PluginRegistryStore.fetchPluginJS(entry)
             _ = try await Task.detached {
-                try PluginDirectory.writePluginFile(id: entry.id, bytes: bytes, replace: true)
+                try PluginDirectory.writePluginFile(id: entry.id, bytes: bytes, replace: replace)
             }.value
-            PluginInstallRecords.upsert(
-                PluginInstallRecord(
-                    id: entry.id,
-                    source: .registry,
-                    registryURL: registryURL,
-                    installedVersion: entry.version,
-                    sha256: entry.sha256,
-                    installedAt: Date()
-                )
-            )
             await reloadPluginSource()
-            showToast(.info("Updated \(entry.name) to \(entry.version)."))
+            if let installed = plugin(withID: entry.id), !enabledPluginIDs.contains(installed.id) {
+                setPluginEnabled(installed.id, enabled: true)
+            }
+            showToast(.info(replace ? "Updated \(entry.name)." : "Installed \(entry.name)."))
         } catch {
             pluginLogger.error(
-                "registry update failed for \(entry.id, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "registry \(replace ? "update" : "install") failed for \(entry.id, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
-            showToast(.error("Couldn't update \(entry.name): \(error.localizedDescription)"))
+            showToast(.error("Couldn't \(replace ? "update" : "install") \(entry.name): \(error.localizedDescription)"))
         }
     }
 

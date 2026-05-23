@@ -8,30 +8,24 @@ import os
 /// into typed Swift values. `@MainActor` because `PluginHost` is.
 @MainActor
 final class PluginSource: Identifiable {
-    /// Unique within the plugins directory. Prefer the manifest's `id` when
-    /// the plugin declares one; otherwise fall back to the filename without
-    /// extension (legacy contract). Used as the `pluginID` stamped on results
-    /// so downloads route back here.
+    /// Manifest's `id` when declared; filename without extension otherwise.
+    /// Stamped on `PluginResult.pluginID` so downloads route back here.
     let id: String
     let displayName: String
-    /// Pulled from the plugin's optional `const manifest = { … }` block.
-    /// `nil` for legacy plugins that ship no manifest — registry/update
-    /// features are unavailable for those.
     let manifest: PluginManifest?
+    /// sha256 of the .js bytes — the change signal compared against registry
+    /// entries to detect updates without a separate install ledger.
+    let sha256: String
     private let host: PluginHost
 
-    /// Instantiates a host from already-read JS source. Splitting file I/O
-    /// from host construction lets `PluginDirectory.readAllPluginSources`
-    /// hit disk off-main while keeping `PluginHost` (and its `JSContext`)
-    /// pinned to MainActor.
-    ///
     /// `fallbackID` is the filename without extension — used when the plugin
-    /// ships no manifest (legacy plugins authored before manifests existed).
+    /// ships no manifest.
     init(fallbackID: String, source: String) throws {
         self.host = try PluginHost(pluginSource: source)
         self.manifest = host.manifest
         self.id = host.manifest?.id ?? fallbackID
         self.displayName = host.manifest?.name ?? fallbackID
+        self.sha256 = sha256Hex(source)
     }
 
     /// Calls the plugin's `search(query)` and lifts results, stamping
@@ -210,51 +204,9 @@ nonisolated enum PluginDirectory {
         return (plugins, firstError)
     }
 
-    /// Copies bundled `.js` files into the plugins directory on a clean
-    /// install (empty dir + no install records). Subsequent launches no-op.
-    /// Honors Principle 5 — gutenberg is available offline on first launch
-    /// without any network call.
-    static func seedBundledIfNeeded() {
-        guard let dir = directoryURL() else { return }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-
-        // Skip when the user already has plugin state of any kind. Two
-        // independent signals so a partially-corrupted state can't trick
-        // us into reseeding.
-        let alreadyHaveJS = !availablePluginURLs().isEmpty
-        let alreadyHaveRecords = !PluginInstallRecords.read().isEmpty
-        guard !alreadyHaveJS, !alreadyHaveRecords else { return }
-
-        // Xcode 16's synchronized file groups flatten the Resources/Plugins
-        // folder into the bundle root, so look up `.js` at top-level.
-        guard
-            let bundleURLs = Bundle.main.urls(
-                forResourcesWithExtension: "js", subdirectory: nil)
-        else { return }
-
-        for bundleURL in bundleURLs {
-            let dest = dir.appending(path: bundleURL.lastPathComponent)
-            do {
-                try FileManager.default.copyItem(at: bundleURL, to: dest)
-            } catch {
-                pluginLogger.error(
-                    "bundled seed failed for \(bundleURL.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-    }
-
-    /// Returns the bundle's `.js` URLs (read-only access to the seed source).
-    /// Used during install-record reconciliation so a plugin file whose bytes
-    /// match the shipped seed gets recorded as `.bundled` (vs `.manual`).
-    static func bundledPluginURLs() -> [URL] {
-        Bundle.main.urls(forResourcesWithExtension: "js", subdirectory: nil) ?? []
-    }
-
-    /// Writes `<id>.js` into the plugins directory atomically. Caller
-    /// guarantees `id` is filename-safe (registry ids are constrained).
-    /// Refuses to clobber an existing file unless `replace` is true — for
-    /// install we refuse (don't surprise the user), for update we replace.
+    /// Writes `<id>.js` into the plugins directory atomically. Refuses to
+    /// clobber an existing file unless `replace` is true (install refuses;
+    /// update replaces).
     static func writePluginFile(
         id: String,
         bytes: Data,
@@ -277,42 +229,12 @@ nonisolated enum PluginDirectory {
         return dest
     }
 
-    /// Deletes `<id>.js` and the corresponding install record. Best-effort:
-    /// missing files are not an error (the caller's intent is "gone").
+    /// Best-effort: a missing file is not an error.
     static func deletePluginFile(id: String) throws {
         guard let dir = directoryURL() else { return }
         let dest = dir.appending(path: "\(id).js")
         if FileManager.default.fileExists(atPath: dest.path(percentEncoded: false)) {
             try FileManager.default.removeItem(at: dest)
         }
-        PluginInstallRecords.remove(id: id)
-    }
-
-    /// After a reload, ensure every loaded plugin has an install record.
-    /// Missing records are inferred: byte-equal to a bundled file → `.bundled`;
-    /// otherwise `.manual`. Records that already exist are left alone.
-    @MainActor
-    static func reconcileInstallRecords(for plugins: [PluginSource]) {
-        var records = PluginInstallRecords.read()
-        let missing = plugins.filter { records[$0.id] == nil }
-        guard !missing.isEmpty, let dir = directoryURL() else { return }
-
-        let bundledBytes: Set<Data> = Set(
-            bundledPluginURLs().compactMap { try? Data(contentsOf: $0) }
-        )
-
-        for plugin in missing {
-            let dest = dir.appending(path: "\(plugin.id).js")
-            let bytes = try? Data(contentsOf: dest)
-            records[plugin.id] = PluginInstallRecord(
-                id: plugin.id,
-                source: bytes.map(bundledBytes.contains) == true ? .bundled : .manual,
-                registryURL: nil,
-                installedVersion: nil,
-                sha256: bytes.map(sha256Hex),
-                installedAt: Date()
-            )
-        }
-        PluginInstallRecords.write(records)
     }
 }

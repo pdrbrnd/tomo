@@ -93,9 +93,9 @@ struct PluginsSettingsView: View {
     // MARK: - Installed
 
     private func installedRow(plugin: PluginSource) -> some View {
-        let record = state.installRecords[plugin.id]
-        let registryEntry = registryEntry(for: plugin.id)
+        let origin = state.registryOrigin(for: plugin)
         let updateAvailable = state.pluginUpdatesAvailable.contains(plugin.id)
+        let updateTarget = updateAvailable ? state.latestRegistryEntry(forID: plugin.id) : nil
 
         return HStack(spacing: Theme.Spacing.md) {
             Toggle(
@@ -113,16 +113,19 @@ struct PluginsSettingsView: View {
                 Text(plugin.displayName)
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(.primary.opacity(Theme.Text.primary))
-                Text(statusLine(plugin: plugin, record: record, updateAvailable: updateAvailable))
+                Text(statusLine(plugin: plugin, origin: origin, updateAvailable: updateAvailable))
                     .font(.system(size: 11))
                     .foregroundStyle(.primary.opacity(Theme.Text.secondary))
             }
 
             Spacer()
 
-            if updateAvailable, let registryEntry, let registryURL = registryURL(for: registryEntry) {
+            if let updateTarget {
                 Button("Update") {
-                    Task { await state.updatePluginFromRegistry(registryEntry, from: registryURL) }
+                    Task {
+                        await state.updatePluginFromRegistry(
+                            updateTarget.entry, from: updateTarget.registryURL)
+                    }
                 }
                 .controlSize(.small)
             }
@@ -142,24 +145,19 @@ struct PluginsSettingsView: View {
 
     private func statusLine(
         plugin: PluginSource,
-        record: PluginInstallRecord?,
+        origin: (entry: PluginRegistryEntry, registryURL: URL)?,
         updateAvailable: Bool
     ) -> String {
         if plugin.manifest == nil {
             return "Manifest missing — registry features unavailable."
         }
-        let dateSuffix: String = {
-            guard let version = record?.installedVersion else { return "" }
-            return " • Updated \(formatRegistryDate(version))"
-        }()
         if updateAvailable {
-            return "Update available\(dateSuffix)"
+            return "Update available"
         }
-        switch record?.source {
-        case .registry: return "From \(cachedRegistryName(for: record?.registryURL) ?? "registry")\(dateSuffix)"
-        case .bundled: return "Bundled with Tomo\(dateSuffix)"
-        case .manual, .none: return "Manually installed\(dateSuffix)"
+        if let origin {
+            return "Updated \(formatRegistryDate(origin.entry.version))"
         }
+        return "User-supplied"
     }
 
     // MARK: - Browse
@@ -326,24 +324,6 @@ struct PluginsSettingsView: View {
     }()
 
     // MARK: - Lookups
-
-    private func registryEntry(for pluginID: String) -> PluginRegistryEntry? {
-        for cached in state.cachedRegistries.values {
-            if let entry = cached.registry.plugins.first(where: { $0.id == pluginID }) {
-                return entry
-            }
-        }
-        return nil
-    }
-
-    private func registryURL(for entry: PluginRegistryEntry) -> URL? {
-        for (url, cached) in state.cachedRegistries {
-            if cached.registry.plugins.contains(where: { $0.id == entry.id && $0.url == entry.url }) {
-                return url
-            }
-        }
-        return nil
-    }
 
     private func cachedRegistryName(for url: URL?) -> String? {
         guard let url, let cached = state.cachedRegistries[url] else { return nil }

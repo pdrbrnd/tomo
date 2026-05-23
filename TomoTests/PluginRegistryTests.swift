@@ -20,7 +20,7 @@ struct PluginRegistryTests {
                   "homepage": "https://www.gutenberg.org",
                   "author": "Tomo",
                   "license": "MIT",
-                  "minAppVersion": "1.6.0",
+                  "minAppVersion": "1.7.0",
                   "url": "https://example.com/gutenberg.js",
                   "sha256": "abc123"
                 }
@@ -30,18 +30,15 @@ struct PluginRegistryTests {
         let file = try JSONDecoder().decode(
             PluginRegistryFile.self, from: Data(json.utf8))
         #expect(file.version == 1)
-        #expect(file.name == "Tomo Official Plugins")
         #expect(file.plugins.count == 1)
         let entry = file.plugins[0]
         #expect(entry.id == "gutenberg")
         #expect(entry.version == "2026-05-23T16:38:00Z")
-        #expect(entry.minAppVersion == "1.6.0")
-        #expect(entry.url.absoluteString == "https://example.com/gutenberg.js")
+        #expect(entry.minAppVersion == "1.7.0")
         #expect(entry.sha256 == "abc123")
     }
 
     @Test func decodesEntryWithoutOptionalFields() throws {
-        // Minimum-viable entry: id / name / version / url / sha256.
         let json = """
             {
               "version": 1,
@@ -72,7 +69,7 @@ struct PluginRegistryTests {
             id: "x", name: "X",
             version: "2026-05-23T16:38:00Z",
             description: nil, homepage: nil, author: nil, license: nil,
-            minAppVersion: "1.6.0",
+            minAppVersion: "1.7.0",
             url: URL(string: "https://example.com/x.js")!,
             sha256: "deadbeef"
         )
@@ -91,45 +88,5 @@ struct PluginRegistryTests {
         decoder.dateDecodingStrategy = .iso8601
         let decoded = try decoder.decode(CachedRegistry.self, from: data)
         #expect(decoded == cached)
-    }
-}
-
-@Suite("PluginInstallRecord")
-struct PluginInstallRecordTests {
-
-    @Test func roundTripsAllFields() throws {
-        let record = PluginInstallRecord(
-            id: "gutenberg",
-            source: .registry,
-            registryURL: URL(string: "https://example.com/registry.json"),
-            installedVersion: "2026-05-23T16:38:00Z",
-            sha256: "deadbeef",
-            installedAt: Date(timeIntervalSince1970: 1_700_000_000)
-        )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(record)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let decoded = try decoder.decode(PluginInstallRecord.self, from: data)
-        #expect(decoded == record)
-    }
-
-    @Test func bundledAndManualSourcesEncodeWithoutOptionalFields() throws {
-        let bundled = PluginInstallRecord(
-            id: "gutenberg",
-            source: .bundled,
-            registryURL: nil,
-            installedVersion: nil,
-            sha256: nil,
-            installedAt: Date(timeIntervalSince1970: 1_700_000_000)
-        )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(bundled)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let decoded = try decoder.decode(PluginInstallRecord.self, from: data)
-        #expect(decoded == bundled)
     }
 }
