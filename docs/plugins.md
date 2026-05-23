@@ -2,11 +2,11 @@
 
 Tomo's source plugins are JavaScript files that search external book catalogues and resolve download URLs. Tomo runs them in JavaScriptCore and lifts results into the library UI.
 
-The bundled `gutenberg.js` is the canonical example — read it alongside this doc.
+`gutenberg.js` in [`pdrbrnd/tomo-plugins`](https://github.com/pdrbrnd/tomo-plugins/blob/main/plugins/gutenberg.js) is the canonical example — read it alongside this doc.
 
 ## File format
 
-A plugin is a single `.js` file. Drop it in:
+A plugin is a single `.js` file. It lives in:
 
 ```
 ~/Library/Application Support/com.pdrbrnd.tomo/plugins/
@@ -14,7 +14,76 @@ A plugin is a single `.js` file. Drop it in:
 
 Tomo loads every `.js` file in that directory on launch (and on the "Reload" action in the sources popover). Each plugin can be enabled/disabled independently in the sources popover; enabled plugins run in parallel on every search and their results land in their own section.
 
-> Plugins are bare `.js` files with no manifest. A `plugin.json` format may be introduced later.
+### How plugins get there
+
+- **Registry install** (recommended). Open Settings → Plugins, click "Check for updates," then "Install" on any registry entry. Tomo fetches the `.js`, verifies its sha256 against the registry, and writes it to your plugins folder. Updates flow the same way.
+- **Manual drop**. Drop a `.js` file into the plugins folder (or use "Install Plugin…" in the sources popover). Manually-installed plugins never auto-update — they're your responsibility.
+
+No plugins ship with the app. There's no install ledger either — whether a plugin came from a registry is derived from `sha256(file) == registry_entry.sha256`. Delete a plugin: delete its `.js` file.
+
+## Manifest
+
+Every plugin should declare a top-level `manifest` constant. Tomo reads it after evaluating the script to render the plugin's identity in Settings and (optionally) to gate install on host compatibility.
+
+```js
+const manifest = {
+  id: "gutenberg",                // required, stable, used as filename
+  name: "Project Gutenberg",      // optional, defaults to id
+  description: "...",             // optional
+  homepage: "https://...",        // optional
+  author: "Tomo",                 // optional
+  license: "MIT",                 // optional
+  minAppVersion: "1.6.0",         // optional — see CONTRACT.md
+};
+```
+
+`id` doubles as the filename on registry installs (`<id>.js`). Manual installs preserve the source filename; the manifest's `id` still wins as the plugin's runtime identity.
+
+**Notably absent: `version`.** Plugin authors don't bump a version field — the registry's build script derives the entry's `version` from each plugin file's last git commit timestamp (CalVer, ISO-8601). What users see in Settings is "Updated May 23, 2026," not a semver string. A forgotten manual bump is impossible because there's nothing to forget.
+
+**`minAppVersion`** gates install/update on the running app's version. See [`CONTRACT.md`](./CONTRACT.md) for the host capability history that backs the semantic — declare the lowest Tomo version that contains every host feature your plugin actually uses.
+
+Plugins without a manifest still load (back-compat) — they just can't participate in registry update tracking and show up as "Manifest missing" in Settings.
+
+## Registries
+
+A registry is a JSON file at any HTTPS URL. It lists plugins available for installation. Tomo ships with one official registry:
+
+```
+https://raw.githubusercontent.com/pdrbrnd/tomo-plugins/main/registry.json
+```
+
+Users can add third-party registry URLs in Settings → Plugins → Registries. The official Tomo registry only ever lists legitimate sources; third-party registries are entirely the user's responsibility (model: Homebrew taps).
+
+Registry shape (`version: 1`):
+
+```json
+{
+  "version": 1,
+  "name": "Tomo Official Plugins",
+  "plugins": [
+    {
+      "id": "gutenberg",
+      "name": "Project Gutenberg",
+      "description": "...",
+      "version": "2026-05-23T16:38:00Z",
+      "homepage": "https://www.gutenberg.org",
+      "author": "Tomo",
+      "license": "MIT",
+      "minAppVersion": "1.6.0",
+      "url": "https://raw.githubusercontent.com/.../plugins/gutenberg.js",
+      "sha256": "abc123..."
+    }
+  ]
+}
+```
+
+- `version` is an ISO-8601 timestamp (compared as Date, lex fallback). Set by the registry's build script from each plugin file's git mtime — never by the plugin author.
+- `minAppVersion` is mirrored from the plugin's manifest. Tomo compares it against `CFBundleShortVersionString` at install/update time.
+- `url` is the full URL to the plugin's `.js` file.
+- `sha256` is verified against the bytes Tomo fetches at install time. Mismatch → install refused.
+
+Tomo uses conditional GETs (`ETag` / `If-Modified-Since`) when re-fetching registries, and caches each response at `~/Library/Application Support/com.pdrbrnd.tomo/registry-cache/<sha256-of-url>.json`. No background fetches — refresh only on the user clicking "Check for updates."
 
 ## Contract
 
@@ -112,7 +181,7 @@ result.coverURL = `file://${path}`;
 
 Use this when the cover URL is hotlink-protected (requires Referer / custom headers) or when a plain `fetch` won't do because the host browser would redirect or block. The bytes are written to an on-disk cache. Returns a local path; reject on non-2xx, empty body, or network error.
 
-The bundled `gutenberg.js` doesn't need this — Project Gutenberg covers load directly. The `libgen` plugin uses `cacheImage` because libgen.li's cover CDN requires a `Referer` header.
+The `gutenberg` plugin doesn't need this — Project Gutenberg covers load directly. A `libgen`-style plugin uses `cacheImage` because libgen.li's cover CDN requires a `Referer` header.
 
 ### `console.log(msg)` / `console.error(msg)`
 
@@ -176,6 +245,8 @@ This doc is a guide. The authoritative shapes live in:
 
 - `Tomo/Core/Plugins/PluginResult.swift` — `PluginResult`, `PluginQuery`, `PluginField` structs and the JS↔Swift lift.
 - `Tomo/Core/Plugins/PluginHost.swift` — every host binding and its option shape.
-- `Tomo/Core/Plugins/PluginSource.swift` — load semantics.
+- `Tomo/Core/Plugins/PluginSource.swift` — load semantics + `PluginDirectory` install/update/remove.
+- `Tomo/Core/Plugins/PluginManifest.swift` — manifest extraction.
+- `Tomo/Core/Plugins/PluginRegistry.swift` — registry shape, fetch, cache.
 
 If this doc and the code disagree, the code wins.

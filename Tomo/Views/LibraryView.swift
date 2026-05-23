@@ -5,6 +5,8 @@ import os
 struct LibraryView: View {
     let state: AppState
 
+    @Environment(\.openWindow) private var openWindow
+
     @State private var selectedBookIDs: Set<Book.ID> = []
     @State private var selectionAnchor: Book.ID?
     @State private var inspectorOpen = false
@@ -799,6 +801,7 @@ struct LibraryView: View {
                 ForEach(state.enabledPlugins) { plugin in
                     sourceSection(for: plugin)
                 }
+                noPluginsNudge
             }
             .padding(.horizontal, Theme.Library.gridMargin)
             .padding(.top, Theme.Library.gridMargin)
@@ -807,6 +810,29 @@ struct LibraryView: View {
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .scrollContentBackground(.hidden)
+    }
+
+    /// Quiet inline pointer to Plugins settings when the library returned
+    /// nothing and there are no enabled plugin sources to fall back on.
+    /// Doesn't fire when the user has plugins but they happened to return
+    /// nothing — that's a different empty state already handled per-section.
+    @ViewBuilder
+    private var noPluginsNudge: some View {
+        if filteredBooks.isEmpty, state.enabledPlugins.isEmpty {
+            Button {
+                state.pendingSettingsSection = SettingsSection.plugins.rawValue
+                openWindow(id: TomoApp.settingsWindowID)
+            } label: {
+                Text("Searching for something not in your library? Add a source in Settings → Plugins.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary.opacity(Theme.Text.tertiary))
+                    .multilineTextAlignment(.leading)
+                    // Match `rowPlaceholder`'s horizontal padding so the
+                    // nudge sits on the same vertical edge as section copy.
+                    .padding(.horizontal, 12)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     /// Cap so the rich rows don't stretch across an ultrawide window

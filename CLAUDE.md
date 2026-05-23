@@ -88,7 +88,7 @@ These are load-bearing. Don't violate them without flagging it.
 - ZIPFoundation for EPUB reading (EPUB is just zip + XML)
 - SwiftSoup for HTML parsing (used by source plugins' `querySelectorAll` host binding)
 - [`AZW3`](https://github.com/pdrbrnd/swift-azw3) — our own SwiftPM package, the EPUB→AZW3 writer
-- JavaScriptCore for source plugins (one bundled: `gutenberg.js`)
+- JavaScriptCore for source plugins (none bundled — installed from registries)
 - Native `FileManager` + `NSFileCoordinator` for file ops
 - No external binaries. No Python. No bundled apps.
 
@@ -132,9 +132,11 @@ sit at `und` (the BCP 47 "undetermined" tag).
 
 ## Sources
 
-External book search runs through user-installed JavaScript plugins loaded from `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`. One plugin (`gutenberg.js`) ships bundled and is seeded on first launch; users install more by dropping `.js` files into the folder.
+External book search runs through JavaScript plugins loaded from `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`. **No plugins ship with the app** — fresh installs have library search only until the user opens Settings → Plugins and installs from a registry. The default registry is hardcoded to `pdrbrnd/tomo-plugins` on GitHub; users can add third-party registry URLs. Drop-install (`.js` file directly into the folder) still works for power users; their bytes are their problem.
 
-The contract and host bindings (fetch, querySelectorAll, cacheImage, console) are documented in `docs/plugins.md`. Source-of-truth shapes live in `Tomo/Core/Plugins/{PluginResult,PluginHost,PluginSource}.swift`. Multi-plugin search runs each enabled plugin in turn; per-plugin enable/disable in the sources popover, persisted in `UserDefaults`.
+There's no install ledger. Whether a plugin is "from the official registry" is derived on the fly: the file's sha256 matches some cached registry entry's sha256. No match → user-supplied. Update available → registry has matching id with a different sha + compatible `minAppVersion`.
+
+The contract and host bindings (fetch, querySelectorAll, cacheImage, console) are documented in `docs/plugins.md`; host capabilities per app version live in `docs/CONTRACT.md`. Source-of-truth shapes live in `Tomo/Core/Plugins/`. Multi-plugin search runs each enabled plugin in turn; per-plugin enable/disable in the sources popover (quick-toggle during search) or Settings → Plugins (full management), persisted in `UserDefaults`.
 
 ## Format support
 

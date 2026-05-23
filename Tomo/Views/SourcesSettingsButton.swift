@@ -25,17 +25,27 @@ struct SourcesSettingsButton: View {
             }
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
+            .overlay(alignment: .topTrailing) {
+                if state.hasPluginUpdates {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 6, height: 6)
+                        .offset(x: -2, y: 2)
+                }
+            }
         }
         .buttonStyle(.plain)
         .help("Sources")
         .popover(isPresented: $popoverOpen, arrowEdge: .top) {
-            SourcesPopoverContent(state: state)
+            SourcesPopoverContent(state: state, popoverOpen: $popoverOpen)
         }
     }
 }
 
 private struct SourcesPopoverContent: View {
     let state: AppState
+    @Binding var popoverOpen: Bool
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -51,6 +61,14 @@ private struct SourcesPopoverContent: View {
 
             MenuDivider()
 
+            Button {
+                openPluginsSettings()
+            } label: {
+                rowLabel(
+                    icon: "puzzlepiece.extension",
+                    title: state.hasPluginUpdates ? "Manage Plugins (updates available)…" : "Manage Plugins…"
+                )
+            }
             Button {
                 installPlugin()
             } label: {
@@ -70,6 +88,13 @@ private struct SourcesPopoverContent: View {
             }
         }
         .menuPopoverContainer(minWidth: 240)
+    }
+
+    private func openPluginsSettings() {
+        // Set the section before `openWindow` so cold-open `onAppear` sees it.
+        state.pendingSettingsSection = SettingsSection.plugins.rawValue
+        popoverOpen = false
+        openWindow(id: TomoApp.settingsWindowID)
     }
 
     /// Section header — uppercase secondary text, indented to match the

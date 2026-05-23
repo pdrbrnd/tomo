@@ -17,6 +17,10 @@ import os
 @MainActor
 final class PluginHost {
     let context: JSContext
+    /// Read once at end of init — `var` only because the binding-install
+    /// methods need `self`, which forces all stored properties to be
+    /// initialized first; we can't compute the manifest before script eval.
+    private(set) var manifest: PluginManifest?
     private let exception = ExceptionBox()
 
     init(pluginSource: String) throws {
@@ -24,6 +28,7 @@ final class PluginHost {
             throw PluginError.loadFailed("could not create JSContext")
         }
         self.context = ctx
+        self.manifest = nil
 
         ctx.exceptionHandler = { [exception] _, value in
             exception.last = value?.toString() ?? "unknown"
@@ -48,6 +53,8 @@ final class PluginHost {
                 throw PluginError.missingExport(export)
             }
         }
+
+        self.manifest = PluginManifest.from(jsContext: ctx)
     }
 
     /// Calls a top-level JS function and awaits its returned Promise.

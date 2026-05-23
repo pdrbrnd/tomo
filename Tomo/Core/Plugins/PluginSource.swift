@@ -8,20 +8,24 @@ import os
 /// into typed Swift values. `@MainActor` because `PluginHost` is.
 @MainActor
 final class PluginSource: Identifiable {
-    /// Unique within the plugins directory (= filename without extension).
-    /// Used as the `pluginID` stamped on results so downloads route back here.
+    /// Manifest's `id` when declared; filename without extension otherwise.
+    /// Stamped on `PluginResult.pluginID` so downloads route back here.
     let id: String
     let displayName: String
+    let manifest: PluginManifest?
+    /// sha256 of the .js bytes — the change signal compared against registry
+    /// entries to detect updates without a separate install ledger.
+    let sha256: String
     private let host: PluginHost
 
-    /// Instantiates a host from already-read JS source. Splitting file I/O
-    /// from host construction lets `PluginDirectory.readAllPluginSources`
-    /// hit disk off-main while keeping `PluginHost` (and its `JSContext`)
-    /// pinned to MainActor.
-    init(displayName: String, source: String) throws {
+    /// `fallbackID` is the filename without extension — used when the plugin
+    /// ships no manifest.
+    init(fallbackID: String, source: String) throws {
         self.host = try PluginHost(pluginSource: source)
-        self.displayName = displayName
-        self.id = displayName
+        self.manifest = host.manifest
+        self.id = host.manifest?.id ?? fallbackID
+        self.displayName = host.manifest?.name ?? fallbackID
+        self.sha256 = sha256Hex(source)
     }
 
     /// Calls the plugin's `search(query)` and lifts results, stamping
@@ -139,11 +143,14 @@ nonisolated enum PluginDirectory {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// One plugin's display name + JS source, ready to feed into `PluginSource`
-    /// on MainActor. `Sendable` so the array can cross actor boundaries when
-    /// `readAllPluginSources` runs detached.
+    /// One plugin's filename-derived id + JS source, ready to feed into
+    /// `PluginSource` on MainActor. `Sendable` so the array can cross actor
+    /// boundaries when `readAllPluginSources` runs detached.
     struct LoadedPluginSource: Sendable {
-        let displayName: String
+        /// Filename without `.js`. Used as the plugin id when the JS ships
+        /// no `manifest`. Once the manifest is read on MainActor, the
+        /// manifest's `id` wins.
+        let fallbackID: String
         let source: String
     }
 
@@ -154,10 +161,10 @@ nonisolated enum PluginDirectory {
         var sources: [LoadedPluginSource] = []
         var firstError: Error?
         for url in availablePluginURLs() {
-            let displayName = url.deletingPathExtension().lastPathComponent
+            let fallbackID = url.deletingPathExtension().lastPathComponent
             do {
                 let source = try String(contentsOf: url, encoding: .utf8)
-                sources.append(LoadedPluginSource(displayName: displayName, source: source))
+                sources.append(LoadedPluginSource(fallbackID: fallbackID, source: source))
             } catch {
                 pluginLogger.error(
                     "reading \(url.lastPathComponent, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
@@ -185,11 +192,11 @@ nonisolated enum PluginDirectory {
         for entry in sources {
             do {
                 plugins.append(
-                    try PluginSource(displayName: entry.displayName, source: entry.source)
+                    try PluginSource(fallbackID: entry.fallbackID, source: entry.source)
                 )
             } catch {
                 pluginLogger.error(
-                    "loading \(entry.displayName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                    "loading \(entry.fallbackID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
                 )
                 if firstError == nil { firstError = error }
             }
@@ -197,43 +204,37 @@ nonisolated enum PluginDirectory {
         return (plugins, firstError)
     }
 
-    /// Copies plugins bundled in `Resources/Plugins/` into the user's
-    /// plugins directory, overwriting existing copies on every launch.
-    /// This means improvements to bundled plugins (e.g. `gutenberg.js`)
-    /// ship with the next app update — users keeping a stale copy
-    /// indefinitely was the failure mode of the previous one-shot seed.
-    /// The bundled files carry a "this file is overwritten" banner at
-    /// the top; users who want to customise are expected to copy them
-    /// under a new filename.
-    ///
-    /// User-authored plugins are untouched — we only iterate files
-    /// shipped inside `Bundle.main`. Failures are silent: if the bundle
-    /// ships nothing, or the destination dir can't be created, the user
-    /// just sees an empty plugins list (matching the "no plugins" state).
-    static func installBundledPlugins() {
-        // Xcode 16's synchronized file groups flatten the Resources/Plugins
-        // folder into the bundle root, so look up `.js` at top-level.
-        guard let dir = directoryURL(),
-            let bundleURLs = Bundle.main.urls(
-                forResourcesWithExtension: "js", subdirectory: nil)
-        else { return }
+    /// Writes `<id>.js` into the plugins directory atomically. Refuses to
+    /// clobber an existing file unless `replace` is true (install refuses;
+    /// update replaces).
+    static func writePluginFile(
+        id: String,
+        bytes: Data,
+        replace: Bool
+    ) throws -> URL {
+        guard let dir = directoryURL() else {
+            throw PluginError.loadFailed("plugins directory unavailable")
+        }
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appending(path: "\(id).js")
+        let exists = FileManager.default.fileExists(atPath: dest.path(percentEncoded: false))
+        if exists && !replace {
+            throw PluginError.loadFailed(
+                "A plugin file named \(id).js already exists. Remove it first.")
+        }
+        if exists {
+            try FileManager.default.removeItem(at: dest)
+        }
+        try bytes.write(to: dest, options: .atomic)
+        return dest
+    }
 
-        try? FileManager.default.createDirectory(
-            at: dir, withIntermediateDirectories: true)
-
-        for bundleURL in bundleURLs {
-            let dest = dir.appending(path: bundleURL.lastPathComponent)
-            // Skip the rewrite when bytes are unchanged so file mtimes
-            // only advance when the bundled plugin actually changed —
-            // makes debugging "did the plugin get refreshed?" easier.
-            if let bundled = try? Data(contentsOf: bundleURL),
-                let existing = try? Data(contentsOf: dest),
-                bundled == existing
-            {
-                continue
-            }
-            try? FileManager.default.removeItem(at: dest)
-            try? FileManager.default.copyItem(at: bundleURL, to: dest)
+    /// Best-effort: a missing file is not an error.
+    static func deletePluginFile(id: String) throws {
+        guard let dir = directoryURL() else { return }
+        let dest = dir.appending(path: "\(id).js")
+        if FileManager.default.fileExists(atPath: dest.path(percentEncoded: false)) {
+            try FileManager.default.removeItem(at: dest)
         }
     }
 }
