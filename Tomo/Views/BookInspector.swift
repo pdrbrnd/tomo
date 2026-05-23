@@ -269,7 +269,6 @@ struct BookInspector: View {
             languageRow(for: book)
             metaRow("Format", value: book.fileURL.pathExtension.uppercased())
             metaRow("Added", value: book.dateAdded.formatted(.dateTime.year().month(.abbreviated).day()))
-            metaRow("Origin", value: originLabel(for: book))
         }
     }
 
@@ -514,13 +513,6 @@ struct BookInspector: View {
             Icon(symbol: icon, weight: .regular, size: 13)
                 .frame(width: 14)
             Text(title)
-        }
-    }
-
-    private func originLabel(for book: Book) -> String {
-        switch book.origin {
-        case .manualImport: "Manual import"
-        case .source(let id, _): "Source: \(id)"
         }
     }
 

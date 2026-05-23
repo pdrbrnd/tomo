@@ -33,12 +33,11 @@ actor BookIndex {
 
     func add(_ book: Book) async throws {
         let authorsJson = try Self.encodeJSON(book.authors)
-        let originJson = try Self.encodeJSON(book.origin)
         try await pool.write { db in
             try db.execute(
                 sql: """
-                    INSERT INTO books (id, title, authors_json, locale, year, file_path, cover_path, date_added, origin)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO books (id, title, authors_json, locale, year, file_path, cover_path, date_added)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [
                     book.id.uuidString,
@@ -49,7 +48,6 @@ actor BookIndex {
                     book.fileURL.path(percentEncoded: false),
                     book.coverPath,
                     book.dateAdded,
-                    originJson,
                 ]
             )
         }
@@ -203,7 +201,6 @@ actor BookIndex {
 
     func update(_ book: Book) async throws {
         let authorsJson = try Self.encodeJSON(book.authors)
-        let originJson = try Self.encodeJSON(book.origin)
         try await pool.write { db in
             try db.execute(
                 sql: """
@@ -214,8 +211,7 @@ actor BookIndex {
                             year = ?,
                             file_path = ?,
                             cover_path = ?,
-                            date_added = ?,
-                            origin = ?
+                            date_added = ?
                     WHERE id = ?
                     """,
                 arguments: [
@@ -226,7 +222,6 @@ actor BookIndex {
                     book.fileURL.path(percentEncoded: false),
                     book.coverPath,
                     book.dateAdded,
-                    originJson,
                     book.id.uuidString,
                 ]
             )
@@ -319,6 +314,17 @@ actor BookIndex {
             )
         }
 
+        // `origin` (BookOrigin) was a vestigial field: stored in every sidecar
+        // and DB row but only read to render a single inspector label.
+        // Removed wholesale. Old sidecars still carry the field — Codable
+        // ignores unknown keys so they decode cleanly and the field falls
+        // away on the next write.
+        m.registerMigration("v6_drop_origin") { db in
+            try db.alter(table: "books") { t in
+                t.drop(column: "origin")
+            }
+        }
+
         return m
     }
 
@@ -371,7 +377,6 @@ actor BookIndex {
         let authorsJson: String? = row["authors_json"]
         let filePath: String? = row["file_path"]
         let dateAdded: Date? = row["date_added"]
-        let originJson: String? = row["origin"]
 
         guard
             let idString,
@@ -380,9 +385,7 @@ actor BookIndex {
             let authorsJson,
             let authors = decodeJSON(authorsJson, as: [String].self),
             let filePath,
-            let dateAdded,
-            let originJson,
-            let origin = decodeJSON(originJson, as: BookOrigin.self)
+            let dateAdded
         else {
             indexLogger.error("dropping malformed row id=\(idString ?? "?", privacy: .public)")
             return nil
@@ -400,8 +403,7 @@ actor BookIndex {
             locale: locale,
             coverPath: coverPath,
             dateAdded: dateAdded,
-            fileURL: URL(fileURLWithPath: filePath),
-            origin: origin
+            fileURL: URL(fileURLWithPath: filePath)
         )
     }
 }

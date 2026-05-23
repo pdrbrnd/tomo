@@ -23,7 +23,7 @@ extension AppState {
         panel.prompt = "Import"
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
-            _ = await importBook(from: url, origin: .manualImport)
+            _ = await importBook(from: url)
         }
     }
 

@@ -57,8 +57,7 @@ struct KindleCopyTests {
             locale: "und",
             coverPath: nil,
             dateAdded: .now,
-            fileURL: fileURL,
-            origin: .manualImport
+            fileURL: fileURL
         )
     }
 }

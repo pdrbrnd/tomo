@@ -659,7 +659,7 @@ struct LibraryView: View {
             }
             Task {
                 for url in accepted {
-                    await state.importBook(from: url, origin: .manualImport)
+                    await state.importBook(from: url)
                 }
             }
             return true
@@ -1442,7 +1442,6 @@ struct LibraryView: View {
             downloadStates[result.id] = .importing
             let importedBook = await state.importBook(
                 from: tempURL,
-                origin: .source(id: result.pluginID, ref: result.id),
                 collection: selectedCollection
             )
             try? FileManager.default.removeItem(at: tempURL)
@@ -1523,7 +1522,6 @@ struct LibraryView: View {
         downloadStates[result.id] = .importing
         let importedBook = await state.importBook(
             from: fileURL,
-            origin: .source(id: result.pluginID, ref: result.id),
             collection: selectedCollection
         )
         // Sheet creates a per-download temp directory; clean it up wholesale.

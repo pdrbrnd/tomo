@@ -183,8 +183,7 @@ private func makeBook(in folder: URL) -> Book {
         locale: "en-GB",
         coverPath: "cover.jpg",
         dateAdded: Date(timeIntervalSince1970: 1_700_000_000),
-        fileURL: folder.appending(component: "frankenstein.epub"),
-        origin: .manualImport
+        fileURL: folder.appending(component: "frankenstein.epub")
     )
 }
 

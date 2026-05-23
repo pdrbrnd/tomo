@@ -42,7 +42,6 @@ private func makeBook(fileExtension: String) -> Book {
         locale: "und",
         coverPath: nil,
         dateAdded: .now,
-        fileURL: URL(fileURLWithPath: "/tmp/x.\(fileExtension)"),
-        origin: .manualImport
+        fileURL: URL(fileURLWithPath: "/tmp/x.\(fileExtension)")
     )
 }

@@ -42,6 +42,8 @@ struct CoverGallerySheet: View {
             footer
         }
         .frame(width: 720, height: 640)
+        .background(Theme.canvas)
+        .presentationBackground(Theme.canvas)
         .onAppear { startSearch() }
         .onDisappear { searchTask?.cancel() }
     }

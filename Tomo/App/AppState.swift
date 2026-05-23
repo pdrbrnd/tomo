@@ -53,13 +53,13 @@ private nonisolated func renamedToSlugIfChanged(_ book: Book) -> (book: Book, di
 /// - `collision`: target folder exists and isn't ours — refusing to merge.
 ///   Caller should surface this to the user and not persist the edit, so
 ///   on-disk layout and metadata stay in sync.
-private enum FolderRelocateOutcome {
+nonisolated enum FolderRelocateOutcome: Equatable {
     case noChange
     case moved(originalFolder: URL)
     case collision(target: URL)
 }
 
-private struct FolderRelocateResult {
+nonisolated struct FolderRelocateResult {
     let book: Book
     let outcome: FolderRelocateOutcome
 }
@@ -83,7 +83,7 @@ private struct FolderRelocateResult {
 ///
 /// Rollback is the caller's responsibility — this function only does the
 /// forward move and reports what happened.
-private nonisolated func relocateBookFolderIfChanged(
+nonisolated func relocateBookFolderIfChanged(
     _ book: Book,
     libraryRoot: URL
 ) -> FolderRelocateResult {
@@ -95,7 +95,20 @@ private nonisolated func relocateBookFolderIfChanged(
         year: book.year
     )
 
-    if target.standardizedFileURL == currentFolder.standardizedFileURL {
+    // Path-string comparison, not URL equality. `URL` `==` is on string form,
+    // and `deletingLastPathComponent` produces a directory URL with a trailing
+    // slash while `appending(component:)` doesn't — so the same folder can
+    // disagree with itself and the function falls through to the
+    // fileExists branch, returning `.collision` against the very folder the
+    // book already lives in. NFC-fold for accented author/title names so
+    // "Brandão" stored as NFD doesn't disagree with NFC re-derivation.
+    let currentPath =
+        currentFolder.standardizedFileURL.path(percentEncoded: false)
+        .precomposedStringWithCanonicalMapping
+    let targetPath =
+        target.standardizedFileURL.path(percentEncoded: false)
+        .precomposedStringWithCanonicalMapping
+    if currentPath == targetPath {
         return FolderRelocateResult(book: book, outcome: .noChange)
     }
 
@@ -851,7 +864,7 @@ final class AppState {
     /// imports leave it nil and the book lands at the library root.
     @discardableResult
     func importBook(
-        from url: URL, origin: BookOrigin, collection: UUID? = nil
+        from url: URL, collection: UUID? = nil
     ) async -> Book? {
         await openIndexIfNeeded()
         guard let importer else {
@@ -866,7 +879,7 @@ final class AppState {
         }
         do {
             let imported = try await importer.importBook(
-                from: url, into: libraryFolder, profiles: enabledProfiles, origin: origin)
+                from: url, into: libraryFolder, profiles: enabledProfiles)
             await loadBooks()
             if let collection {
                 // Resolve the up-to-date Book (loadBooks may have replaced
@@ -1124,6 +1137,9 @@ final class AppState {
     }
 
     func removeCover(for book: Book) async {
+        // The user's explicit "remove cover" — we do delete the file. The
+        // implicit "replace cover" path (`writeCover`) keeps the old one
+        // around since picking a new cover is a softer signal of intent.
         if let coverURL = book.coverURL {
             try? await Task.detached {
                 try FileManager.default.removeItem(at: coverURL)
@@ -1131,7 +1147,7 @@ final class AppState {
         }
         var updated = book
         updated.coverPath = nil
-        await updateBook(updated)
+        await persistCoverChange(updated)
     }
 
     private func writeCover(_ data: Data, ext: String, for book: Book) async {
@@ -1145,13 +1161,9 @@ final class AppState {
         let suffix = String(UUID().uuidString.prefix(6).lowercased())
         let newFileName = "cover-\(suffix).\(ext)"
         let newURL = bookFolder.appending(component: newFileName)
-        let oldCoverURL = book.coverURL
 
         do {
             try await Task.detached {
-                if let oldCoverURL {
-                    try? FileManager.default.removeItem(at: oldCoverURL)
-                }
                 try data.write(to: newURL, options: .atomic)
             }.value
         } catch {
@@ -1159,9 +1171,49 @@ final class AppState {
             return
         }
 
+        // Old cover file is left on disk on purpose: covers don't affect
+        // identity, the user might want to revert via Finder, and the
+        // unique-suffix naming means no collisions accumulate within the
+        // active session.
         var updated = book
         updated.coverPath = newFileName
-        await updateBook(updated)
+        await persistCoverChange(updated)
+    }
+
+    /// Persists a cover-only change (new `coverPath`) to the sidecar + index
+    /// without going through `updateBook`'s folder-relocate / slug-rename
+    /// pipeline. The cover lives inside the book's folder; changing it
+    /// doesn't move or rename the book on disk, so the heavy machinery is
+    /// both unnecessary and a source of bugs — it has previously refused
+    /// cover changes with phantom folder-collision errors when the
+    /// canonical-folder URL disagreed with the current-folder URL by string
+    /// representation alone. Sidecar is canonical per Principle 1; index
+    /// update follows but failures only desync the cache (next bootstrap
+    /// rebuilds from sidecars).
+    private func persistCoverChange(_ book: Book) async {
+        await openIndexIfNeeded()
+        guard let index else {
+            libraryLogger.error("cover persist: no index")
+            return
+        }
+        let bookFolder = book.fileURL.deletingLastPathComponent()
+        let names = collectionNames(for: book.collectionIDs)
+        do {
+            try await Task.detached {
+                try MetadataSidecar.write(book, collectionNames: names, to: bookFolder)
+            }.value
+        } catch {
+            libraryLogger.error(
+                "cover sidecar write failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        do {
+            try await index.update(book)
+        } catch {
+            libraryLogger.error(
+                "cover index update failed: \(error.localizedDescription, privacy: .public)")
+        }
+        await loadBooks()
     }
 
     func deleteBook(_ book: Book) async {

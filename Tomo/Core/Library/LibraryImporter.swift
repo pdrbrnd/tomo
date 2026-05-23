@@ -84,8 +84,7 @@ actor LibraryImporter {
     func importBook(
         from sourceURL: URL,
         into libraryFolder: URL,
-        profiles: [LanguageProfile],
-        origin: BookOrigin
+        profiles: [LanguageProfile]
     ) async throws -> Book {
         libraryLogger.info("importing \(sourceURL.lastPathComponent, privacy: .public)")
 
@@ -131,8 +130,7 @@ actor LibraryImporter {
                 locale: locale,
                 coverPath: coverFileName,
                 dateAdded: .now,
-                fileURL: destFile,
-                origin: origin
+                fileURL: destFile
             )
 
             // Fresh import: no collections yet. Membership is added later

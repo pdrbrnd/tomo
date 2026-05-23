@@ -47,7 +47,6 @@ private nonisolated struct SidecarPayload: Codable {
     var coverPath: String?
     var dateAdded: Date
     var fileName: String
-    var origin: BookOrigin
     var collections: [String]
 
     static let currentVersion = 1
@@ -62,7 +61,6 @@ private nonisolated struct SidecarPayload: Codable {
         self.coverPath = book.coverPath
         self.dateAdded = book.dateAdded
         self.fileName = book.fileURL.lastPathComponent
-        self.origin = book.origin
         self.collections = collectionNames
     }
 
@@ -75,13 +73,12 @@ private nonisolated struct SidecarPayload: Codable {
             locale: locale,
             coverPath: coverPath,
             dateAdded: dateAdded,
-            fileURL: folder.appending(component: fileName),
-            origin: origin
+            fileURL: folder.appending(component: fileName)
         )
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, id, title, authors, year, locale, coverPath, dateAdded, fileName, origin,
+        case version, id, title, authors, year, locale, coverPath, dateAdded, fileName,
             collections
         // Legacy keys (sidecars written before the unified-locale refactor):
         case languageCode, languageProfileId
@@ -101,7 +98,9 @@ private nonisolated struct SidecarPayload: Codable {
         self.coverPath = try c.decodeIfPresent(String.self, forKey: .coverPath)
         self.dateAdded = try c.decode(Date.self, forKey: .dateAdded)
         self.fileName = try c.decode(String.self, forKey: .fileName)
-        self.origin = try c.decode(BookOrigin.self, forKey: .origin)
+        // `origin` was dropped — old sidecars still carry it, and Swift's
+        // default behaviour is to silently ignore unknown keys. Nothing to
+        // do here; the field naturally falls away on the next write.
         self.collections = try c.decodeIfPresent([String].self, forKey: .collections) ?? []
 
         if let new = try c.decodeIfPresent(String.self, forKey: .locale) {
@@ -125,7 +124,6 @@ private nonisolated struct SidecarPayload: Codable {
         try c.encodeIfPresent(coverPath, forKey: .coverPath)
         try c.encode(dateAdded, forKey: .dateAdded)
         try c.encode(fileName, forKey: .fileName)
-        try c.encode(origin, forKey: .origin)
         // Only emit collections if non-empty — keeps existing single-book
         // sidecars terse.
         if !collections.isEmpty {
