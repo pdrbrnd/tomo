@@ -120,12 +120,9 @@ struct PluginsSettingsView: View {
 
             Spacer()
 
-            if let updateTarget {
+            if updateTarget != nil {
                 Button("Update") {
-                    Task {
-                        await state.updatePluginFromRegistry(
-                            updateTarget.entry, from: updateTarget.registryURL)
-                    }
+                    Task { await state.applyPluginUpdate(id: plugin.id) }
                 }
                 .controlSize(.small)
             }

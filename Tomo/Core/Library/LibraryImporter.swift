@@ -34,6 +34,39 @@ actor LibraryImporter {
         acceptedExtensions.contains(url.pathExtension.lowercased())
     }
 
+    /// Expands a drop selection into a flat list of file URLs ready for the
+    /// `canImport` partition. Directories are walked recursively, yielding
+    /// only files whose extension is in `acceptedExtensions` — junk files
+    /// inside a dropped folder are silently skipped (the user's intent is
+    /// "import what you can", not "warn me about every non-book file").
+    /// Regular files pass through unchanged; the caller still runs them
+    /// through `canImport` so top-level unsupported drops get the usual
+    /// error toast.
+    static func expand(_ urls: [URL]) -> [URL] {
+        urls.flatMap { url -> [URL] in
+            let isDirectory =
+                (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if !isDirectory { return [url] }
+            guard
+                let enumerator = FileManager.default.enumerator(
+                    at: url,
+                    includingPropertiesForKeys: [.isRegularFileKey],
+                    options: [.skipsHiddenFiles, .skipsPackageDescendants]
+                )
+            else { return [] }
+            return enumerator.compactMap { item in
+                guard let fileURL = item as? URL else { return nil }
+                let isFile =
+                    (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?
+                    .isRegularFile ?? false
+                guard isFile,
+                    acceptedExtensions.contains(fileURL.pathExtension.lowercased())
+                else { return nil }
+                return fileURL
+            }
+        }
+    }
+
     /// Pretty list for UI surfaces ("EPUB and PDF"). Sorted, uppercased,
     /// joined with " and " when there are two — Oxford comma otherwise.
     static var acceptedExtensionsDisplay: String {

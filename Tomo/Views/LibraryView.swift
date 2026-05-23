@@ -414,13 +414,19 @@ struct LibraryView: View {
                 schedulePluginSearch(for: searchText)
             }
         }
-        // Switching sidebar scope (collection, language, device filter) clears
-        // the search bar. Persisting search across scope changes confused
-        // users — they'd land on an empty collection and not realise the
-        // search was still narrowing the results.
-        .onChange(of: selectedCollection) { _, _ in searchText = "" }
-        .onChange(of: selectedLanguage) { _, _ in searchText = "" }
-        .onChange(of: selectedDeviceFilter) { _, _ in searchText = "" }
+        // Sidebar scope changes (collection, language, device filter) refine
+        // the active search rather than clearing it. The X button in the
+        // search pill is the explicit "exit search" affordance.
+        //
+        // Library section auto-refilters via `filteredBooks` (it's a
+        // computed property — SwiftUI recomputes the body on selection
+        // change). Plugin sections cache their own results in
+        // `pluginSearchStates`, so a sidebar language flip needs to
+        // re-fire the plugin search: `mergeSidebarScope` will layer the
+        // new language into the parsed query.
+        .onChange(of: selectedLanguage) { _, _ in
+            if isSearching { schedulePluginSearch(for: searchText) }
+        }
         .confirmationDialog(
             deleteDialogTitle,
             isPresented: Binding(
@@ -620,14 +626,24 @@ struct LibraryView: View {
         .animation(deviceTileAnimation, value: state.device?.displayName)
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.28), value: state.currentToast?.id)
         .dropDestination(for: URL.self) { urls, _ in
-            let (accepted, rejected) = urls.reduce(into: ([URL](), [URL]())) { acc, url in
+            // Walk dropped folders so their EPUB/PDFs get imported instead of
+            // the folder being silently rejected as "unsupported extension".
+            // Junk files inside a folder are dropped without a toast — only
+            // top-level non-book drops surface the unsupported-type error.
+            let expanded = LibraryImporter.expand(urls)
+            let (accepted, rejected) = expanded.reduce(into: ([URL](), [URL]())) { acc, url in
                 if LibraryImporter.canImport(url) {
                     acc.0.append(url)
                 } else {
                     acc.1.append(url)
                 }
             }
-            if !rejected.isEmpty {
+            let directoriesYieldedNothing = !urls.isEmpty && expanded.isEmpty
+            if directoriesYieldedNothing {
+                state.showToast(
+                    .error("No supported files found in the dropped folders.")
+                )
+            } else if !rejected.isEmpty {
                 let exts =
                     Set(rejected.map { $0.pathExtension.lowercased() })
                     .sorted()
@@ -638,7 +654,9 @@ struct LibraryView: View {
                         "Unsupported file type (\(exts)). Tomo imports \(LibraryImporter.acceptedExtensionsDisplay)."
                     ))
             }
-            guard !accepted.isEmpty else { return !rejected.isEmpty }
+            guard !accepted.isEmpty else {
+                return directoriesYieldedNothing || !rejected.isEmpty
+            }
             Task {
                 for url in accepted {
                     await state.importBook(from: url, origin: .manualImport)
@@ -1241,30 +1259,62 @@ struct LibraryView: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
 
-            // Run each enabled plugin in turn. With 2-3 plugins typical,
-            // sequential is plenty fast (~1s worst case after the 300ms
-            // debounce) and dodges the cross-actor region-isolation gymnastics
-            // a TaskGroup would need under Swift 6 strict concurrency. One
-            // slow plugin blocks the next; revisit when that becomes a real
-            // problem.
-            for plugin in plugins {
+            // Fan-out: every plugin's search runs concurrently so a slow
+            // plugin doesn't block faster ones from rendering. Each Task
+            // inherits MainActor isolation (PluginSource is @MainActor)
+            // and the plugin's await-points already detach network work
+            // via Task.detached in PluginHost — so the underlying HTTP
+            // calls overlap even though JS itself runs on the main thread.
+            //
+            // An AsyncStream stitches the parallel children back into a
+            // single consumer ordered by completion, not submission — a
+            // fast Standard Ebooks renders even if a slow Anna's still in
+            // flight. We avoid TaskGroup here because addTask's `sending`
+            // closure trips a Swift 6 region-isolation checker limitation
+            // when capturing the @MainActor PluginSource ("pattern that
+            // the region-based isolation checker does not understand how
+            // to check").
+            let stream = AsyncStream<PluginSearchOutcome> { continuation in
+                let children = plugins.map { plugin in
+                    Task {
+                        let outcome: PluginSearchOutcome
+                        do {
+                            let raw = try await plugin.search(parsedQuery)
+                            outcome = PluginSearchOutcome(
+                                pluginID: plugin.id, result: .success(raw))
+                        } catch {
+                            let message =
+                                (error as? LocalizedError)?.errorDescription
+                                ?? error.localizedDescription
+                            outcome = PluginSearchOutcome(
+                                pluginID: plugin.id, result: .failure(message))
+                        }
+                        continuation.yield(outcome)
+                    }
+                }
+                continuation.onTermination = { _ in
+                    children.forEach { $0.cancel() }
+                }
+                Task {
+                    for child in children { _ = await child.value }
+                    continuation.finish()
+                }
+            }
+            for await outcome in stream {
                 if Task.isCancelled { break }
-                do {
-                    let raw = try await plugin.search(parsedQuery)
-                    if Task.isCancelled { break }
+                switch outcome.result {
+                case .success(let raw):
                     // Client-side language filter for plugins that don't
                     // honour `query.language` server-side. Empty result
                     // language is kept — plugin didn't tell us, we don't
                     // second-guess.
-                    let filtered = filterByLanguage(raw, language: parsedQuery.language)
-                    pluginSearchStates[plugin.id] = .loaded(filtered)
-                } catch {
-                    let message =
-                        (error as? LocalizedError)?.errorDescription
-                        ?? error.localizedDescription
-                    pluginSearchStates[plugin.id] = .failed(message)
+                    let filtered = filterByLanguage(
+                        raw, language: parsedQuery.language)
+                    pluginSearchStates[outcome.pluginID] = .loaded(filtered)
+                case .failure(let message):
+                    pluginSearchStates[outcome.pluginID] = .failed(message)
                     pluginLogger.error(
-                        "plugin \(plugin.id, privacy: .public) search failed: \(message, privacy: .public)"
+                        "plugin \(outcome.pluginID, privacy: .public) search failed: \(message, privacy: .public)"
                     )
                 }
             }
@@ -1928,6 +1978,13 @@ struct LibraryView: View {
                     }
                 }
                 return true
+            },
+            onSelectAllBooks: {
+                selectedCollection = nil
+                selectedLanguage = nil
+                selectedAuthor = nil
+                selectedDeviceFilter = nil
+                searchText = ""
             }
         )
         .frame(width: Self.sidebarWidth)
@@ -2273,6 +2330,21 @@ struct LibraryView: View {
 }
 
 // MARK: - Browser download request
+
+/// Concrete Sendable carrier for a single plugin's search result, fanned in
+/// from the parallel search TaskGroup. Replaces a `Result<[PluginResult], any
+/// Error>` tuple — the existential `any Error` defeats Swift 6's region
+/// isolation checker at the task-group consumption point. Error → String
+/// conversion happens inside the subtask before crossing back.
+private struct PluginSearchOutcome: Sendable {
+    let pluginID: String
+    let result: PluginOutcomeResult
+
+    enum PluginOutcomeResult: Sendable {
+        case success([PluginResult])
+        case failure(String)
+    }
+}
 
 /// State payload for the `BrowserDownloadSheet`. Bundles the originating
 /// source result with the URL the in-app webview should open at — usually

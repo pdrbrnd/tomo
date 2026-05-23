@@ -28,7 +28,11 @@ struct BottomChrome: View {
             HStack {
                 Spacer()
                 SearchPill(text: $searchText, placeholder: searchPlaceholder) {
-                    SourcesSettingsButton(state: state)
+                    if searchText.isEmpty {
+                        SourcesSettingsButton(state: state)
+                    } else {
+                        ClearSearchButton { searchText = "" }
+                    }
                 }
                 .focused(searchFocused)
                 Spacer()

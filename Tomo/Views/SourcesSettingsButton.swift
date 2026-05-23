@@ -13,32 +13,49 @@ struct SourcesSettingsButton: View {
         Button {
             popoverOpen.toggle()
         } label: {
-            Group {
-                if state.pluginSearchInFlight {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(.primary.opacity(Theme.Text.placeholder))
-                } else {
-                    Icon(symbol: "ellipsis", weight: .regular, size: 11)
-                        .foregroundStyle(.primary.opacity(popoverOpen ? Theme.Text.primary : Theme.Text.placeholder))
+            Icon(symbol: "ellipsis", weight: .regular, size: 11)
+                .foregroundStyle(.primary.opacity(popoverOpen ? Theme.Text.primary : Theme.Text.placeholder))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+                .overlay(alignment: .topTrailing) {
+                    if state.hasUnacknowledgedPluginUpdates {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 4, y: 0)
+                    }
                 }
-            }
-            .frame(width: 22, height: 22)
-            .contentShape(Rectangle())
-            .overlay(alignment: .topTrailing) {
-                if state.hasPluginUpdates {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 6, height: 6)
-                        .offset(x: -2, y: 2)
-                }
-            }
         }
         .buttonStyle(.plain)
         .help("Sources")
         .popover(isPresented: $popoverOpen, arrowEdge: .top) {
             SourcesPopoverContent(state: state, popoverOpen: $popoverOpen)
+                .onAppear { state.acknowledgePluginUpdatesBadge() }
         }
+    }
+}
+
+/// Search-bar trailing button: clears the search. Takes over the trailing
+/// slot from `SourcesSettingsButton` whenever the search field has text —
+/// the X is the only visible "click to escape search" affordance, which
+/// matters more in that context than 1-click sources access. Uses
+/// `xmark.circle.fill` to match macOS's native search-field clear glyph.
+struct ClearSearchButton: View {
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Icon(symbol: "xmark.circle.fill", weight: .regular, size: 13)
+                .foregroundStyle(
+                    .primary.opacity(hovered ? Theme.Text.primary : Theme.Text.secondary)
+                )
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Clear search")
+        .onHover { hovered = $0 }
     }
 }
 
@@ -61,13 +78,26 @@ private struct SourcesPopoverContent: View {
 
             MenuDivider()
 
+            if state.hasPluginUpdates {
+                Button {
+                    popoverOpen = false
+                    Task { await state.updateAllAvailablePlugins() }
+                } label: {
+                    HStack(spacing: 9) {
+                        Icon(symbol: "arrow.down.circle", weight: .regular, size: 13)
+                            .frame(width: 14)
+                        Text("Update Plugins")
+                        Spacer(minLength: 8)
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 6, height: 6)
+                    }
+                }
+            }
             Button {
                 openPluginsSettings()
             } label: {
-                rowLabel(
-                    icon: "puzzlepiece.extension",
-                    title: state.hasPluginUpdates ? "Manage Plugins (updates available)…" : "Manage Plugins…"
-                )
+                rowLabel(icon: "puzzlepiece.extension", title: "Manage Plugins…")
             }
             Button {
                 installPlugin()

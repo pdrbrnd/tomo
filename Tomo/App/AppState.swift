@@ -321,6 +321,43 @@ final class AppState {
     var pluginRegistryRefreshInFlight: Bool = false
     private(set) var pluginUpdatesAvailable: Set<String> = []
     var hasPluginUpdates: Bool { !pluginUpdatesAvailable.isEmpty }
+    /// Plugin IDs whose available update the user has already seen — set when
+    /// the user opens the sources popover. The session-level badge dot
+    /// (`hasUnacknowledgedPluginUpdates`) only shows for updates *not* in
+    /// this set, so popping the popover once dismisses the dot until a
+    /// genuinely new update lands. `pluginUpdatesAvailable` itself stays
+    /// truthful (the Settings view still surfaces the count).
+    private(set) var pluginUpdatesBadgeAcknowledged: Set<String> = []
+    var hasUnacknowledgedPluginUpdates: Bool {
+        !pluginUpdatesAvailable.subtracting(pluginUpdatesBadgeAcknowledged).isEmpty
+    }
+    func acknowledgePluginUpdatesBadge() {
+        pluginUpdatesBadgeAcknowledged = pluginUpdatesAvailable
+    }
+    func updateAllAvailablePlugins() async {
+        // Refresh first: the cached registry entry's sha can be stale while
+        // the entry's `url` (which always points at `main`) serves the live
+        // bytes. Downloading without a refresh hits a guaranteed sha
+        // mismatch in `fetchPluginJS`.
+        await refreshAllRegistries()
+        for id in pluginUpdatesAvailable {
+            guard let target = latestRegistryEntry(forID: id) else { continue }
+            await updatePluginFromRegistry(target.entry, from: target.registryURL)
+        }
+    }
+
+    /// Apply the latest available update for a single plugin. Refresh-first
+    /// for the same reason as `updateAllAvailablePlugins` — the registry
+    /// entry passed in by the caller may have been resolved from a stale
+    /// cache.
+    func applyPluginUpdate(id: String) async {
+        await refreshAllRegistries()
+        guard let target = latestRegistryEntry(forID: id) else {
+            showToast(.error("No registry entry found for \(id)."))
+            return
+        }
+        await updatePluginFromRegistry(target.entry, from: target.registryURL)
+    }
     var allRegistryURLs: [URL] { PluginRegistryStore.allRegistryURLs() }
     var userAddedRegistryURLs: [URL] { PluginRegistryStore.userAddedRegistryURLs() }
     var defaultRegistryURL: URL { PluginRegistryStore.defaultRegistryURL }

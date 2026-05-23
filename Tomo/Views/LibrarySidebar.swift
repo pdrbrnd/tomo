@@ -34,6 +34,11 @@ struct LibrarySidebar: View {
     let onRenameCollection: (UUID, String) -> Void
     let onRequestDeleteCollection: (Collection) -> Void
     let onDropOnCollection: (BookDrag, UUID) -> Bool
+    /// Invoked when the user clicks the "All Books" row. The owner clears
+    /// every filter axis *and* dismisses the search — "All Books" is the
+    /// explicit reset gesture, distinct from re-clicking a specific item
+    /// (which only toggles that axis off).
+    let onSelectAllBooks: () -> Void
 
     @State private var creatingCollection = false
     @State private var newCollectionName = ""
@@ -144,10 +149,7 @@ struct LibrarySidebar: View {
                     && selectedAuthor == nil
                     && selectedDeviceFilter == nil
             ) {
-                selectedCollection = nil
-                selectedLanguage = nil
-                selectedAuthor = nil
-                selectedDeviceFilter = nil
+                onSelectAllBooks()
             }
         }
     }
