@@ -493,12 +493,12 @@ struct BookInspector: View {
             if let device, device.canSend {
                 Button(action: onSendToDevice) {
                     actionLabel(
-                        icon: device.isOnDevice ? "checkmark" : "ipad",
-                        title: device.isOnDevice ? "On \(device.displayName)" : "Send to \(device.displayName)"
+                        icon: device.isOnDevice ? "arrow.clockwise" : "ipad",
+                        title: device.isOnDevice
+                            ? "Update on \(device.displayName)"
+                            : "Send to \(device.displayName)"
                     )
                 }
-                .disabled(device.isOnDevice)
-                .opacity(device.isOnDevice ? 0.5 : 1.0)
             }
             Button(action: onShowInFinder) {
                 actionLabel(icon: "folder", title: "Show in Finder")

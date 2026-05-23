@@ -1607,6 +1607,10 @@ struct LibraryView: View {
         if let device = state.device, device.canAccept(book) {
             MenuDivider()
             if isOnDevice(book) {
+                bookMenuItem("Update on \(device.displayName)", icon: "arrow.clockwise") {
+                    Task { await state.sendToDevice(book: book) }
+                    dismiss()
+                }
                 bookMenuItem("Remove from \(device.displayName)", icon: "ipad", destructive: true) {
                     Task { await state.removeFromDevice(book: book) }
                     dismiss()

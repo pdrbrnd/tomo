@@ -108,14 +108,12 @@ nonisolated enum DeliveryRoute: Sendable, Equatable {
 
 /// Errors any device implementation can throw at the device boundary.
 enum BookDeviceError: LocalizedError {
-    case alreadyOnDevice
     case copyFailed(underlying: Error)
     case removeFailed(underlying: Error)
     case ejectFailed(underlying: Error)
 
     var errorDescription: String? {
         switch self {
-        case .alreadyOnDevice: "This book is already on the device."
         case .copyFailed(let e): "Couldn't copy to the device: \(e.localizedDescription)"
         case .removeFailed(let e): "Couldn't remove from the device: \(e.localizedDescription)"
         case .ejectFailed(let e): "Couldn't eject the device: \(e.localizedDescription)"

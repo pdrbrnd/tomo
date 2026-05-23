@@ -127,13 +127,22 @@ nonisolated struct Kindle: BookDevice {
     private func performCopy(from source: URL, to dest: URL) async throws {
         try await Task.detached {
             let fm = FileManager.default
+            // Re-send semantics: an existing copy on the device is replaced
+            // rather than rejected. FAT/exFAT volumes don't expose atomic-
+            // replace primitives, so we accept the brief window between
+            // removeItem and copyItem — the user is the one initiating the
+            // action; the Kindle's scanner doesn't poll mid-write. The
+            // matching `.sdr/` annotations sidecar is keyed by filename and
+            // stays put, so highlights survive the replace.
+            if fm.fileExists(atPath: dest.path(percentEncoded: false)) {
+                do {
+                    try fm.removeItem(at: dest)
+                } catch {
+                    throw BookDeviceError.copyFailed(underlying: error)
+                }
+            }
             do {
                 try fm.copyItem(at: source, to: dest)
-            } catch let error as NSError
-                where
-                error.domain == NSCocoaErrorDomain && error.code == NSFileWriteFileExistsError
-            {
-                throw BookDeviceError.alreadyOnDevice
             } catch {
                 throw BookDeviceError.copyFailed(underlying: error)
             }

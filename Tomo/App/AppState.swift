@@ -207,6 +207,9 @@ final class AppState {
         } else {
             self.deviceFilenames = []
         }
+        if let kindle = detected as? Kindle {
+            Task.detached { await KindleSync.run(volumeURL: kindle.volumeURL) }
+        }
 
         await Task.detached { PluginDirectory.seedBundledPluginsIfNeeded() }.value
         await reloadPluginSource()
@@ -412,6 +415,9 @@ final class AppState {
         let detected = DeviceScanner.detect()
         device = detected
         deviceFilenames = detected?.filenames() ?? []
+        if let kindle = detected as? Kindle {
+            Task.detached { await KindleSync.run(volumeURL: kindle.volumeURL) }
+        }
     }
 
     func loadBooks() async {
