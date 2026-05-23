@@ -22,8 +22,7 @@ struct PluginRegistryTests {
                   "license": "MIT",
                   "minAppVersion": "1.6.0",
                   "url": "https://example.com/gutenberg.js",
-                  "sha256": "abc123",
-                  "firstLaunchInstall": true
+                  "sha256": "abc123"
                 }
               ]
             }
@@ -39,7 +38,6 @@ struct PluginRegistryTests {
         #expect(entry.minAppVersion == "1.6.0")
         #expect(entry.url.absoluteString == "https://example.com/gutenberg.js")
         #expect(entry.sha256 == "abc123")
-        #expect(entry.firstLaunchInstall == true)
     }
 
     @Test func decodesEntryWithoutOptionalFields() throws {
@@ -67,7 +65,6 @@ struct PluginRegistryTests {
         #expect(entry.author == nil)
         #expect(entry.license == nil)
         #expect(entry.minAppVersion == nil)
-        #expect(entry.firstLaunchInstall == nil)
     }
 
     @Test func cachedRegistryRoundTrip() throws {
@@ -77,7 +74,7 @@ struct PluginRegistryTests {
             description: nil, homepage: nil, author: nil, license: nil,
             minAppVersion: "1.6.0",
             url: URL(string: "https://example.com/x.js")!,
-            sha256: "deadbeef", firstLaunchInstall: nil
+            sha256: "deadbeef"
         )
         let file = PluginRegistryFile(version: 1, name: "T", plugins: [entry])
         let cached = CachedRegistry(

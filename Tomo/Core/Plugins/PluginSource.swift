@@ -210,21 +210,10 @@ nonisolated enum PluginDirectory {
         return (plugins, firstError)
     }
 
-    /// First-launch fallback: copies plugins bundled in `Resources/Plugins/`
-    /// into the user's plugins directory the *first* time the directory is
-    /// empty and no install records exist. This guarantees `gutenberg`
-    /// without a network call — the legit-only seed when the user has no
-    /// connectivity on day one.
-    ///
-    /// Subsequent launches are no-ops: the install records ledger marks the
-    /// seeded plugins as `.bundled`, and from then on the registry is the
-    /// canonical source. A user who clicks Update on `gutenberg` upgrades
-    /// the record from `.bundled` to `.registry` automatically.
-    ///
-    /// User-authored plugins are untouched. Failures are silent: if the
-    /// bundle ships nothing, or the destination dir can't be created, the
-    /// user just sees an empty plugins list (matching the "no plugins"
-    /// state).
+    /// Copies bundled `.js` files into the plugins directory on a clean
+    /// install (empty dir + no install records). Subsequent launches no-op.
+    /// Honors Principle 5 — gutenberg is available offline on first launch
+    /// without any network call.
     static func seedBundledIfNeeded() {
         guard let dir = directoryURL() else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -301,45 +290,29 @@ nonisolated enum PluginDirectory {
 
     /// After a reload, ensure every loaded plugin has an install record.
     /// Missing records are inferred: byte-equal to a bundled file → `.bundled`;
-    /// otherwise `.manual`. Plugins that have an explicit record (already
-    /// `.registry` or `.bundled`) are left alone.
-    ///
-    /// Runs on MainActor so it can read each plugin's manifest (`id`, `version`).
-    /// The file I/O part is cheap (the plugins are already cached by the OS
-    /// from the reload).
+    /// otherwise `.manual`. Records that already exist are left alone.
     @MainActor
     static func reconcileInstallRecords(for plugins: [PluginSource]) {
-        let existing = PluginInstallRecords.read()
-        let bundledBytes: [String: Data] = Dictionary(
-            uniqueKeysWithValues: bundledPluginURLs().compactMap { url in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return (url.deletingPathExtension().lastPathComponent, data)
-            }
-        )
-        guard let dir = directoryURL() else { return }
+        var records = PluginInstallRecords.read()
+        let missing = plugins.filter { records[$0.id] == nil }
+        guard !missing.isEmpty, let dir = directoryURL() else { return }
 
-        for plugin in plugins {
-            if existing[plugin.id] != nil { continue }
+        let bundledBytes: Set<Data> = Set(
+            bundledPluginURLs().compactMap { try? Data(contentsOf: $0) }
+        )
+
+        for plugin in missing {
             let dest = dir.appending(path: "\(plugin.id).js")
             let bytes = try? Data(contentsOf: dest)
-            let sha = bytes.map(sha256Hex)
-            let isBundled =
-                bytes != nil
-                && bundledBytes.values.contains(where: { $0 == bytes })
-            PluginInstallRecords.upsert(
-                PluginInstallRecord(
-                    id: plugin.id,
-                    source: isBundled ? .bundled : .manual,
-                    registryURL: nil,
-                    // installedVersion stays nil for legacy / manual /
-                    // bundled-pre-registry plugins. Updated to the
-                    // registry's version on the first registry-driven
-                    // update.
-                    installedVersion: nil,
-                    sha256: sha,
-                    installedAt: Date()
-                )
+            records[plugin.id] = PluginInstallRecord(
+                id: plugin.id,
+                source: bytes.map(bundledBytes.contains) == true ? .bundled : .manual,
+                registryURL: nil,
+                installedVersion: nil,
+                sha256: bytes.map(sha256Hex),
+                installedAt: Date()
             )
         }
+        PluginInstallRecords.write(records)
     }
 }

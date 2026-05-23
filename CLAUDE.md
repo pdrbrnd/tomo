@@ -132,9 +132,9 @@ sit at `und` (the BCP 47 "undetermined" tag).
 
 ## Sources
 
-External book search runs through user-installed JavaScript plugins loaded from `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`. One plugin (`gutenberg.js`) ships bundled and is seeded on first launch; users install more by dropping `.js` files into the folder.
+External book search runs through JavaScript plugins loaded from `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`. Primary install path: Settings → Plugins (federated registries, see `docs/plugins.md` and `docs/CONTRACT.md`). The default registry is hardcoded to `pdrbrnd/tomo-plugins` on GitHub; users can add third-party registry URLs. `gutenberg.js` ships bundled as the offline-safe first-launch seed only. Drop-install (`.js` file directly into the folder) still works for power users.
 
-The contract and host bindings (fetch, querySelectorAll, cacheImage, console) are documented in `docs/plugins.md`. Source-of-truth shapes live in `Tomo/Core/Plugins/{PluginResult,PluginHost,PluginSource}.swift`. Multi-plugin search runs each enabled plugin in turn; per-plugin enable/disable in the sources popover, persisted in `UserDefaults`.
+The contract and host bindings (fetch, querySelectorAll, cacheImage, console) are documented in `docs/plugins.md`. Source-of-truth shapes live in `Tomo/Core/Plugins/`. Multi-plugin search runs each enabled plugin in turn; per-plugin enable/disable in the sources popover (quick-toggle during search) or the Plugins settings section (full management), persisted in `UserDefaults`.
 
 ## Format support
 

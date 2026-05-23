@@ -72,18 +72,16 @@ Registry shape (`version: 1`):
       "license": "MIT",
       "minAppVersion": "1.6.0",
       "url": "https://raw.githubusercontent.com/.../plugins/gutenberg.js",
-      "sha256": "abc123...",
-      "firstLaunchInstall": true
+      "sha256": "abc123..."
     }
   ]
 }
 ```
 
-- `version` is an ISO-8601 timestamp (lex-comparable). Set by the registry's build script from each plugin file's git mtime — never by the plugin author.
+- `version` is an ISO-8601 timestamp (compared as Date, lex fallback). Set by the registry's build script from each plugin file's git mtime — never by the plugin author.
 - `minAppVersion` is mirrored from the plugin's manifest. Tomo compares it against `CFBundleShortVersionString` at install/update time.
 - `url` is the full URL to the plugin's `.js` file.
 - `sha256` is verified against the bytes Tomo fetches at install time. Mismatch → install refused.
-- `firstLaunchInstall` is advisory (currently honored only for `gutenberg`).
 
 Tomo uses conditional GETs (`ETag` / `If-Modified-Since`) when re-fetching registries, and caches each response at `~/Library/Application Support/com.pdrbrnd.tomo/registry-cache/<sha256-of-url>.json`. No background fetches — refresh only on the user clicking "Check for updates."
 

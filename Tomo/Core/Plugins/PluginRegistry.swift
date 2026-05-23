@@ -1,49 +1,32 @@
 import CryptoKit
 import Foundation
 
-/// One plugin listed in a registry. Mirrors the on-disk JSON shape exactly
-/// — anything added here needs a forward-compat default since older app
-/// versions will read newer registries.
+/// One plugin listed in a registry. `version` is an ISO-8601 timestamp the
+/// registry's build script derives from git mtime — plugin authors never
+/// set it. `sha256` is verified at download time. New optional fields can
+/// be added without breaking older clients.
 nonisolated struct PluginRegistryEntry: Codable, Sendable, Hashable, Identifiable {
     let id: String
     let name: String
-    /// CalVer-style "when was this last updated" string, ISO-8601 with second
-    /// precision (`"2026-05-23T16:38:00Z"`). The build script derives this
-    /// from each plugin file's last git commit timestamp — plugin authors
-    /// never set it by hand. Lex-comparable: a string greater than the
-    /// installed one means an update is available.
     let version: String
     let description: String?
     let homepage: URL?
     let author: String?
     let license: String?
-    /// Minimum host app version required to install or update this plugin.
-    /// Semver string, e.g. `"1.0.0"`. Compared against `AppVersion.current`
-    /// at install/update time. `nil` means no constraint.
     let minAppVersion: String?
-    /// URL of the plugin's `.js` source. Resolved with `URLSession` when the
-    /// user clicks Install/Update. Required.
     let url: URL
-    /// Hex-encoded sha256 of the bytes at `url`. Used to verify the download
-    /// before writing the file to disk. Required.
     let sha256: String
-    /// If true, this plugin is seeded on first launch when the user is
-    /// online (currently expected on `gutenberg` only). Optional, defaults
-    /// to false — registry entries without this flag are install-on-demand.
-    let firstLaunchInstall: Bool?
 }
 
-/// Top-level registry document. Versioned so the schema can evolve without
-/// silently breaking older clients (they'll bail out on unknown `version`).
+/// Schema-versioned so older clients can bail out on an unknown `version`.
 nonisolated struct PluginRegistryFile: Codable, Sendable, Hashable {
     let version: Int
     let name: String
     let plugins: [PluginRegistryEntry]
 }
 
-/// Cached registry + the HTTP cache headers we'd use for the next conditional
-/// GET. Persisted next to the registry data so the cache survives across
-/// launches without a separate keyed store.
+/// Cached registry response + conditional-GET headers, kept together so the
+/// cache survives a launch without a separate keyed store.
 nonisolated struct CachedRegistry: Codable, Sendable, Hashable {
     let registryURL: URL
     let registry: PluginRegistryFile

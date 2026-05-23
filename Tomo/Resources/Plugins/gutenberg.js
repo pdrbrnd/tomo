@@ -1,88 +1,7 @@
-// Project Gutenberg plugin for Tomo. Shipped inside the app as the
-// offline-safe first-launch seed; otherwise updated through the
-// `pdrbrnd/tomo-plugins` registry once the user clicks Check for updates.
-// Also serves as the reference example for writing your own plugin.
-//
-// !! HEADS UP !!
-// This file is *only* seeded into your plugins folder on first launch
-// (when the folder is empty). Once your copy exists, Tomo never overwrites
-// it. To pull a newer version: open Settings → Plugins → Check for updates.
-// To customise: copy this file to a new filename (e.g. `my-gutenberg.js`)
-// in the same folder and edit the copy.
-//
-// =====================================================================
-// Plugin manifest
-// =====================================================================
-//
-// Every plugin declares a top-level `const manifest = { ... }`. Tomo reads
-// it after evaluation to render the plugin's identity in Settings and
-// (optionally) to gate install on host compatibility via `minAppVersion`.
-//
-// Required: `id`. Everything else is optional.
-//
-// `minAppVersion` is a semver string ("1.6.0"). The registry compares it
-// against the running Tomo's CFBundleShortVersionString at install/update
-// time; mismatches refuse with a clear message.
-//
-// Notably absent: `version`. The plugin's "what version of itself is this"
-// is registry-side metadata (the registry's build script derives it from
-// the file's git mtime). Plugin authors don't bump anything.
-//
-// =====================================================================
-// Plugin contract
-// =====================================================================
-//
-// A plugin exports two async functions:
-//
-//   async function search(query) -> Result[]
-//   async function download(result) -> string  (URL for the host to fetch)
-//
-// `query` shape:
-//   { text?: string, title?: string, author?: string, language?: string,
-//     year?: string, isbn?: string, format?: string, publisher?: string }
-//
-// Plugins should bail out early (return []) for query shapes they can't
-// handle — e.g. an ISBN-only query when the source has no ISBN index.
-// Returning the catalogue's front page is worse than returning nothing.
-//
-// `Result` shape:
-//   {
-//     id: string,
-//     title: string,
-//     authors: string[],
-//     year: number | null,
-//     language: string,
-//     format: "epub" | "azw3" | "mobi" | "pdf",
-//     sizeBytes: number | null,
-//     coverURL: string | null,
-//     detailURL: string | null,
-//     metadata: Array<{ key: string, value: string }>
-//   }
-//
-// =====================================================================
-// Host bindings
-// =====================================================================
-//
-// fetch(url, opts?) -> Promise<{ status, ok, headers, body, url }>
-//   Plain HTTP. `body` is text. Use for HTML scraping, JSON APIs, etc.
-//
-// querySelectorAll(html, selector) -> Array<{ text, attrs, html }>
-//   Lightweight CSS selector parser. Returns each match with its inner
-//   text, attribute map, and outer HTML (so you can re-query inside).
-//
-// cacheImage(url, opts?) -> Promise<string>
-//   Fetches `url` through the host (which can set Referer / custom
-//   headers) and caches the bytes. Returns a local file path you wrap
-//   as `file://<path>` for the result's `coverURL`. Use this when the
-//   image is hotlink-protected and won't load from a plain URL.
-//   Project Gutenberg covers don't have hotlink protection, so this
-//   plugin uses a direct URL.
-//   opts: { referer?: string, headers?: Record<string, string> }
-//
-// console.log(msg), console.error(msg)
-//   Logs into Tomo's plugin log (Console.app, subsystem com.pdrbrnd.tomo).
-//
-// =====================================================================
+// Project Gutenberg plugin for Tomo. Bundled as the offline-safe first-
+// launch seed; otherwise served from the `pdrbrnd/tomo-plugins` registry.
+// Reference example — see docs/plugins.md for the full contract and
+// docs/CONTRACT.md for host capabilities per app version.
 
 const manifest = {
   id: "gutenberg",
@@ -92,10 +11,6 @@ const manifest = {
   homepage: "https://www.gutenberg.org",
   author: "Tomo",
   license: "MIT",
-  // Minimum Tomo version required to run this plugin. Compared against
-  // the host app's CFBundleShortVersionString at install/update time.
-  // Bump when the plugin starts relying on a host capability that landed
-  // in a newer Tomo release.
   minAppVersion: "1.6.0",
 };
 

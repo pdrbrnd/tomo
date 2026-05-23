@@ -25,9 +25,6 @@ struct SourcesSettingsButton: View {
             }
             .frame(width: 22, height: 22)
             .contentShape(Rectangle())
-            // Update-available badge: small dot in the top-right corner of
-            // the trailing button. Cleared once the user opens Plugins
-            // settings and the update is applied.
             .overlay(alignment: .topTrailing) {
                 if state.hasPluginUpdates {
                     Circle()
@@ -94,9 +91,7 @@ private struct SourcesPopoverContent: View {
     }
 
     private func openPluginsSettings() {
-        // Set the deep-link target *before* opening the window so
-        // `SettingsRoot.onAppear` (cold open) or `onChange`
-        // (already-open window) picks up the right section.
+        // Set the section before `openWindow` so cold-open `onAppear` sees it.
         state.pendingSettingsSection = SettingsSection.plugins.rawValue
         popoverOpen = false
         openWindow(id: TomoApp.settingsWindowID)

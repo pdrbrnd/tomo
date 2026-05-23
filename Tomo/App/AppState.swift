@@ -317,42 +317,17 @@ final class AppState {
     /// and the "searching…" empty state.
     var pluginSearchInFlight: Bool = false
 
-    /// Install records keyed by plugin id. Populated in `reloadPluginSource`
-    /// (which calls `PluginDirectory.reconcileInstallRecords` to backfill any
-    /// missing entries) and updated after each registry install/update/remove.
     private(set) var installRecords: [String: PluginInstallRecord] = [:]
-
-    /// Latest fetched registry per URL. Populated from on-disk cache in
-    /// `bootstrap`; refreshed on explicit "Check for updates" click.
     private(set) var cachedRegistries: [URL: CachedRegistry] = [:]
-
-    /// True while a "Check for updates" round is in flight. Drives the
-    /// spinner in Plugins settings.
     var pluginRegistryRefreshInFlight: Bool = false
-
-    /// Plugin ids that have a newer version available in a known registry
-    /// vs. what's installed. Recomputed after every install/update/registry
-    /// refresh.
     private(set) var pluginUpdatesAvailable: Set<String> = []
-
-    /// True when any installed plugin has a registry-known update available.
-    /// Drives the badge dot in the sources popover.
     var hasPluginUpdates: Bool { !pluginUpdatesAvailable.isEmpty }
-
-    /// The default Tomo registry URL plus user-added ones, in display order.
     var allRegistryURLs: [URL] { PluginRegistryStore.allRegistryURLs() }
-
-    /// User-added registries only (the default is non-removable and is
-    /// rendered separately in Plugins settings).
     var userAddedRegistryURLs: [URL] { PluginRegistryStore.userAddedRegistryURLs() }
-
     var defaultRegistryURL: URL { PluginRegistryStore.defaultRegistryURL }
 
-    /// Optional deep-link target consumed by `SettingsRoot` on appear/change.
-    /// Set this to a `SettingsSection.rawValue` *before* calling
-    /// `openWindow(id: settingsWindowID)` to land the user on a specific tab.
-    /// Cleared by `SettingsRoot` once applied so subsequent opens reset to
-    /// the default selection.
+    /// `SettingsSection.rawValue` to land on after `openWindow(settingsWindowID)`.
+    /// Cleared by `SettingsRoot` once applied.
     var pendingSettingsSection: String?
 
     private nonisolated(unsafe) var mountTask: Task<Void, Never>?
@@ -454,16 +429,13 @@ final class AppState {
         }
     }
 
-    /// Copies a user-chosen `.js` into the plugins directory, preserving the
-    /// source filename. Existing files of the same name are overwritten.
-    /// Reloads after copying so the new plugin shows up immediately.
     func installPlugin(from sourceURL: URL) async {
         guard let dir = PluginDirectory.directoryURL() else {
             showToast(.error("Couldn't locate plugins directory."))
             return
         }
         let destURL = dir.appending(path: sourceURL.lastPathComponent)
-        let fallbackID = sourceURL.deletingPathExtension().lastPathComponent
+        let priorIDs = Set(pluginSources.map(\.id))
         do {
             try await Task.detached {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -472,27 +444,12 @@ final class AppState {
                 }
                 try FileManager.default.copyItem(at: sourceURL, to: destURL)
             }.value
-            // File-drop install always lands as `.manual` — we don't track
-            // its version because there's no registry to compare against.
-            // Reconcile would mark it the same way, but doing it eagerly here
-            // means the install record is correct even before the reload.
-            PluginInstallRecords.upsert(
-                PluginInstallRecord(
-                    id: fallbackID,
-                    source: .manual,
-                    registryURL: nil,
-                    installedVersion: nil,
-                    sha256: nil,
-                    installedAt: Date()
-                )
-            )
+            // Reload picks up the new file; reconcile (inside reload) writes
+            // the install record keyed on the loaded plugin's actual id —
+            // which can differ from the filename when the manifest declares
+            // its own. Find what's new by set-difference.
             await reloadPluginSource()
-            // The plugin may have declared a manifest id different from the
-            // filename — look up by either, in that order.
-            let installed =
-                plugin(withID: fallbackID)
-                ?? pluginSources.first(where: { $0.id == fallbackID })
-            if let installed {
+            if let installed = pluginSources.first(where: { !priorIDs.contains($0.id) }) {
                 if !enabledPluginIDs.contains(installed.id) {
                     setPluginEnabled(installed.id, enabled: true)
                 }
@@ -535,9 +492,8 @@ final class AppState {
             for cached in cachedRegistries.values {
                 guard let entry = cached.registry.plugins.first(where: { $0.id == plugin.id })
                 else { continue }
-                // Skip entries the running app can't actually install/update.
                 guard isCompatible(entry: entry) else { continue }
-                if entry.version > installedVersion {
+                if PluginVersion.updateAvailable(installed: installedVersion, available: entry.version) {
                     updates.insert(plugin.id)
                 }
             }
@@ -545,17 +501,13 @@ final class AppState {
         self.pluginUpdatesAvailable = updates
     }
 
-    /// True when `AppVersion.current` satisfies `entry.minAppVersion` (or
-    /// the entry declares no minimum). Used to gate install/update actions
-    /// and to filter the Browse list. Semver compare via `SemVerCompare`.
     func isCompatible(entry: PluginRegistryEntry) -> Bool {
         guard let minRequired = entry.minAppVersion, !minRequired.isEmpty else { return true }
         return SemVerCompare.compare(AppVersion.current, minRequired) != .orderedAscending
     }
 
-    /// Fetches every registered registry. Surface errors as toasts but don't
-    /// halt — partial refresh is more useful than none. Triggered by the
-    /// "Check for updates" button in Plugins settings.
+    /// Partial refresh is more useful than none — errors are surfaced but
+    /// don't halt the loop.
     func refreshAllRegistries() async {
         guard !pluginRegistryRefreshInFlight else { return }
         pluginRegistryRefreshInFlight = true
@@ -580,9 +532,6 @@ final class AppState {
         }
     }
 
-    /// Installs a registry entry: fetches the JS (sha256-verified), writes
-    /// `<id>.js` into the plugins directory (refusing to clobber), records
-    /// the install, reloads plugins. New plugins start enabled.
     func installPluginFromRegistry(_ entry: PluginRegistryEntry, from registryURL: URL) async {
         guard isCompatible(entry: entry) else {
             showToast(
@@ -621,9 +570,8 @@ final class AppState {
         }
     }
 
-    /// Updates an installed plugin from a registry entry. Replaces the .js
-    /// file in place and upgrades the install record (bundled → registry
-    /// when applicable).
+    /// Also upgrades a `.bundled` install record to `.registry` since the
+    /// bundle file is now overwritten by the fetched bytes.
     func updatePluginFromRegistry(_ entry: PluginRegistryEntry, from registryURL: URL) async {
         guard isCompatible(entry: entry) else {
             showToast(
@@ -657,9 +605,6 @@ final class AppState {
         }
     }
 
-    /// Removes an installed plugin: deletes `<id>.js`, clears the install
-    /// record, reloads plugins. `enabledPluginIDs` is reconciled inside
-    /// `reloadPluginSource`.
     func removeInstalledPlugin(id: String) async {
         do {
             try await Task.detached {
@@ -674,9 +619,7 @@ final class AppState {
         }
     }
 
-    /// Adds a third-party registry URL, fetches it once to validate the
-    /// shape, persists. Refuses duplicates (against the dedup'd list,
-    /// including the default).
+    /// Fetches once to validate the JSON shape before persisting.
     func addUserRegistry(_ url: URL) async {
         guard !PluginRegistryStore.allRegistryURLs().contains(url) else {
             showToast(.error("Registry already added."))
@@ -698,9 +641,6 @@ final class AppState {
         }
     }
 
-    /// Removes a user-added registry URL. The default registry is pinned
-    /// — this method refuses to remove it. Cached data for the removed URL
-    /// is dropped so it stops contributing to update badges.
     func removeUserRegistry(_ url: URL) {
         guard url != PluginRegistryStore.defaultRegistryURL else { return }
         var current = PluginRegistryStore.userAddedRegistryURLs()

@@ -1,17 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Settings → Plugins: registry-driven install / update / removal.
-///
-/// Three stacked sections, inspector-style (full-width rows + hairlines, no
-/// container card):
-///
-/// 1. **Installed** — every plugin in the plugins directory, with enable
-///    toggle, source badge (Registry / Bundled / Manual), and Update /
-///    Remove actions.
-/// 2. **Browse** — registry entries that aren't yet installed, with Install.
-/// 3. **Registries** — the default registry (pinned) plus user-added ones,
-///    with Add / Remove. Adding fetches the registry once to validate.
+/// Settings → Plugins: Installed / Browse / Registries.
 struct PluginsSettingsView: View {
     @Bindable var state: AppState
 
@@ -306,19 +296,15 @@ struct PluginsSettingsView: View {
         addingRegistry = true
         Task {
             await state.addUserRegistry(url)
-            await MainActor.run {
-                addingRegistry = false
-                newRegistryURL = ""
-            }
+            addingRegistry = false
+            newRegistryURL = ""
         }
     }
 
     // MARK: - Date formatting
 
-    /// Parses a registry's ISO-8601 version string and renders it as a
-    /// medium-style localized date ("May 23, 2026"). Falls back to the raw
-    /// string if it isn't a recognizable timestamp (legacy semver-shaped
-    /// versions, malformed registry data, etc).
+    /// Falls back to the raw string when the version isn't a recognizable
+    /// ISO-8601 timestamp.
     private func formatRegistryDate(_ versionString: String) -> String {
         if let date = Self.isoFormatter.date(from: versionString) {
             return Self.displayFormatter.string(from: date)

@@ -96,3 +96,35 @@ struct SemVerCompareTests {
         #expect(SemVerCompare.compare("1.1", "1.0.5") == .orderedDescending)
     }
 }
+
+@Suite("PluginVersion")
+struct PluginVersionTests {
+
+    @Test func detectsUpdateBetweenISOTimestamps() {
+        #expect(
+            PluginVersion.updateAvailable(
+                installed: "2026-05-23T16:38:00Z",
+                available: "2026-05-24T10:00:00Z"
+            )
+        )
+        #expect(
+            !PluginVersion.updateAvailable(
+                installed: "2026-05-24T10:00:00Z",
+                available: "2026-05-23T16:38:00Z"
+            )
+        )
+        #expect(
+            !PluginVersion.updateAvailable(
+                installed: "2026-05-23T16:38:00Z",
+                available: "2026-05-23T16:38:00Z"
+            )
+        )
+    }
+
+    @Test func fallsBackToLexCompareForNonISO() {
+        // Legacy semver-shaped strings — not ISO-parseable, but should still
+        // produce the right ordering via lex compare.
+        #expect(PluginVersion.updateAvailable(installed: "1.0.0", available: "1.0.1"))
+        #expect(!PluginVersion.updateAvailable(installed: "1.0.1", available: "1.0.0"))
+    }
+}

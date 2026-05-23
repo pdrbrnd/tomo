@@ -17,10 +17,9 @@ import os
 @MainActor
 final class PluginHost {
     let context: JSContext
-    /// Pulled from the plugin's optional `const manifest = { … }` block.
-    /// Set once, at the end of `init`, after script eval. `var` only so it
-    /// can be initialized after `self` is callable (binding install methods
-    /// reach for `self` before all stored properties are set).
+    /// Read once at end of init — `var` only because the binding-install
+    /// methods need `self`, which forces all stored properties to be
+    /// initialized first; we can't compute the manifest before script eval.
     private(set) var manifest: PluginManifest?
     private let exception = ExceptionBox()
 
@@ -55,9 +54,6 @@ final class PluginHost {
             }
         }
 
-        // Optional `const manifest = { … }` declared by the plugin. Read once
-        // here so views can show name/version without reaching into the JS
-        // context later. Missing or malformed → nil; the plugin still works.
         self.manifest = PluginManifest.from(jsContext: ctx)
     }
 
