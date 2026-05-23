@@ -65,6 +65,14 @@ enum CrashReporter {
             options.enableNetworkTracking = false
             options.enableAutoPerformanceTracing = false
             options.enableMetricKit = false
+            // Tomo has no own backend — every URLSession request is
+            // third-party (plugin sources, OpenLibrary, iTunes, GitHub
+            // releases). Mirror failover and cover enrichment both 5xx
+            // intentionally as part of normal operation. Capturing those
+            // as "HTTPClientError" floods the issue list with noise that
+            // isn't actionable on our side. Call sites that want to log a
+            // specific HTTP failure use `SentrySDK.capture(error:)`.
+            options.enableCaptureFailedRequests = false
             options.tracesSampleRate = 0
             #if DEBUG
                 options.debug = true
