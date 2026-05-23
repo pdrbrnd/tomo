@@ -41,15 +41,122 @@ nonisolated struct Kindle: BookDevice {
     }
 
     func filenames() -> Set<String> {
+        // Basenames only (no path), so the grid's "is this book on device?"
+        // check works whether the book sits at the top level or inside an
+        // on-device collection folder. Same recursion + filter as `files()`.
+        Set(files().map(\.name))
+    }
+
+    func files() -> [DeviceFile] {
         let documents = volumeURL.appending(component: "documents")
+        let documentsPath = documents.path(percentEncoded: false)
+        let keys: [URLResourceKey] = [
+            .isRegularFileKey, .fileSizeKey, .contentModificationDateKey,
+        ]
         guard
-            let entries = try? FileManager.default.contentsOfDirectory(
+            let enumerator = FileManager.default.enumerator(
                 at: documents,
-                includingPropertiesForKeys: nil,
+                includingPropertiesForKeys: keys,
                 options: [.skipsHiddenFiles]
             )
         else { return [] }
-        return Set(entries.map { $0.lastPathComponent })
+
+        var results: [DeviceFile] = []
+        for case let url as URL in enumerator {
+            // `.sdr` is the per-book annotations sidecar — skip the folder
+            // and everything inside it (highlights, last-read position, etc.
+            // — not books). `skipDescendants` only works while we're sitting
+            // on the directory entry itself.
+            if url.pathExtension.lowercased() == "sdr" {
+                enumerator.skipDescendants()
+                continue
+            }
+            guard
+                let values = try? url.resourceValues(forKeys: Set(keys)),
+                values.isRegularFile == true
+            else { continue }
+
+            // Only surface things the device scanner indexes. Random filesystem
+            // cruft (.notifications, log files Amazon writes) shouldn't appear
+            // as deletable books in the UI.
+            let ext = url.pathExtension.lowercased()
+            guard supportedFormats.contains(ext) else { continue }
+
+            // Path relative to `documents/`. For top-level files this equals
+            // the basename; for on-device collection folders it's
+            // "<Folder>/<file>".
+            let fullPath = url.path(percentEncoded: false)
+            let relative: String
+            if fullPath.hasPrefix(documentsPath + "/") {
+                relative = String(fullPath.dropFirst(documentsPath.count + 1))
+            } else {
+                relative = url.lastPathComponent
+            }
+
+            // Hide Amazon's pre-installed content (My Clippings, guides,
+            // dictionaries) so the management UI is focused on user books.
+            if isSystemFile(relativePath: relative) { continue }
+
+            results.append(
+                DeviceFile(
+                    relativePath: relative,
+                    size: Int64(values.fileSize ?? 0),
+                    modifiedAt: values.contentModificationDate ?? .distantPast
+                )
+            )
+        }
+        return results
+    }
+
+    /// Pre-installed Kindle content we don't want users deleting accidentally
+    /// (or — for dictionaries — content that's recoverable but better managed
+    /// via the on-device Settings flow). The `supportedFormats` whitelist
+    /// already filters non-book extensions, so this only needs to catch
+    /// things that *look* like books but aren't user content.
+    ///
+    /// Two layers:
+    ///  - exact stem matches for well-known Amazon files (`My Clippings`,
+    ///    User's Guides, Welcome, etc.)
+    ///  - brand-anchored dictionary detection — stem must contain BOTH an
+    ///    Amazon dictionary publisher (Oxford, Duden…) AND the word
+    ///    "dictionary"/"diccionario"/"…" to avoid hiding user books like
+    ///    "The Devil's Dictionary" by Ambrose Bierce.
+    nonisolated func isSystemFile(relativePath: String) -> Bool {
+        let basename = (relativePath as NSString).lastPathComponent
+        let stem = ((basename as NSString).deletingPathExtension).lowercased()
+
+        let amazonStems: Set<String> = [
+            "my clippings",
+            "kindle user's guide",
+            "user's guide",
+            "welcome",
+            "getting started",
+            "quick tour",
+        ]
+        if amazonStems.contains(stem) { return true }
+
+        // Localized "dictionary" words. These are nouns that are
+        // *specifically* used for dictionaries in their languages, so
+        // hiding on stem-contains alone is safe — minimal false-positive
+        // risk for user books.
+        let localizedDictionaryWords = [
+            "dicionário", "dictionnaire", "wörterbuch", "diccionario",
+        ]
+        if localizedDictionaryWords.contains(where: { stem.contains($0) }) {
+            return true
+        }
+
+        // English "dictionary": require co-occurrence with a known Amazon
+        // dictionary publisher so a user's "Devil's Dictionary" stays
+        // visible.
+        if stem.contains("dictionary") {
+            let publishers = ["oxford", "duden", "larousse", "sanseido"]
+            if publishers.contains(where: { stem.contains($0) }) {
+                return true
+            }
+        }
+
+        return false
     }
 
     func copy(_ book: Book) async throws {
@@ -174,11 +281,13 @@ nonisolated struct Kindle: BookDevice {
         }
     }
 
-    func remove(_ book: Book) async throws {
+    func removeFile(at relativePath: String) async throws {
+        // `appending(path:)` handles "Folder/file.azw3" correctly — the
+        // segments resolve into the URL structure.
         let dest =
             volumeURL
             .appending(component: "documents")
-            .appending(component: deviceFilename(for: book))
+            .appending(path: relativePath)
         do {
             try await Task.detached {
                 try FileManager.default.removeItem(at: dest)

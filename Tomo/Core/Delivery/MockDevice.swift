@@ -21,11 +21,17 @@
 
         func filenames() -> Set<String> { mockFilenames }
 
+        func files() -> [DeviceFile] {
+            mockFilenames.map { name in
+                DeviceFile(relativePath: name, size: 524_288, modifiedAt: .now)
+            }
+        }
+
         func copy(_ book: Book) async throws {
             try? await Task.sleep(for: .milliseconds(350))
         }
 
-        func remove(_ book: Book) async throws {
+        func removeFile(at relativePath: String) async throws {
             try? await Task.sleep(for: .milliseconds(150))
         }
 

@@ -725,6 +725,28 @@ final class AppState {
         }
     }
 
+    /// Bulk-removes files from the device by relative path. Used by the
+    /// device contents sheet, which mixes library books (matched by
+    /// filename) and orphans (paths with no library match) — both flow
+    /// through the same path. Each failure is logged but doesn't halt
+    /// the loop. Refreshes `deviceFilenames` at the end so the chip
+    /// reflects the new on-device count.
+    func removeFilesFromDevice(_ relativePaths: [String]) async {
+        guard let device, !relativePaths.isEmpty else { return }
+        for path in relativePaths {
+            do {
+                try await device.removeFile(at: path)
+                deliveryLogger.info(
+                    "removed from \(device.displayName, privacy: .public): \(path, privacy: .public)")
+            } catch {
+                deliveryLogger.error(
+                    "device remove failed for \(path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+        deviceFilenames = device.filenames()
+    }
+
     func ejectDevice() async {
         guard let device else { return }
         do {

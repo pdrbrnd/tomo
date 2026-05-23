@@ -16,6 +16,7 @@ struct DeviceTile: View {
     let bookCount: Int
     let inAppDragCount: Int
     let sendState: DeviceSendState
+    let onTap: () -> Void
     let onEject: () -> Void
     /// Returns whether the drop was accepted.
     let onDrop: (BookDrag) -> Bool
@@ -76,6 +77,10 @@ struct DeviceTile: View {
         .scaleEffect(scaleAmount, anchor: .center)
         .softShadow(elevated: visual != .idle)
         .animation(stateAnimation, value: visual)
+        // Plain tap opens the device contents sheet. Drag and right-click
+        // are handled by the modifiers below; SwiftUI routes the gesture
+        // based on whichever fires first.
+        .onTapGesture { onTap() }
         .contextMenu {
             Button("Eject \(displayName)", action: onEject)
         }

@@ -25,6 +25,7 @@ struct LibraryView: View {
     @State private var booksPendingDelete: [Book] = []
     @State private var collectionPendingDelete: Collection?
     @State private var coverGalleryBook: Book?
+    @State private var deviceContentsSheetOpen = false
     @State private var externalDropTargeted = false
     @State private var marquee: MarqueeState = .inactive
     @State private var cardFrames: [Book.ID: CGRect] = [:]
@@ -492,6 +493,23 @@ struct LibraryView: View {
                 onCancel: { browserDownloadRequest = nil }
             )
         }
+        .sheet(isPresented: $deviceContentsSheetOpen) {
+            // Guard at present-time: the sheet is opened from a tap on the
+            // device chip, which can only exist while `state.device` is set.
+            // If the device disappears (eject, unplug) while the sheet is up,
+            // the .onChange below dismisses it.
+            if let device = state.device {
+                DeviceContentsSheet(
+                    device: device,
+                    books: state.books,
+                    onDismiss: { deviceContentsSheetOpen = false },
+                    onDelete: { names in await state.removeFilesFromDevice(names) }
+                )
+            }
+        }
+        .onChange(of: state.device == nil) { _, deviceGone in
+            if deviceGone { deviceContentsSheetOpen = false }
+        }
     }
 
     private var deleteDialogTitle: String {
@@ -529,6 +547,7 @@ struct LibraryView: View {
                         bookCount: state.deviceFilenames.count,
                         inAppDragCount: state.inAppDragCount,
                         sendState: state.deviceSendState,
+                        onTap: { deviceContentsSheetOpen = true },
                         onEject: { Task { await state.ejectDevice() } },
                         onDrop: { drag in
                             let books = drag.bookIDs

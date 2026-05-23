@@ -27,6 +27,11 @@ nonisolated protocol BookDevice: Sendable {
     /// the device uses. Used to detect "already on device".
     func filenames() -> Set<String>
 
+    /// Full file listing with size + modification date — for the device
+    /// contents management surface. Heavier than `filenames()`; not used
+    /// on the grid hot path.
+    func files() -> [DeviceFile]
+
     /// What this book's filename will be on the device after sanitisation.
     /// Kept consistent across copy/remove/match.
     func deviceFilename(for book: Book) -> String
@@ -34,14 +39,69 @@ nonisolated protocol BookDevice: Sendable {
     /// Copies a book to the device's destination folder. fsync after write.
     func copy(_ book: Book) async throws
 
-    /// Removes a book file from the device.
-    func remove(_ book: Book) async throws
+    /// Removes an arbitrary file from the device by its path relative to
+    /// the device's documents folder. Top-level files pass their basename;
+    /// files inside collection subfolders pass `"<Folder>/<file>"`. Used
+    /// by the typed `remove(_ book:)` wrapper (which always targets
+    /// top-level — Tomo only writes there) and the management UI (which
+    /// can target anything `files()` surfaced).
+    func removeFile(at relativePath: String) async throws
+
+    /// Pre-installed device content the user shouldn't be encouraged to
+    /// delete — Amazon guides, Kindle's `My Clippings.txt`, pre-bundled
+    /// dictionaries, Kobo's `.kobo/` directory, etc. Each device knows
+    /// its own quirks; the default is "nothing is a system file" so
+    /// drivers only override when they have something to hide.
+    ///
+    /// Distinct from the format whitelist (`supportedFormats`): things
+    /// outside the whitelist never make it into `files()` in the first
+    /// place. This catches things that *look* like books but aren't user
+    /// content.
+    func isSystemFile(relativePath: String) -> Bool
 
     /// Programmatic eject. macOS handles the underlying unmount.
     func eject() async throws
 }
 
+/// A single file on the device, surfaced to the management UI.
+///
+/// `relativePath` is the path relative to the device's documents folder.
+/// Top-level: `"book.azw3"`. In a collection subfolder: `"Sci-Fi/book.azw3"`.
+/// Kindle exposes collection membership through filesystem folders, so the
+/// folder name is interesting metadata for the management UI.
+nonisolated struct DeviceFile: Hashable, Identifiable, Sendable {
+    let relativePath: String
+    let size: Int64
+    let modifiedAt: Date
+
+    var id: String { relativePath }
+
+    /// Basename — what the device scanner dedupes against and what's
+    /// shown to the user.
+    var name: String {
+        (relativePath as NSString).lastPathComponent
+    }
+
+    /// Subfolder this file lives in, if any. Top-level files return nil.
+    /// Mirrors the on-device collection structure.
+    var folder: String? {
+        let dir = (relativePath as NSString).deletingLastPathComponent
+        return dir.isEmpty ? nil : dir
+    }
+}
+
 extension BookDevice {
+    /// Default: nothing is hidden. Drivers override when they have
+    /// pre-installed content to protect from accidental deletion.
+    nonisolated func isSystemFile(relativePath: String) -> Bool { false }
+
+    /// Removes a library book from the device. Books sent via Tomo always
+    /// land at the top level of the device's documents folder, so the
+    /// computed `deviceFilename(for:)` doubles as a top-level relative path.
+    nonisolated func remove(_ book: Book) async throws {
+        try await removeFile(at: deviceFilename(for: book))
+    }
+
     /// True if this device will end up with an indexable copy of the
     /// book — either by direct copy (the book's format is already in
     /// `supportedFormats`) or via conversion (a registered converter
