@@ -45,6 +45,115 @@ private nonisolated func renamedToSlugIfChanged(_ book: Book) -> (book: Book, di
     }
 }
 
+/// Outcome of a folder relocate attempt.
+///
+/// - `noChange`: current folder is already canonical, nothing to do.
+/// - `moved`: folder was relocated; carries the previous folder URL so the
+///   caller can roll back if a downstream step fails.
+/// - `collision`: target folder exists and isn't ours — refusing to merge.
+///   Caller should surface this to the user and not persist the edit, so
+///   on-disk layout and metadata stay in sync.
+private enum FolderRelocateOutcome {
+    case noChange
+    case moved(originalFolder: URL)
+    case collision(target: URL)
+}
+
+private struct FolderRelocateResult {
+    let book: Book
+    let outcome: FolderRelocateOutcome
+}
+
+/// Moves `<library>/OldAuthor/OldTitle (year)/` to
+/// `<library>/NewAuthor/NewTitle (year)/` when the book's title / first
+/// author / year produce a different canonical folder. The entire folder
+/// moves — file, sidecar, cover, anything else in it. `book.fileURL` is
+/// updated so the caller can continue using it.
+///
+/// Skips (returns `didMove: false`) when:
+///  - the current folder already matches the canonical one, or
+///  - the canonical target exists with different contents (collision —
+///    we refuse rather than merge or clobber).
+///
+/// On failure the move is rolled back; caller still gets back the original
+/// book unchanged.
+private nonisolated func relocateBookFolderIfChanged(
+    _ book: Book,
+    libraryRoot: URL
+) -> FolderRelocateResult {
+    let currentFolder = book.fileURL.deletingLastPathComponent()
+    let target = LibraryLayout.bookFolderURL(
+        in: libraryRoot,
+        title: book.title,
+        firstAuthor: book.authors.first,
+        year: book.year
+    )
+
+    if target.standardizedFileURL == currentFolder.standardizedFileURL {
+        return FolderRelocateResult(book: book, outcome: .noChange)
+    }
+
+    let fm = FileManager.default
+    if fm.fileExists(atPath: target.path(percentEncoded: false)) {
+        libraryLogger.warning(
+            "folder relocate refused, target exists: \(target.path(percentEncoded: false), privacy: .public)"
+        )
+        return FolderRelocateResult(book: book, outcome: .collision(target: target))
+    }
+
+    do {
+        let parent = target.deletingLastPathComponent()
+        try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+        try fm.moveItem(at: currentFolder, to: target)
+
+        var updated = book
+        updated.fileURL = target.appending(component: book.fileURL.lastPathComponent)
+
+        libraryLogger.info(
+            "relocated folder: \(currentFolder.lastPathComponent, privacy: .public) -> \(target.lastPathComponent, privacy: .public)"
+        )
+        return FolderRelocateResult(
+            book: updated,
+            outcome: .moved(originalFolder: currentFolder)
+        )
+    } catch {
+        libraryLogger.error(
+            "folder relocate failed: \(error.localizedDescription, privacy: .public)"
+        )
+        // Treat raw move failures as "no change" — we tried, it didn't
+        // happen, the book is still at its original folder. We still let
+        // the metadata persist; the next save will retry.
+        return FolderRelocateResult(book: book, outcome: .noChange)
+    }
+}
+
+/// Walks up from `start` deleting empty directories, never crossing or
+/// touching `libraryRoot`. After a folder relocate the old author folder
+/// is often left empty — this cleanup keeps the library tidy without
+/// requiring a separate housekeeping pass.
+private nonisolated func pruneEmptyAncestors(from start: URL, stoppingAt libraryRoot: URL) {
+    let fm = FileManager.default
+    let root = libraryRoot.standardizedFileURL
+    var current = start.standardizedFileURL
+    while current != root, current.pathComponents.count > root.pathComponents.count {
+        let path = current.path(percentEncoded: false)
+        guard let contents = try? fm.contentsOfDirectory(atPath: path) else { return }
+        // `.DS_Store` doesn't count as content — macOS sprinkles it freely
+        // and it shouldn't keep an otherwise-empty folder alive.
+        let meaningful = contents.filter { $0 != ".DS_Store" }
+        guard meaningful.isEmpty else { return }
+        do {
+            try fm.removeItem(at: current)
+        } catch {
+            libraryLogger.error(
+                "empty-folder prune failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+        current = current.deletingLastPathComponent().standardizedFileURL
+    }
+}
+
 /// Drives the device tile's morphing UI for the send-to-device flow.
 /// Distinct from the drag-active scale-up: this only covers the post-drop
 /// progress + success/failure stretch.
@@ -99,6 +208,10 @@ final class AppState {
     /// Number of books per locale tag. Same caching rationale as above.
     private(set) var languageCounts: [String: Int] = [:]
 
+    /// Number of books per author name (verbatim — no normalisation). One
+    /// book counts once per distinct author it credits.
+    private(set) var authorCounts: [String: Int] = [:]
+
     private func recomputeCounts() {
         var coll: [UUID: Int] = [:]
         for book in books {
@@ -120,6 +233,29 @@ final class AppState {
             lang[base, default: 0] += 1
         }
         languageCounts = lang
+
+        var auth: [String: Int] = [:]
+        for book in books {
+            // Split comma-joined entries so multi-author strings ("A, B, C")
+            // surface as separate sidebar rows. Same set-dedupe so the same
+            // name twice in one book counts once. Misclassifies "Wilde, Oscar"
+            // as two rows — treated as broken metadata to fix in BookInspector.
+            let unique = Set(book.authors.flatMap(Self.splitAuthors))
+            for author in unique {
+                auth[author, default: 0] += 1
+            }
+        }
+        authorCounts = auth
+    }
+
+    /// Splits a raw author field on commas and trims. Empties drop out.
+    /// Shared with `LibraryView`'s author filter so what the sidebar shows
+    /// is what clicking it actually matches.
+    static func splitAuthors(_ raw: String) -> [String] {
+        raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     /// Strips a BCP 47 tag down to its base language subtag. Returns nil
@@ -494,26 +630,76 @@ final class AppState {
             libraryLogger.error("update: no index")
             return
         }
-        let renamed = await Task.detached { renamedToSlugIfChanged(book) }.value
+
+        // Two-step disk relocate, in order: folder (Author/Title (Year)/)
+        // then file slug (author-title-year.ext). Folder first so the slug
+        // rename happens inside the new folder and we don't have to undo a
+        // file move across folder boundaries on failure.
+        let relocated: FolderRelocateResult
+        if let libraryFolder {
+            relocated = await Task.detached {
+                relocateBookFolderIfChanged(book, libraryRoot: libraryFolder)
+            }.value
+        } else {
+            relocated = FolderRelocateResult(book: book, outcome: .noChange)
+        }
+
+        // Bail out on collision without persisting. Library-on-disk-is-truth
+        // means the sidecar / index can't claim a layout we couldn't apply.
+        if case .collision(let target) = relocated.outcome {
+            let label =
+                target.deletingLastPathComponent().lastPathComponent
+                + "/" + target.lastPathComponent
+            showToast(
+                .error(
+                    "Another book already lives at \(label). Rename it (or this one) before saving."
+                ))
+            return
+        }
+
+        let originalFolder: URL? = {
+            if case .moved(let folder) = relocated.outcome { return folder }
+            return nil
+        }()
+        let renamed = await Task.detached { renamedToSlugIfChanged(relocated.book) }.value
         let bookForSidecar = renamed.book
         let bookFolder = bookForSidecar.fileURL.deletingLastPathComponent()
-        let originalURL = book.fileURL
         let names = collectionNames(for: bookForSidecar.collectionIDs)
         do {
             try await Task.detached {
                 try MetadataSidecar.write(bookForSidecar, collectionNames: names, to: bookFolder)
             }.value
             try await index.update(bookForSidecar)
+
+            // Success — old author folder is often empty after a relocate.
+            // Prune it (and any further-empty ancestors) up to the library
+            // root. Cleanup is best-effort: a failure here doesn't roll back
+            // the edit.
+            if let libraryFolder, let originalFolder {
+                let oldAuthorFolder = originalFolder.deletingLastPathComponent()
+                await Task.detached {
+                    pruneEmptyAncestors(from: oldAuthorFolder, stoppingAt: libraryFolder)
+                }.value
+            }
+
             await loadBooks()
             libraryLogger.info("updated: \(bookForSidecar.title, privacy: .public)")
         } catch {
-            // Sidecar / index write failed after a successful rename — undo
-            // the rename so the sidecar's stale fileName still resolves.
-            // Otherwise the book becomes an orphan on next sync.
+            // Sidecar / index write failed after disk moves — undo them in
+            // reverse so the on-disk layout still resolves through the old
+            // sidecar's stored fileName.
             if renamed.didRename {
                 try? await Task.detached {
                     try FileManager.default.moveItem(
-                        at: bookForSidecar.fileURL, to: originalURL)
+                        at: bookForSidecar.fileURL,
+                        to: relocated.book.fileURL
+                    )
+                }.value
+            }
+            if let originalFolder {
+                let currentFolder = relocated.book.fileURL.deletingLastPathComponent()
+                try? await Task.detached {
+                    try FileManager.default.moveItem(at: currentFolder, to: originalFolder)
                 }.value
             }
             libraryLogger.error("update failed: \(error.localizedDescription, privacy: .public)")

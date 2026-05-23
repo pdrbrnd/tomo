@@ -188,10 +188,15 @@ number stops carrying signal. So:
   transiently next to the picker so the user can judge whether to keep it.
   The number isn't saved.
 
-**File relocation on edit:** Editing title/authors/year does *not* move the
-book's files on disk — the `Author/Title (Year)/` folder name may drift
-from the metadata after edits. Harmless for the index; worth fixing later
-(rename folders to match new metadata on save).
+**File relocation on edit:** Editing title / first author / year *does*
+move the book on disk. `AppState.updateBook` calls
+`relocateBookFolderIfChanged` (folder: `<library>/<Author>/<Title (Year)>/`)
+then `renamedToSlugIfChanged` (file: `<author>-<title>[-<year>].ext`) so
+the on-disk layout stays consistent with the metadata — Principle 1
+(library on disk is the source of truth). Empty author folders are pruned
+up to (but never including) the library root. Disk moves roll back if the
+sidecar / index write fails. Collisions (target folder already exists)
+are refused, not merged.
 
 ## Conversion
 

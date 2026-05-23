@@ -223,17 +223,10 @@ private nonisolated func writeCover(
 }
 
 private nonisolated func bookFolderURL(in libraryFolder: URL, metadata: ImportedFileMetadata) -> URL {
-    let author = sanitize(metadata.authors.first ?? "Unknown")
-    let titlePart = sanitize(metadata.title)
-    let folderName = metadata.year.map { "\(titlePart) (\($0))" } ?? titlePart
-    return
-        libraryFolder
-        .appending(component: author)
-        .appending(component: folderName)
-}
-
-private nonisolated func sanitize(_ raw: String) -> String {
-    let invalid = CharacterSet(charactersIn: "/:\\?*\"<>|")
-    let cleaned = raw.components(separatedBy: invalid).joined(separator: "-")
-    return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    LibraryLayout.bookFolderURL(
+        in: libraryFolder,
+        title: metadata.title,
+        firstAuthor: metadata.authors.first,
+        year: metadata.year
+    )
 }

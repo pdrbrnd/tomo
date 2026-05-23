@@ -16,11 +16,13 @@ enum DeviceFilter: String, Hashable {
 struct LibrarySidebar: View {
     @Binding var selectedCollection: UUID?
     @Binding var selectedLanguage: String?
+    @Binding var selectedAuthor: String?
     @Binding var selectedDeviceFilter: DeviceFilter?
     let totalBooks: Int
     let collections: [Collection]
     let collectionCounts: [UUID: Int]
     let languageCounts: [String: Int]
+    let authorCounts: [String: Int]
     let deviceConnected: Bool
     let onDeviceCount: Int
     let notOnDeviceCount: Int
@@ -37,6 +39,10 @@ struct LibrarySidebar: View {
     @State private var newCollectionName = ""
     @State private var renamingCollectionID: UUID?
     @State private var renameDraft = ""
+    /// Section ids the user has collapsed in the sidebar. Persisted across
+    /// launches via `@AppStorage`. Encoded as a comma-joined string — small
+    /// stable set of ids, plain Codable buys nothing here.
+    @AppStorage("sidebar.collapsedSections") private var collapsedRaw: String = ""
     /// Collection currently under a hovering drag — gets an accent-tinted
     /// background to confirm it'll receive the drop.
     @State private var dropTargetedCollectionID: UUID?
@@ -65,6 +71,35 @@ struct LibrarySidebar: View {
         }
     }
 
+    private var sortedAuthors: [String] {
+        authorCounts.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var collapsedSections: Set<String> {
+        Set(collapsedRaw.split(separator: ",").map(String.init))
+    }
+
+    private func isCollapsed(_ id: String) -> Bool {
+        collapsedSections.contains(id)
+    }
+
+    private func toggleCollapsed(_ id: String) {
+        var current = collapsedSections
+        if current.contains(id) {
+            current.remove(id)
+        } else {
+            current.insert(id)
+        }
+        collapsedRaw = current.sorted().joined(separator: ",")
+    }
+
+    private enum SectionID {
+        static let device = "device"
+        static let collections = "collections"
+        static let languages = "languages"
+        static let authors = "authors"
+    }
+
     var body: some View {
         Theme.panel
             .overlay {
@@ -78,6 +113,10 @@ struct LibrarySidebar: View {
                         }
 
                         collectionsSection
+
+                        if !sortedAuthors.isEmpty {
+                            authorsSection
+                        }
 
                         if !sortedLocales.isEmpty {
                             languagesSection
@@ -100,10 +139,14 @@ struct LibrarySidebar: View {
             row(
                 label: "All Books",
                 count: totalBooks,
-                isSelected: selectedCollection == nil && selectedLanguage == nil && selectedDeviceFilter == nil
+                isSelected: selectedCollection == nil
+                    && selectedLanguage == nil
+                    && selectedAuthor == nil
+                    && selectedDeviceFilter == nil
             ) {
                 selectedCollection = nil
                 selectedLanguage = nil
+                selectedAuthor = nil
                 selectedDeviceFilter = nil
             }
         }
@@ -113,22 +156,24 @@ struct LibrarySidebar: View {
 
     private var deviceSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Device")
+            sidebarSectionHeader("Device", id: SectionID.device)
 
-            VStack(spacing: Self.rowSpacing) {
-                row(
-                    label: "On device",
-                    count: onDeviceCount,
-                    isSelected: selectedDeviceFilter == .onDevice
-                ) {
-                    selectedDeviceFilter = (selectedDeviceFilter == .onDevice) ? nil : .onDevice
-                }
-                row(
-                    label: "Not on device",
-                    count: notOnDeviceCount,
-                    isSelected: selectedDeviceFilter == .notOnDevice
-                ) {
-                    selectedDeviceFilter = (selectedDeviceFilter == .notOnDevice) ? nil : .notOnDevice
+            if !isCollapsed(SectionID.device) {
+                VStack(spacing: Self.rowSpacing) {
+                    row(
+                        label: "On device",
+                        count: onDeviceCount,
+                        isSelected: selectedDeviceFilter == .onDevice
+                    ) {
+                        selectedDeviceFilter = (selectedDeviceFilter == .onDevice) ? nil : .onDevice
+                    }
+                    row(
+                        label: "Not on device",
+                        count: notOnDeviceCount,
+                        isSelected: selectedDeviceFilter == .notOnDevice
+                    ) {
+                        selectedDeviceFilter = (selectedDeviceFilter == .notOnDevice) ? nil : .notOnDevice
+                    }
                 }
             }
         }
@@ -138,24 +183,23 @@ struct LibrarySidebar: View {
 
     private var collectionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                sectionHeader("Collections")
-                Spacer()
+            sidebarSectionHeader("Collections", id: SectionID.collections) {
                 addCollectionButton
-                    .padding(.trailing, Theme.Spacing.menuInset + Theme.Spacing.sm)
             }
 
-            VStack(spacing: Self.rowSpacing) {
-                ForEach(collections) { collection in
-                    if renamingCollectionID == collection.id {
-                        renameField(for: collection)
-                    } else {
-                        collectionRow(collection)
+            if !isCollapsed(SectionID.collections) {
+                VStack(spacing: Self.rowSpacing) {
+                    ForEach(collections) { collection in
+                        if renamingCollectionID == collection.id {
+                            renameField(for: collection)
+                        } else {
+                            collectionRow(collection)
+                        }
                     }
-                }
 
-                if creatingCollection {
-                    newCollectionField
+                    if creatingCollection {
+                        newCollectionField
+                    }
                 }
             }
         }
@@ -172,11 +216,6 @@ struct LibrarySidebar: View {
         }
         .buttonStyle(.plain)
         .help("New collection")
-        // Match the section header's vertical padding so the `+` sits at
-        // the same visual center as the COLLECTIONS letters rather than
-        // floating above them.
-        .padding(.top, Theme.Spacing.xs)
-        .padding(.bottom, Theme.Spacing.sm)
     }
 
     private func collectionRow(_ collection: Collection) -> some View {
@@ -338,21 +377,45 @@ struct LibrarySidebar: View {
         renameDraft = ""
     }
 
+    // MARK: - Authors
+
+    private var authorsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sidebarSectionHeader("Authors", id: SectionID.authors)
+
+            if !isCollapsed(SectionID.authors) {
+                VStack(spacing: Self.rowSpacing) {
+                    ForEach(sortedAuthors, id: \.self) { author in
+                        row(
+                            label: author,
+                            count: authorCounts[author] ?? 0,
+                            isSelected: selectedAuthor == author
+                        ) {
+                            selectedAuthor = (selectedAuthor == author) ? nil : author
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Languages
 
     private var languagesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader("Languages")
+            sidebarSectionHeader("Languages", id: SectionID.languages)
 
-            VStack(spacing: Self.rowSpacing) {
-                ForEach(sortedLocales, id: \.self) { tag in
-                    let display = Locale.current.localizedString(forIdentifier: tag) ?? tag
-                    row(
-                        label: display,
-                        count: languageCounts[tag] ?? 0,
-                        isSelected: selectedLanguage == tag
-                    ) {
-                        selectedLanguage = (selectedLanguage == tag) ? nil : tag
+            if !isCollapsed(SectionID.languages) {
+                VStack(spacing: Self.rowSpacing) {
+                    ForEach(sortedLocales, id: \.self) { tag in
+                        let display = Locale.current.localizedString(forIdentifier: tag) ?? tag
+                        row(
+                            label: display,
+                            count: languageCounts[tag] ?? 0,
+                            isSelected: selectedLanguage == tag
+                        ) {
+                            selectedLanguage = (selectedLanguage == tag) ? nil : tag
+                        }
                     }
                 }
             }
@@ -365,15 +428,33 @@ struct LibrarySidebar: View {
 
     // MARK: - Building blocks
 
-    private func sectionHeader(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.primary.opacity(Theme.Text.secondary))
-            .tracking(0.2)
-            .textCase(.uppercase)
-            .padding(.leading, Theme.Spacing.menuInset + Theme.Spacing.md)
-            .padding(.top, Theme.Spacing.xs)
-            .padding(.bottom, Theme.Spacing.sm)
+    private func sidebarSectionHeader(_ title: String, id: String) -> some View {
+        SectionHeader(
+            title: title,
+            isCollapsed: isCollapsed(id),
+            onToggle: { toggleCollapsed(id) }
+        )
+        .padding(.leading, Theme.Spacing.menuInset + Theme.Spacing.md)
+        .padding(.trailing, Theme.Spacing.menuInset + Theme.Spacing.sm)
+        .padding(.top, Theme.Spacing.xs)
+        .padding(.bottom, Theme.Spacing.sm)
+    }
+
+    private func sidebarSectionHeader<Trailing: View>(
+        _ title: String,
+        id: String,
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) -> some View {
+        SectionHeader(
+            title: title,
+            isCollapsed: isCollapsed(id),
+            onToggle: { toggleCollapsed(id) },
+            trailing: trailing
+        )
+        .padding(.leading, Theme.Spacing.menuInset + Theme.Spacing.md)
+        .padding(.trailing, Theme.Spacing.menuInset + Theme.Spacing.sm)
+        .padding(.top, Theme.Spacing.xs)
+        .padding(.bottom, Theme.Spacing.sm)
     }
 
     private func row(

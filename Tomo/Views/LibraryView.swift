@@ -18,6 +18,7 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var selectedLanguage: String?
     @State private var selectedCollection: UUID?
+    @State private var selectedAuthor: String?
     @State private var selectedDeviceFilter: DeviceFilter?
     @State private var booksPendingDelete: [Book] = []
     @State private var collectionPendingDelete: Collection?
@@ -111,6 +112,9 @@ struct LibraryView: View {
         let filtered = bySearch.filter { book in
             (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
                 && (selectedLanguage.map { matchesSidebarLanguage(book: book, base: $0) } ?? true)
+                && (selectedAuthor.map { author in
+                    book.authors.flatMap(AppState.splitAuthors).contains(author)
+                } ?? true)
                 && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
         }
         return filtered.sorted(by: sortKey, ascending: sortAscending)
@@ -527,6 +531,30 @@ struct LibraryView: View {
 
             keyboardShortcuts(scrollProxy: scrollProxy)
         }
+        // `.focusable()` + `.onKeyPress` lets arrow keys reach the grid
+        // without preempting TextFields. A focused TextField handles arrows
+        // first (cursor movement, returns .handled); only when nothing in
+        // the tree is consuming them do they reach `navigateGrid`. The
+        // focus ring is suppressed since the pane is the whole canvas — a
+        // glow around the window content would just be noise.
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) {
+            navigateGrid(.left, scrollProxy: scrollProxy)
+            return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            navigateGrid(.right, scrollProxy: scrollProxy)
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            navigateGrid(.up, scrollProxy: scrollProxy)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            navigateGrid(.down, scrollProxy: scrollProxy)
+            return .handled
+        }
         .onPreferenceChange(GridColumnCountPreference.self) { count in
             gridColumnCount = count
         }
@@ -763,6 +791,9 @@ struct LibraryView: View {
     private var librarySection: some View {
         let books = filteredBooks
         let isCollapsed = collapsedSectionIDs.contains(Self.librarySectionKey)
+        let isExpanded = expandedSectionIDs.contains(Self.librarySectionKey)
+        let visible = isExpanded ? books : Array(books.prefix(Self.libraryVisibleCap))
+        let hiddenCount = max(0, books.count - visible.count)
         VStack(alignment: .leading, spacing: Self.rowSpacing) {
             SearchSectionHeader(
                 title: librarySectionTitle,
@@ -772,10 +803,10 @@ struct LibraryView: View {
             )
             if isCollapsed {
                 EmptyView()
-            } else if books.isEmpty {
+            } else if visible.isEmpty {
                 rowPlaceholder("No matches")
             } else {
-                ForEach(books) { book in
+                ForEach(visible) { book in
                     SearchResultRow(
                         item: .book(book),
                         isSelected: selectedBookIDs.contains(book.id),
@@ -806,6 +837,11 @@ struct LibraryView: View {
                             bookMenu(for: book) { contextMenuBookID = nil }
                         }
                         .menuPopoverContainer()
+                    }
+                }
+                if hiddenCount > 0 {
+                    showMoreFooter(remaining: hiddenCount) {
+                        expandedSectionIDs.insert(Self.librarySectionKey)
                     }
                 }
             }
@@ -860,6 +896,10 @@ struct LibraryView: View {
     /// want; the cap keeps the section scannable. The "Show N more" footer
     /// lifts the cap for that one section when the user wants the full list.
     private static let sourceVisibleCap = 30
+
+    /// Same idea for the library section — without a cap a broad query pushes
+    /// the source sections off-screen.
+    private static let libraryVisibleCap = 30
 
     /// Footer button rendered at the bottom of a source section when more
     /// results were fetched than the visible cap.
@@ -1716,11 +1756,13 @@ struct LibraryView: View {
         LibrarySidebar(
             selectedCollection: $selectedCollection,
             selectedLanguage: $selectedLanguage,
+            selectedAuthor: $selectedAuthor,
             selectedDeviceFilter: $selectedDeviceFilter,
             totalBooks: state.books.count,
             collections: state.collections,
             collectionCounts: state.collectionCounts,
             languageCounts: state.languageCounts,
+            authorCounts: state.authorCounts,
             deviceConnected: state.device != nil,
             onDeviceCount: state.books.filter { isOnDevice($0) }.count,
             notOnDeviceCount: state.books.filter { !isOnDevice($0) }.count,
@@ -1976,24 +2018,18 @@ struct LibraryView: View {
         // `MenuCommands.swift`. They route back here through
         // `LibraryFocusContext` closures. Keeping a second hidden owner here
         // would double-fire.
+        //
+        // Arrow keys aren't wired here: unmodified-arrow `.keyboardShortcut`
+        // is window-level and preempts focused TextFields, so the user can't
+        // move the cursor in the search bar or any edit field. Grid arrow
+        // navigation lives on `.onKeyPress` attached to `mainPaneContent` —
+        // that one respects the responder chain and only fires when no
+        // TextField is consuming the key.
         ZStack {
             Button("") { handleSelectAll() }
                 .keyboardShortcut("a", modifiers: .command)
             Button("") { handleEscape() }
                 .keyboardShortcut(.escape, modifiers: [])
-            // Arrow keys move the single selection within the library grid.
-            // No-op when the search field has focus (NSText consumes arrows
-            // first to move the cursor) or when there's no current selection
-            // — pressing arrows shouldn't yank the user into the grid out of
-            // nowhere. Single-selection only; Shift-extend can come later.
-            Button("") { navigateGrid(.left, scrollProxy: scrollProxy) }
-                .keyboardShortcut(.leftArrow, modifiers: [])
-            Button("") { navigateGrid(.right, scrollProxy: scrollProxy) }
-                .keyboardShortcut(.rightArrow, modifiers: [])
-            Button("") { navigateGrid(.up, scrollProxy: scrollProxy) }
-                .keyboardShortcut(.upArrow, modifiers: [])
-            Button("") { navigateGrid(.down, scrollProxy: scrollProxy) }
-                .keyboardShortcut(.downArrow, modifiers: [])
         }
         .frame(width: 0, height: 0)
         .opacity(0)
