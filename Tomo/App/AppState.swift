@@ -353,7 +353,7 @@ final class AppState {
             Task.detached { await KindleSync.run(volumeURL: kindle.volumeURL) }
         }
 
-        await Task.detached { PluginDirectory.seedBundledPluginsIfNeeded() }.value
+        await Task.detached { PluginDirectory.installBundledPlugins() }.value
         await reloadPluginSource()
     }
 

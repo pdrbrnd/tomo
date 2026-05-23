@@ -10,8 +10,8 @@ import Foundation
 /// - AND is implicit (everything must match). No OR / NOT / parentheses.
 ///
 /// Supported fields:
-///   `title`, `author`, `language` (alias `lang`), `isbn`, `format` (alias `ext`),
-///   `year`, `publisher`.
+///   `title`, `author`, `language` (aliases `lang`, `locale`), `isbn`,
+///   `format` (alias `ext`), `year`, `publisher`.
 ///
 /// Example: `"ensaio sobre" author:saramago language:pt format:epub`
 enum QueryParser {
@@ -39,7 +39,7 @@ enum QueryParser {
             switch field {
             case "title": title = value
             case "author", "authors": author = value
-            case "language", "lang": language = value
+            case "language", "lang", "locale": language = value
             case "isbn": isbn = value
             case "format", "ext", "extension": format = value.lowercased()
             case "year": year = Int(value)

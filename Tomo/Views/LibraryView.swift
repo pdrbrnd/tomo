@@ -137,9 +137,17 @@ struct LibraryView: View {
 
     /// Applies parsed search-bar tokens to a single library book. Free text
     /// matches title or any author (legacy behaviour); structured fields are
-    /// AND'd in. `publisher` / `isbn` aren't carried on `Book`, so we only
-    /// honour them on the plugin side.
+    /// AND'd in.
+    ///
+    /// Whitelist semantics: this function only honours `text`, `title`,
+    /// `author`, `format`, `language`, `year`. Any other parsed constraint
+    /// (`isbn`, `publisher`, …) means the user is asking for something the
+    /// local library can't match — return false rather than fall through to
+    /// `return true`, which would silently match every book. When you add a
+    /// new field to `PluginQuery`, decide here: implement it below, or extend
+    /// the unsupported-constraints guard.
     private func bookMatches(book: Book, query: PluginQuery) -> Bool {
+        if query.isbn != nil || query.publisher != nil { return false }
         if !query.text.isEmpty {
             let needle = query.text.lowercased()
             let titleMatch = book.title.lowercased().contains(needle)
@@ -228,6 +236,21 @@ struct LibraryView: View {
         }
         if let year = query.year, let resultYear = result.year, resultYear != year {
             return false
+        }
+        if let isbn = query.isbn?.lowercased(), !isbn.isEmpty {
+            // ISBN isn't a first-class field on PluginResult — plugins
+            // surface it (when they have it) as a metadata row. Match
+            // case-insensitively after stripping hyphens / spaces so
+            // `978-0-14-044913-6` compares clean against `9780140449136`.
+            let resultISBN = result.metadata
+                .first(where: { $0.key.lowercased() == "isbn" })?
+                .value.lowercased()
+                .filter { $0 != "-" && $0 != " " }
+            // Empty-or-absent ISBN on the result is kept — same advisory
+            // pattern as language above. The plugin didn't tell us.
+            if let resultISBN, !resultISBN.isEmpty, resultISBN != isbn {
+                return false
+            }
         }
         return true
     }

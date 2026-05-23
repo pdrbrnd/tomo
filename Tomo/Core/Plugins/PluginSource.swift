@@ -197,17 +197,20 @@ nonisolated enum PluginDirectory {
         return (plugins, firstError)
     }
 
-    /// Copies any plugins bundled in `Resources/Plugins/` into the user's
-    /// plugins directory the first time the app runs. Idempotent via a
-    /// `UserDefaults` flag — removing a seeded plugin later won't bring
-    /// it back. Failures are silent: if the bundle ships nothing, or the
-    /// destination dir can't be created, the user just sees an empty
-    /// plugins list (matching the "no plugins" state).
-    static func seedBundledPluginsIfNeeded() {
-        let key = "didSeedDefaultPlugins"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        defer { UserDefaults.standard.set(true, forKey: key) }
-
+    /// Copies plugins bundled in `Resources/Plugins/` into the user's
+    /// plugins directory, overwriting existing copies on every launch.
+    /// This means improvements to bundled plugins (e.g. `gutenberg.js`)
+    /// ship with the next app update — users keeping a stale copy
+    /// indefinitely was the failure mode of the previous one-shot seed.
+    /// The bundled files carry a "this file is overwritten" banner at
+    /// the top; users who want to customise are expected to copy them
+    /// under a new filename.
+    ///
+    /// User-authored plugins are untouched — we only iterate files
+    /// shipped inside `Bundle.main`. Failures are silent: if the bundle
+    /// ships nothing, or the destination dir can't be created, the user
+    /// just sees an empty plugins list (matching the "no plugins" state).
+    static func installBundledPlugins() {
         // Xcode 16's synchronized file groups flatten the Resources/Plugins
         // folder into the bundle root, so look up `.js` at top-level.
         guard let dir = directoryURL(),
@@ -220,8 +223,16 @@ nonisolated enum PluginDirectory {
 
         for bundleURL in bundleURLs {
             let dest = dir.appending(path: bundleURL.lastPathComponent)
-            guard !FileManager.default.fileExists(atPath: dest.path(percentEncoded: false))
-            else { continue }
+            // Skip the rewrite when bytes are unchanged so file mtimes
+            // only advance when the bundled plugin actually changed —
+            // makes debugging "did the plugin get refreshed?" easier.
+            if let bundled = try? Data(contentsOf: bundleURL),
+                let existing = try? Data(contentsOf: dest),
+                bundled == existing
+            {
+                continue
+            }
+            try? FileManager.default.removeItem(at: dest)
             try? FileManager.default.copyItem(at: bundleURL, to: dest)
         }
     }

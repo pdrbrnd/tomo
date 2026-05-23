@@ -1,6 +1,12 @@
-// Project Gutenberg plugin for Tomo. Bundled with the app and seeded
-// into the user's plugins folder on first launch — also serves as a
+// Project Gutenberg plugin for Tomo. Bundled with the app — also the
 // reference example for writing your own plugin.
+//
+// !! HEADS UP !!
+// This file is overwritten on every app launch from the version inside
+// the Tomo bundle. Don't edit it in place — your changes will be lost.
+// To customise: copy it to a new filename (e.g. `my-gutenberg.js`) in
+// the same folder and edit the copy. Tomo loads every `.js` in this
+// directory, so the copy will appear alongside the bundled original.
 //
 // =====================================================================
 // Plugin contract
@@ -13,7 +19,11 @@
 //
 // `query` shape:
 //   { text?: string, title?: string, author?: string, language?: string,
-//     year?: string, isbn?: string }
+//     year?: string, isbn?: string, format?: string, publisher?: string }
+//
+// Plugins should bail out early (return []) for query shapes they can't
+// handle — e.g. an ISBN-only query when the source has no ISBN index.
+// Returning the catalogue's front page is worse than returning nothing.
 //
 // `Result` shape:
 //   {
@@ -63,7 +73,17 @@ async function search(query) {
   // network round-trip and return empty.
   if (query.format && query.format.toLowerCase() !== "epub") return [];
 
-  const url = `${PG_BASE}/ebooks/search/?query=${encodeURIComponent(query.text || "")}`;
+  // PG's search box is free-text only — title / author / subject all
+  // funnel through the one `query=` param. ISBN-only or publisher-only
+  // queries can't be expressed; without text we'd just GET the front
+  // page and return random "results", so bail out.
+  const text = [query.text, query.title, query.author]
+    .filter((s) => s && s.trim().length > 0)
+    .join(" ")
+    .trim();
+  if (!text) return [];
+
+  const url = `${PG_BASE}/ebooks/search/?query=${encodeURIComponent(text)}`;
   console.log(`fetching ${url}`);
   const r = await fetch(url);
   console.log(`status ${r.status}, ${r.body.length} bytes`);
