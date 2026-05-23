@@ -1,18 +1,38 @@
-// Project Gutenberg plugin for Tomo. Bundled with the app — also the
-// reference example for writing your own plugin.
+// Project Gutenberg plugin for Tomo. Shipped inside the app as the
+// offline-safe first-launch seed; otherwise updated through the
+// `pdrbrnd/tomo-plugins` registry once the user clicks Check for updates.
+// Also serves as the reference example for writing your own plugin.
 //
 // !! HEADS UP !!
-// This file is overwritten on every app launch from the version inside
-// the Tomo bundle. Don't edit it in place — your changes will be lost.
-// To customise: copy it to a new filename (e.g. `my-gutenberg.js`) in
-// the same folder and edit the copy. Tomo loads every `.js` in this
-// directory, so the copy will appear alongside the bundled original.
+// This file is *only* seeded into your plugins folder on first launch
+// (when the folder is empty). Once your copy exists, Tomo never overwrites
+// it. To pull a newer version: open Settings → Plugins → Check for updates.
+// To customise: copy this file to a new filename (e.g. `my-gutenberg.js`)
+// in the same folder and edit the copy.
+//
+// =====================================================================
+// Plugin manifest
+// =====================================================================
+//
+// Every plugin declares a top-level `const manifest = { ... }`. Tomo reads
+// it after evaluation to render the plugin's identity in Settings and
+// (optionally) to gate install on host compatibility via `minAppVersion`.
+//
+// Required: `id`. Everything else is optional.
+//
+// `minAppVersion` is a semver string ("1.6.0"). The registry compares it
+// against the running Tomo's CFBundleShortVersionString at install/update
+// time; mismatches refuse with a clear message.
+//
+// Notably absent: `version`. The plugin's "what version of itself is this"
+// is registry-side metadata (the registry's build script derives it from
+// the file's git mtime). Plugin authors don't bump anything.
 //
 // =====================================================================
 // Plugin contract
 // =====================================================================
 //
-// A plugin is a single .js file that exports two async functions:
+// A plugin exports two async functions:
 //
 //   async function search(query) -> Result[]
 //   async function download(result) -> string  (URL for the host to fetch)
@@ -54,15 +74,30 @@
 //   Fetches `url` through the host (which can set Referer / custom
 //   headers) and caches the bytes. Returns a local file path you wrap
 //   as `file://<path>` for the result's `coverURL`. Use this when the
-//   image is hotlink-protected and won't load from a plain URL — see
-//   the libgen plugin for a real example. Project Gutenberg covers
-//   don't have hotlink protection, so this plugin uses a direct URL.
+//   image is hotlink-protected and won't load from a plain URL.
+//   Project Gutenberg covers don't have hotlink protection, so this
+//   plugin uses a direct URL.
 //   opts: { referer?: string, headers?: Record<string, string> }
 //
 // console.log(msg), console.error(msg)
 //   Logs into Tomo's plugin log (Console.app, subsystem com.pdrbrnd.tomo).
 //
 // =====================================================================
+
+const manifest = {
+  id: "gutenberg",
+  name: "Project Gutenberg",
+  description:
+    "Search and download public-domain books from Project Gutenberg.",
+  homepage: "https://www.gutenberg.org",
+  author: "Tomo",
+  license: "MIT",
+  // Minimum Tomo version required to run this plugin. Compared against
+  // the host app's CFBundleShortVersionString at install/update time.
+  // Bump when the plugin starts relying on a host capability that landed
+  // in a newer Tomo release.
+  minAppVersion: "1.6.0",
+};
 
 const PG_BASE = "https://www.gutenberg.org";
 

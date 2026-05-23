@@ -17,6 +17,11 @@ import os
 @MainActor
 final class PluginHost {
     let context: JSContext
+    /// Pulled from the plugin's optional `const manifest = { … }` block.
+    /// Set once, at the end of `init`, after script eval. `var` only so it
+    /// can be initialized after `self` is callable (binding install methods
+    /// reach for `self` before all stored properties are set).
+    private(set) var manifest: PluginManifest?
     private let exception = ExceptionBox()
 
     init(pluginSource: String) throws {
@@ -24,6 +29,7 @@ final class PluginHost {
             throw PluginError.loadFailed("could not create JSContext")
         }
         self.context = ctx
+        self.manifest = nil
 
         ctx.exceptionHandler = { [exception] _, value in
             exception.last = value?.toString() ?? "unknown"
@@ -48,6 +54,11 @@ final class PluginHost {
                 throw PluginError.missingExport(export)
             }
         }
+
+        // Optional `const manifest = { … }` declared by the plugin. Read once
+        // here so views can show name/version without reaching into the JS
+        // context later. Missing or malformed → nil; the plugin still works.
+        self.manifest = PluginManifest.from(jsContext: ctx)
     }
 
     /// Calls a top-level JS function and awaits its returned Promise.

@@ -28,6 +28,20 @@ struct SettingsRoot: View {
         .background(Theme.canvas)
         .background(WindowCustomizer())
         .frame(width: Self.windowWidth, height: Self.windowHeight)
+        .onAppear { applyPendingSection() }
+        .onChange(of: state.pendingSettingsSection) { _, _ in applyPendingSection() }
+    }
+
+    /// Honours `AppState.pendingSettingsSection` so other surfaces (e.g.
+    /// the sources popover's "Manage Plugins…" row) can open the window
+    /// pre-routed to a specific section. Cleared after applying so the
+    /// next bare open lands on the default.
+    private func applyPendingSection() {
+        guard let raw = state.pendingSettingsSection,
+            let section = SettingsSection(rawValue: raw)
+        else { return }
+        selection = section
+        state.pendingSettingsSection = nil
     }
 
     // MARK: - Sidebar pane
@@ -68,6 +82,8 @@ struct SettingsRoot: View {
         switch section {
         case .languages:
             LanguageSettingsView(state: state)
+        case .plugins:
+            PluginsSettingsView(state: state)
         case .privacy:
             PrivacySettingsView()
         }
@@ -76,6 +92,7 @@ struct SettingsRoot: View {
 
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     case languages
+    case plugins
     case privacy
 
     var id: String { rawValue }
@@ -83,6 +100,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .languages: "Languages"
+        case .plugins: "Plugins"
         case .privacy: "Privacy"
         }
     }
@@ -90,6 +108,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var symbol: String {
         switch self {
         case .languages: "character.bubble"
+        case .plugins: "puzzlepiece.extension"
         case .privacy: "hand.raised"
         }
     }
