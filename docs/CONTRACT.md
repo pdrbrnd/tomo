@@ -10,26 +10,26 @@ This document tracks the host-side surface that plugins can rely on, and which T
 Tomo follows semver for **app releases**, and uses the app version itself as the contract identifier (VSCode / Obsidian style). The rules:
 
 - **Major** (e.g. 1.x → 2.x): may include breaking changes to the plugin runtime or result shapes. Plugins must be re-blessed for each major.
-- **Minor** (1.5 → 1.6): purely additive — new host bindings, new optional fields, new query knobs. Existing plugins keep working without changes.
-- **Patch** (1.5.0 → 1.5.1): no plugin-visible changes.
+- **Minor** (1.7 → 1.8): purely additive — new host bindings, new optional fields, new query knobs. Existing plugins keep working without changes.
+- **Patch** (1.7.0 → 1.7.1): no plugin-visible changes.
 
-If a plugin doesn't use a feature introduced in 1.6, it does not need to declare `minAppVersion: "1.6.0"`. Declare the lowest version that contains every host capability the plugin actually relies on.
+Declare `minAppVersion` as the lowest Tomo version that contains every host capability your plugin actually uses. Tomo 1.7.0 is the floor — it's the first version with the formal plugin contract (manifest, registry, compat gating). Pre-1.7 versions ran plugins but without manifests or version awareness, so a plugin authored against this contract won't work on them.
 
-## Capability history
+## Capabilities (all available in 1.7.0)
 
-| Capability | Available since | Notes |
-|---|---|---|
-| `search(query)` / `download(result)` exports | 1.0.0 | Core contract. |
-| `query` fields: `text`, `title`, `author`, `language`, `isbn`, `format`, `year`, `publisher` | 1.0.0 | |
-| `Result` fields: `id`, `title`, `authors`, `year`, `language`, `format`, `sizeBytes`, `coverURL`, `detailURL`, `metadata[]` | 1.0.0 | |
-| `download()` returning `{ kind: "browser", url? }` | 1.0.0 | For sources that require user interaction (Cloudflare, slow-download partners). |
-| `fetch(url, opts?)` | 1.0.0 | URLSession-backed. |
-| `querySelectorAll(html, selector)` | 1.0.0 | SwiftSoup-backed. |
-| `cacheImage(url, opts?)` | 1.0.0 | For hotlink-protected covers. |
-| `console.log` / `console.error` | 1.0.0 | |
-| Manifest field: `minAppVersion` | 1.6.0 | Without this field the plugin is treated as "no constraint" — installs everywhere. Set it explicitly when the plugin relies on a 1.6+ host capability. |
+| Capability | Notes |
+|---|---|
+| `search(query)` / `download(result)` exports | Core contract. |
+| `query` fields: `text`, `title`, `author`, `language`, `isbn`, `format`, `year`, `publisher` | |
+| `Result` fields: `id`, `title`, `authors`, `year`, `language`, `format`, `sizeBytes`, `coverURL`, `detailURL`, `metadata[]` | |
+| `download()` returning `{ kind: "browser", url? }` | For sources that require user interaction (Cloudflare, slow-download partners). |
+| `fetch(url, opts?)` | URLSession-backed. |
+| `querySelectorAll(html, selector)` | SwiftSoup-backed. |
+| `cacheImage(url, opts?)` | For hotlink-protected covers. |
+| `console.log` / `console.error` | |
+| Manifest field: `minAppVersion` | Without this field the plugin is treated as "no constraint" — installs everywhere. |
 
-Earlier-than-this entries don't exist; 1.0.0 is the first version that shipped the plugin system. The table grows as we add capabilities — every addition lands in a minor release.
+When new capabilities are added (in a future 1.8+), this table grows with an "Available since" column and the policy above kicks in.
 
 ## Changing the contract (host-side)
 

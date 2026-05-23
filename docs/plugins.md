@@ -33,7 +33,7 @@ const manifest = {
   homepage: "https://...",        // optional
   author: "Tomo",                 // optional
   license: "MIT",                 // optional
-  minAppVersion: "1.6.0",         // optional — see CONTRACT.md
+  minAppVersion: "1.7.0",         // optional — see CONTRACT.md
 };
 ```
 
@@ -70,7 +70,7 @@ Registry shape (`version: 1`):
       "homepage": "https://www.gutenberg.org",
       "author": "Tomo",
       "license": "MIT",
-      "minAppVersion": "1.6.0",
+      "minAppVersion": "1.7.0",
       "url": "https://raw.githubusercontent.com/.../plugins/gutenberg.js",
       "sha256": "abc123..."
     }
@@ -189,7 +189,7 @@ Logs into Tomo's plugin log. Watch in Console.app (subsystem `com.pdrbrnd.tomo`,
 
 ## Worked example
 
-Project Gutenberg search + download in ~50 lines (see `Tomo/Resources/Plugins/gutenberg.js` for the full file with comments):
+Project Gutenberg search + download in ~50 lines (see [`pdrbrnd/tomo-plugins/plugins/gutenberg.js`](https://github.com/pdrbrnd/tomo-plugins/blob/main/plugins/gutenberg.js) for the full file with comments):
 
 ```js
 const PG_BASE = "https://www.gutenberg.org";
