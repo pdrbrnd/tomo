@@ -39,19 +39,68 @@ final class PluginSource: Identifiable {
         }
     }
 
-    /// Calls the plugin's `download(result)` and returns the URL the plugin
-    /// claims is downloadable. The caller fetches and persists.
-    func download(_ result: PluginResult) async throws -> URL {
+    /// Calls the plugin's `download(result)` and lifts the JS return value
+    /// into a typed outcome:
+    ///
+    /// - String → `.url(_)` — host fetches directly. Existing behavior.
+    /// - `{ kind: "browser", url?: string }` → `.browser(_)` — host opens
+    ///   the in-app browser sheet. Falls back to `result.detailURL` when
+    ///   the plugin omits `url`.
+    func download(_ result: PluginResult) async throws -> PluginDownloadOutcome {
         let value = try await host.invokePromise(
             "download", argsAsJS: [result.toJSDictionary()])
-        guard let urlString = value.toString(),
-            !urlString.isEmpty,
-            let url = URL(string: urlString)
-        else {
-            throw PluginError.invalidResponse
-        }
-        return url
+        return try parseDownloadOutcome(value, fallbackBrowserURL: result.detailURL)
     }
+
+    private func parseDownloadOutcome(
+        _ value: JSValue,
+        fallbackBrowserURL: URL?
+    ) throws -> PluginDownloadOutcome {
+        if value.isString {
+            guard let urlString = value.toString(),
+                !urlString.isEmpty,
+                let url = URL(string: urlString)
+            else {
+                throw PluginError.runtime("plugin download() returned invalid URL string")
+            }
+            return .url(url)
+        }
+        if value.isObject {
+            guard let kindValue = value.forProperty("kind"),
+                !kindValue.isUndefined,
+                !kindValue.isNull,
+                let kind = kindValue.toString()
+            else {
+                throw PluginError.runtime("plugin download() returned object without 'kind'")
+            }
+            guard kind == "browser" else {
+                throw PluginError.runtime("plugin download() returned unknown kind: '\(kind)'")
+            }
+            // `url` is optional — fall back to result.detailURL when missing.
+            let urlValue = value.forProperty("url")
+            let urlString =
+                (urlValue?.isString == true) ? urlValue?.toString() : nil
+            if let urlString, !urlString.isEmpty, let url = URL(string: urlString) {
+                return .browser(url)
+            }
+            if let fallback = fallbackBrowserURL {
+                return .browser(fallback)
+            }
+            throw PluginError.runtime(
+                "plugin returned { kind: 'browser' } without url and result has no detailURL"
+            )
+        }
+        throw PluginError.invalidResponse
+    }
+}
+
+/// Lifted from a plugin's `download(result)` return value. Plugins return
+/// either a string URL (host fetches directly) or `{ kind: "browser", url? }`
+/// (host opens the in-app browser sheet — used for sources that gate downloads
+/// behind Cloudflare or countdown timers).
+enum PluginDownloadOutcome: Sendable {
+    case url(URL)
+    case browser(URL)
 }
 
 /// Filesystem layout for plugins: `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`.

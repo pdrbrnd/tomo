@@ -62,6 +62,11 @@ struct LibraryView: View {
     /// this clears `selectedBookIDs` (and vice versa) so only one item can
     /// be inspected at a time.
     @State private var selectedSourceID: String?
+    /// Browser-driven download request. Set when either the user picks
+    /// "Download via Browser…" from the source menu, or the plugin's
+    /// `download()` returns `.browser(url)` to signal "this needs in-app
+    /// browser verification". Drives `BrowserDownloadSheet`.
+    @State private var browserDownloadRequest: BrowserDownloadRequest?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -450,6 +455,16 @@ struct LibraryView: View {
                     coverGalleryBook = nil
                 },
                 onCancel: { coverGalleryBook = nil }
+            )
+        }
+        .sheet(item: $browserDownloadRequest) { request in
+            BrowserDownloadSheet(
+                startURL: request.url,
+                onCompleted: { fileURL in
+                    browserDownloadRequest = nil
+                    Task { await importBrowserDownload(request.result, from: fileURL) }
+                },
+                onCancel: { browserDownloadRequest = nil }
             )
         }
     }
@@ -1101,6 +1116,13 @@ struct LibraryView: View {
             }
             dismiss()
         }
+        if let detailURL = result.detailURL {
+            bookMenuItem("Download via Browser…", icon: "arrow.down.circle") {
+                browserDownloadRequest = BrowserDownloadRequest(
+                    result: result, url: detailURL)
+                dismiss()
+            }
+        }
         if let url = result.detailURL {
             Link(destination: url) {
                 HStack(spacing: 9) {
@@ -1266,7 +1288,22 @@ struct LibraryView: View {
             // card for its library counterpart); error path resets here.
         }
         do {
-            let downloadURL = try await source.download(result)
+            let outcome = try await source.download(result)
+            let downloadURL: URL
+            switch outcome {
+            case .url(let url):
+                downloadURL = url
+            case .browser(let browserURL):
+                // Plugin signaled this result requires in-app browser
+                // verification (Cloudflare, countdown, etc.). Hand off
+                // to BrowserDownloadSheet — it'll capture the file via
+                // WKDownload and re-enter the import flow.
+                downloadTasks[result.id] = nil
+                downloadStates[result.id] = nil
+                browserDownloadRequest = BrowserDownloadRequest(
+                    result: result, url: browserURL)
+                return
+            }
             let tempURL = try await fetchToTempFile(
                 url: downloadURL,
                 format: result.format,
@@ -1358,6 +1395,43 @@ struct LibraryView: View {
     /// which collapses the capsule back to idle without a toast.
     private func cancelDownload(_ result: PluginResult) {
         downloadTasks[result.id]?.cancel()
+    }
+
+    /// Mirrors the post-fetch tail of `downloadAndImport` for files that
+    /// arrived via `BrowserDownloadSheet` instead of the plugin's own
+    /// `download()` flow. The source row transitions through .importing →
+    /// .added → removed, identical to the normal path.
+    private func importBrowserDownload(_ result: PluginResult, from fileURL: URL) async {
+        downloadStates[result.id] = .importing
+        let importedBook = await state.importBook(
+            from: fileURL,
+            origin: .source(id: result.pluginID, ref: result.id),
+            collection: selectedCollection
+        )
+        // Sheet creates a per-download temp directory; clean it up wholesale.
+        let tempDir = fileURL.deletingLastPathComponent()
+        try? FileManager.default.removeItem(at: tempDir)
+        if let importedBook,
+            let current = state.books.first(where: { $0.id == importedBook.id }),
+            current.coverPath == nil,
+            let coverURL = result.coverURL
+        {
+            if let data = try? await fetchCoverBytes(from: coverURL) {
+                let ext = inferCoverExtension(url: coverURL, data: data)
+                await state.setCover(for: current, fromData: data, ext: ext)
+            }
+        }
+        downloadStates[result.id] = .added
+        try? await Task.sleep(for: .milliseconds(700))
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            removeSourceResult(id: result.id, pluginID: result.pluginID)
+        }
+        downloadStates[result.id] = nil
+        if selectedSourceID == result.id {
+            selectedSourceID = nil
+        }
     }
 
     /// Picks an extension for a cover fetched from a URL. URL path extension
@@ -2128,6 +2202,20 @@ struct LibraryView: View {
         }
         if sidebarOpen { sidebarOpen = false }
     }
+}
+
+// MARK: - Browser download request
+
+/// State payload for the `BrowserDownloadSheet`. Bundles the originating
+/// source result with the URL the in-app webview should open at — usually
+/// `result.detailURL`, but a plugin can override via
+/// `{ kind: "browser", url: "..." }` so it can deep-link to a specific
+/// partner page when it knows one.
+struct BrowserDownloadRequest: Identifiable, Equatable {
+    let result: PluginResult
+    let url: URL
+
+    var id: String { result.fingerprint }
 }
 
 // MARK: - Marquee + frame tracking

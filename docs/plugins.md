@@ -22,7 +22,7 @@ A plugin must export two `async` functions:
 
 ```js
 async function search(query) { /* return Result[] */ }
-async function download(result) { /* return URL string */ }
+async function download(result) { /* return string | { kind: "browser", url?: string } */ }
 ```
 
 ### `search(query) -> Result[]`
@@ -44,9 +44,16 @@ Called when the user types in the search bar (debounced). Return an array of res
 
 Plugins consume what they understand and ignore the rest.
 
-### `download(result) -> string`
+### `download(result) -> string | { kind: "browser", url?: string }`
 
-Called when the user clicks Download on a result tile. Return a URL string Tomo's `URLSession` can fetch (Tomo follows redirects). The plugin's job is to resolve any intermediate "click here to download" pages first.
+Called when the user clicks Download on a result tile. Two return shapes:
+
+- **String** — a URL Tomo's `URLSession` will fetch directly. Existing behavior; this is what `gutenberg.js` and `libgen.js` return. The plugin's job is to resolve any intermediate "click here to download" pages first.
+- **`{ kind: "browser", url?: string }`** — Tomo opens an in-app WKWebView at `url` (or `result.detailURL` if `url` is omitted). The user clicks through whatever the source requires (Cloudflare challenge, countdown timer, partner-server pick), and Tomo's `WKDownload` delegate captures the resulting file and imports it. Use this when the source gates downloads behind interactions that can't be scripted from `fetch()` — e.g. Anna's Archive slow-download partners.
+
+A plugin can return different shapes per call. Anna's Archive's plugin returns a string when a direct mirror (IPFS / libgen) resolves and `{ kind: "browser", url: detailURL }` only when no direct mirror is reachable. A plugin for a source that *always* requires browser verification (e.g. Z-Library) can return the object shape unconditionally.
+
+Backwards compatibility: existing plugins returning strings keep working unchanged.
 
 ### Result schema
 
