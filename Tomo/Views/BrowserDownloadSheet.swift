@@ -49,6 +49,8 @@ struct BrowserDownloadSheet: View {
             footer
         }
         .frame(minWidth: 980, minHeight: 720)
+        .background(Theme.canvas)
+        .presentationBackground(Theme.canvas)
     }
 
     private var header: some View {

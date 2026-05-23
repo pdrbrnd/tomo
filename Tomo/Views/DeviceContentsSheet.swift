@@ -30,11 +30,16 @@ struct DeviceContentsSheet: View {
             header
             insetRule
             content
-            insetRule
-            footer
         }
         .frame(width: 720, height: 560)
+        .background(Theme.canvas)
+        .overlay(alignment: .bottom) { deleteAction }
         .background(keyboardShortcutBridge)
+        .animation(.spring(duration: 0.34, bounce: 0.22), value: selection.isEmpty)
+        // Match the app's canvas instead of the system's default sheet
+        // material — without this the chrome reads as a different gray than
+        // every other surface in the app.
+        .presentationBackground(Theme.canvas)
         .task(id: device.id) { await refresh() }
         .confirmationDialog(
             confirmDeleteTitle,
@@ -52,29 +57,44 @@ struct DeviceContentsSheet: View {
 
     // MARK: - Header
 
+    /// Header zone: device title row on top, full-width search below.
+    /// Explicit `Theme.canvas` background blocks hover from bleeding through
+    /// to rows in the scroll view directly underneath — SwiftUI's hit-testing
+    /// follows the view's full frame, not the scroll viewport's clip.
     private var header: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            Icon(symbol: "ipad", weight: .regular, size: 16)
-                .foregroundStyle(.primary.opacity(Theme.Text.muted))
-                .frame(width: 22, height: 22)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(device.displayName)
-                    .font(.system(size: 14, weight: .semibold))
-                if let subtitle = deviceSubtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.primary.opacity(Theme.Text.secondary))
+        VStack(spacing: Theme.Spacing.md) {
+            HStack(spacing: Theme.Spacing.md) {
+                Icon(symbol: "ipad", weight: .regular, size: 16)
+                    .foregroundStyle(.primary.opacity(Theme.Text.muted))
+                    .frame(width: 22, height: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(device.displayName)
+                            .font(.system(size: 12, weight: .semibold))
+                        if let stats = headerStats {
+                            Text(stats)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
+                                .contentTransition(.numericText())
+                        }
+                    }
+                    if let subtitle = deviceSubtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.primary.opacity(Theme.Text.secondary))
+                    }
                 }
+                Spacer()
+                Button("Done") { onDismiss() }
+                    .buttonStyle(PillButtonStyle())
+                    .keyboardShortcut(.cancelAction)
             }
-            Spacer()
             searchField
-            Button("Done") { onDismiss() }
-                .buttonStyle(PillButtonStyle())
-                .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.top, Theme.Spacing.xl)
         .padding(.bottom, Theme.Spacing.lg)
+        .background(Theme.canvas)
     }
 
     private var searchField: some View {
@@ -87,7 +107,7 @@ struct DeviceContentsSheet: View {
                 prompt: Text("Search").foregroundStyle(.primary.opacity(Theme.Text.placeholder))
             )
             .textFieldStyle(.plain)
-            .font(.system(size: 12.5))
+            .font(.system(size: 13))
             .foregroundStyle(.primary.opacity(Theme.Text.primary))
             .focused($searchFocused)
             if !searchText.isEmpty {
@@ -100,8 +120,9 @@ struct DeviceContentsSheet: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 11)
-        .frame(width: 200, height: 28)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: 32)
         .background(
             ZStack {
                 Capsule(style: .continuous).fill(Theme.surface)
@@ -117,6 +138,19 @@ struct DeviceContentsSheet: View {
             return "Firmware \(fw)"
         }
         return nil
+    }
+
+    /// "N items · X.X GB" — what this view shows, sitting next to the device
+    /// name. Reflects post-blocklist contents (Amazon dictionaries, guides
+    /// etc. don't count), which matches what the user can actually manage.
+    /// Suppressed during the initial load so the header doesn't flash
+    /// "0 items" before the real data arrives.
+    private var headerStats: String? {
+        guard !loading else { return nil }
+        let count = rows.count
+        let totalBytes = rows.reduce(into: Int64(0)) { $0 += $1.size }
+        let countLabel = count == 1 ? "1 item" : "\(count) items"
+        return "\(countLabel) · \(totalBytes.formatted(.byteCount(style: .file)))"
     }
 
     // MARK: - Content
@@ -163,7 +197,12 @@ struct DeviceContentsSheet: View {
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.top, Theme.Spacing.sm)
+                // Always reserve space for the floating delete button so the
+                // last row stays reachable when a selection lifts the button
+                // into view — and so the layout doesn't reflow either way.
+                // 32 button + 24 bottom inset + ~16 shadow / breathing room.
+                .padding(.bottom, 72)
             }
             .scrollContentBackground(.hidden)
             .background(Theme.canvas)
@@ -179,48 +218,34 @@ struct DeviceContentsSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Footer
+    // MARK: - Floating action
 
-    private var footer: some View {
-        HStack {
-            Text(footerSummary)
-                .font(.system(size: 12))
-                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
-                .contentTransition(.numericText())
-            Spacer()
-            if deleting {
-                ProgressView().controlSize(.small).padding(.trailing, Theme.Spacing.sm)
-            }
-            if !selection.isEmpty {
-                Button(role: .destructive) {
-                    confirmDelete = true
-                } label: {
+    /// Floating destructive button overlaid at the bottom of the sheet,
+    /// visible only when something is selected. Slides in/out so the rest of
+    /// the layout never shifts (the old footer-with-counts was wasted height
+    /// most of the time and forced a layout reflow on first selection).
+    @ViewBuilder
+    private var deleteAction: some View {
+        if !selection.isEmpty {
+            Button(role: .destructive) {
+                confirmDelete = true
+            } label: {
+                if deleting {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small).tint(.white)
+                        Text("Deleting \(selection.count)…")
+                    }
+                } else {
                     Text("Delete \(selection.count) from \(device.displayName)…")
                 }
-                .buttonStyle(PillButtonStyle(prominent: true))
-                .tint(.red)
-                .disabled(deleting)
             }
+            .buttonStyle(PillButtonStyle(prominent: true))
+            .tint(.red)
+            .disabled(deleting)
+            .softShadow(elevated: true)
+            .padding(.bottom, Theme.Spacing.xl)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.top, Theme.Spacing.lg)
-        .padding(.bottom, Theme.Spacing.xl)
-    }
-
-    /// "N of M items · X.X GB" while searching, "M items · X.X GB" otherwise.
-    /// Storage total reflects what's *visible*, not the whole device, so the
-    /// footer reads as "what this view shows" not "what your device holds."
-    private var footerSummary: String {
-        let visible = visibleRows
-        let filtered = !searchText.isEmpty
-        let totalBytes = visible.reduce(into: Int64(0)) { $0 += $1.size }
-        let sizeLabel = totalBytes.formatted(.byteCount(style: .file))
-        let prefix = filtered ? "\(visible.count) of \(rows.count) items" : itemLabel(rows.count)
-        return "\(prefix) · \(sizeLabel)"
-    }
-
-    private func itemLabel(_ n: Int) -> String {
-        n == 1 ? "1 item" : "\(n) items"
     }
 
     private var confirmDeleteTitle: String {
@@ -355,9 +380,13 @@ struct DeviceContentsSheet: View {
         var size: Int64 { file.size }
     }
 
+    /// Slightly stronger than `Theme.hairline` (which renders sub-perceptual
+    /// at 0.5pt on the dark canvas). Anchors the boundary between the chrome
+    /// and the scroll content so rows that scroll under the search bar read
+    /// as "behind a divider" rather than "cut off into empty space."
     private var insetRule: some View {
         Rectangle()
-            .fill(Theme.hairline)
+            .fill(.primary.opacity(0.10))
             .frame(height: 0.5)
     }
 }
