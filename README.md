@@ -59,6 +59,10 @@ Tomo's source-search system loads plugins from `~/Library/Application Support/co
 
 The official registry is [`pdrbrnd/tomo-plugins`](https://github.com/pdrbrnd/tomo-plugins). See [docs/plugins.md](docs/plugins.md) for the contract and host API; `gutenberg.js` over there is the canonical example.
 
+## How this was built
+
+Mostly written with Claude. This is my first Swift project. The design, architectural principles, product decisions, and on-disk contract are mine; the SwiftUI is almost exclusively model output. The [CLAUDE.md](/CLAUDE.md) is a good document to understand the opinions that shaped this project.
+
 ## License
 
 [AGPL-3.0](LICENSE).
