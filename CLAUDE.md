@@ -7,7 +7,8 @@ The library folder lives wherever the user puts it (possibly iCloud Drive);
 the app's internal state never does.
 
 The pitch: a minimal and well-designed macOS app that handles language variants 
-natively and treats device delivery as a first-class workflow.
+natively and treats device delivery as a first-class workflow. Supported
+devices: Kindle and Kobo, over USB.
 
 ## What this is NOT
 
@@ -147,7 +148,7 @@ Per-format notes:
 - **EPUB** — full path: metadata, cover, language classification on import.
 - **PDF** — `/Info` for title/author/year (with junk-title detection — Word's "Microsoft Word - foo.docx" gets thrown out for the filename), first page rendered as JPEG cover at 600px long-side. No language classification (PDFs don't carry a reliable tag); locale lands at `und` unless the user sets it.
 
-Once a book is in the library, AZW3 / MOBI / PDF can be sideloaded to a Kindle via passthrough; only EPUB triggers the in-app conversion path. Drop overlay surfaces the accepted set; non-accepted drops surface a toast and are silently dropped.
+Once a book is in the library, AZW3 / MOBI / PDF can be sideloaded to a Kindle via passthrough; only EPUB triggers the in-app conversion path. Kobo accepts EPUB and PDF directly — no conversion. Drop overlay surfaces the accepted set; non-accepted drops surface a toast and are silently dropped.
 
 ## Editing model
 
@@ -208,6 +209,12 @@ For Kindle home-screen covers, the writer's EXTH 201 alone isn't enough on most 
 
 We do not bundle Calibre, KindleGen, or Amazon's Send to Kindle Mac app, and we don't route through SMTP / Amazon servers.
 
+## Device drivers
+
+Each device implements `BookDevice` (`Core/Delivery/BookDevice.swift`); the library and UI only ever talk to that protocol. `DeviceScanner.detect()` scans `/Volumes` and tries each driver's failable init in order.
+
+- **Kindle** (`Core/Delivery/Kindle.swift`): identified by `documents/` + `system/` at the volume root. Writes books to `documents/`. EPUB needs conversion (see above); AZW3/MOBI/PDF passthrough.
+- **Kobo** (`Core/Delivery/Kobo.swift`): identified by `.kobo/` at the volume root (contains `KoboReader.sqlite`, present on every Kobo from Touch onwards). Writes books to the volume root — Kobo's scanner walks the whole device on disconnect. EPUB and PDF passthrough; no conversion, no cover-thumbnail workaround (Kobo extracts covers from EPUB metadata natively).
 
 ## Out of scope (don't add without discussion)
 

@@ -245,20 +245,24 @@ private struct LibraryMenuLibraryMenu: Commands {
         }
     }
 
-    private var deviceName: String { ctx?.deviceName ?? "Kindle" }
-
     private var sendLabel: String {
         let count = ctx?.selectionCount ?? 0
+        guard let deviceName = ctx?.deviceName else {
+            return count > 1 ? "Send \(count) to Device" : "Send to Device"
+        }
         return count > 1 ? "Send \(count) to \(deviceName)" : "Send to \(deviceName)"
     }
 
     private var removeLabel: String {
         let count = ctx?.selectionCount ?? 0
+        guard let deviceName = ctx?.deviceName else {
+            return count > 1 ? "Remove \(count) from Device" : "Remove from Device"
+        }
         return count > 1 ? "Remove \(count) from \(deviceName)" : "Remove from \(deviceName)"
     }
 
     private var ejectLabel: String {
-        guard ctx?.hasDevice == true else { return "Eject Device" }
+        guard let deviceName = ctx?.deviceName else { return "Eject Device" }
         return "Eject \(deviceName)"
     }
 }

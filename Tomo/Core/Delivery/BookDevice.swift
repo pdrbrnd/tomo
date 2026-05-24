@@ -194,7 +194,7 @@ nonisolated enum DeviceScanner {
         }
         for url in entries {
             if let kindle = Kindle(volumeURL: url) { return kindle }
-            // Future: if let kobo = Kobo(volumeURL: url) { return kobo }
+            if let kobo = Kobo(volumeURL: url) { return kobo }
         }
         return nil
     }
