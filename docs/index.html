@@ -18,7 +18,7 @@
     />
     <meta
       name="theme-color"
-      content="#0f0f11"
+      content="#020202"
       media="(prefers-color-scheme: dark)"
     />
 
@@ -54,6 +54,18 @@
           come.
         </p>
       </header>
+
+      <figure class="hero">
+        <video
+          class="hero-video"
+          src="screen-recording.mp4"
+          poster="img/hero-poster.jpg"
+          playsinline
+          preload="none"
+          aria-label="Tomo walkthrough video"
+        ></video>
+        <button class="hero-play" type="button">Watch walkthrough</button>
+      </figure>
 
       <section class="features">
         <ul>
@@ -100,5 +112,16 @@
         <a href="https://github.com/pdrbrnd/tomo/blob/main/LICENSE">AGPL-3.0</a>
       </footer>
     </main>
+    <script>
+      const video = document.querySelector(".hero-video");
+      const playBtn = document.querySelector(".hero-play");
+      if (video && playBtn) {
+        playBtn.addEventListener("click", () => {
+          video.setAttribute("controls", "");
+          video.play();
+          playBtn.remove();
+        });
+      }
+    </script>
   </body>
 </html>
