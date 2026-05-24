@@ -74,8 +74,16 @@ struct PluginResult: Identifiable, Hashable, Sendable {
         let language = (dict["language"] as? String) ?? ""
         let format = ((dict["format"] as? String) ?? "epub").lowercased()
         let sizeBytes = dict["sizeBytes"] as? Int
-        let coverURL = (dict["coverURL"] as? String).flatMap(URL.init(string:))
-        let detailURL = (dict["detailURL"] as? String).flatMap(URL.init(string:))
+        // URLs returned by the plugin are untrusted. The validator drops
+        // anything other than http(s) — except `coverURL`, which may
+        // additionally be a `file://` path inside the cacheImage cache dir
+        // so the cacheImage round-trip works.
+        let coverURL = (dict["coverURL"] as? String).flatMap {
+            try? PluginURLValidator.validateResultCoverURL($0)
+        }
+        let detailURL = (dict["detailURL"] as? String).flatMap {
+            try? PluginURLValidator.validateResultDetailURL($0)
+        }
         // Plugin contract: metadata is an array of `{ key, value }` objects.
         // Order is preserved. Entries missing either field are skipped.
         let metadata: [PluginField] = ((dict["metadata"] as? [[String: Any]]) ?? []).compactMap { entry in

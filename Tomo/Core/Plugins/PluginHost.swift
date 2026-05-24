@@ -4,6 +4,25 @@ import JavaScriptCore
 import SwiftSoup
 import os
 
+/// Hard limits applied to every plugin. Tuning knobs in one place.
+/// The four are deliberately generous — real plugin work runs in
+/// milliseconds and tens of KB. The caps are airbags, not throttles.
+/// Each property is `nonisolated` so background network tasks can read
+/// them without an actor hop.
+enum PluginLimits {
+    /// CPU-time cap per JS invocation. Enforced by JavaScriptCore itself
+    /// via `JSContextGroupSetExecutionTimeLimit`. Trips on `while(true){}`
+    /// and the like; the script is terminated with a JS-side exception.
+    nonisolated static let jsCPUSeconds: Double = 10.0
+    /// Response body cap on `fetch()`. Search-result HTML is normally
+    /// well under 1 MB.
+    nonisolated static let fetchMaxBytes = 10 * 1024 * 1024
+    /// Response body cap on `cacheImage()`. Covers are typically 0.5–2 MB.
+    nonisolated static let cacheImageMaxBytes = 20 * 1024 * 1024
+    /// Per-request URLSession timeout for plugin network bindings.
+    nonisolated static let networkTimeoutSeconds: TimeInterval = 30
+}
+
 /// Hosts a single user-supplied JS plugin in a JavaScriptCore context.
 ///
 /// Runtime exposed to plugins:
@@ -14,6 +33,10 @@ import os
 /// JSContext is single-threaded; this class is `@MainActor` so all access
 /// to `context` happens on the main actor. Async work (network, parse) happens
 /// off-actor and resumes back here to call into JS.
+///
+/// Plugins are treated as untrusted: URL bindings are scheme-allowlisted
+/// and private-host-blocked (`PluginURLValidator`); responses are size-capped;
+/// CPU runs against a hard ceiling (`JSCExecutionLimit`).
 @MainActor
 final class PluginHost {
     let context: JSContext
@@ -29,6 +52,11 @@ final class PluginHost {
         }
         self.context = ctx
         self.manifest = nil
+
+        // Hard CPU cap. Install before `evaluateScript` so the top-level
+        // script body itself is bounded — a malicious plugin could do its
+        // damage at load time, not just inside `search()`/`download()`.
+        JSCExecutionLimit.install(for: ctx, seconds: PluginLimits.jsCPUSeconds)
 
         ctx.exceptionHandler = { [exception] _, value in
             exception.last = value?.toString() ?? "unknown"
@@ -59,6 +87,14 @@ final class PluginHost {
 
     /// Calls a top-level JS function and awaits its returned Promise.
     /// `argsAsJS` are passed positionally to the call.
+    ///
+    /// CPU-time runaway is bounded by JSC's `JSContextGroupSetExecutionTimeLimit`
+    /// (installed in `init`). A wall-clock timeout for unresolved Promises
+    /// is deliberately *not* layered on top — it would require unwinding a
+    /// non-cancellation-aware continuation, which Swift Concurrency can't do
+    /// cleanly. A buggy plugin that forgets `resolve()` will hang its own
+    /// search/download invocation forever, but cannot freeze the UI (the
+    /// async wait yields the main thread).
     func invokePromise(_ functionName: String, argsAsJS: [Any]) async throws -> JSValue {
         let fn = context.objectForKeyedSubscript(functionName)
         guard let fn, !fn.isUndefined else {
@@ -151,11 +187,14 @@ final class PluginHost {
     nonisolated private static func performFetch(url urlString: String, options: FetchOptions) async throws -> [String:
         any Sendable]
     {
-        guard let url = URL(string: urlString) else {
-            throw PluginError.runtime("invalid url: \(urlString)")
+        let url: URL
+        do {
+            url = try PluginURLValidator.validateNetworkURL(urlString)
+        } catch {
+            throw PluginError.runtime(error.localizedDescription)
         }
         var req = URLRequest(url: url)
-        req.timeoutInterval = 30
+        req.timeoutInterval = PluginLimits.networkTimeoutSeconds
         req.setValue(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
             forHTTPHeaderField: "User-Agent")
@@ -168,7 +207,8 @@ final class PluginHost {
             req.httpBody = b.data(using: .utf8)
         }
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await PluginNetworkDelegate.run(
+            request: req, maxBytes: PluginLimits.fetchMaxBytes)
         let httpResp = response as? HTTPURLResponse
         let status = httpResp?.statusCode ?? 0
         let body = String(data: data, encoding: .utf8) ?? ""
@@ -236,8 +276,11 @@ final class PluginHost {
     nonisolated private static func fetchAndCache(url urlString: String, options: CacheImageOptions) async throws
         -> String
     {
-        guard let url = URL(string: urlString) else {
-            throw PluginError.runtime("invalid url: \(urlString)")
+        let url: URL
+        do {
+            url = try PluginURLValidator.validateNetworkURL(urlString)
+        } catch {
+            throw PluginError.runtime(error.localizedDescription)
         }
         // Content-addressable cache: ~/Library/Caches/com.pdrbrnd.tomo/plugin-covers/<sha256>.bin
         // — keyed on the URL string, so identical covers across queries reuse
@@ -261,7 +304,8 @@ final class PluginHost {
             for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         }
 
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await PluginNetworkDelegate.run(
+            request: req, maxBytes: PluginLimits.cacheImageMaxBytes)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         // libgen and similar serve HTTP 200 with Content-Length: 0 when the
         // cover is technically present in metadata but not actually served.
@@ -274,13 +318,7 @@ final class PluginHost {
     }
 
     nonisolated private static func cacheDirectory() throws -> URL {
-        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
-            throw PluginError.runtime("no cache directory available")
-        }
-        let dir =
-            base
-            .appending(path: "com.pdrbrnd.tomo", directoryHint: .isDirectory)
-            .appending(path: "plugin-covers", directoryHint: .isDirectory)
+        let dir = try PluginURLValidator.coverCacheDirectory()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -358,4 +396,148 @@ final class ExceptionBox: @unchecked Sendable {
 struct UncheckedJSValue: @unchecked Sendable {
     let value: JSValue
     init(_ value: JSValue) { self.value = value }
+}
+
+/// Per-task URLSession delegate for plugin network bindings. Streams the
+/// response in chunks (cheap), caps total bytes, and re-validates every
+/// redirect target so a public-looking URL can't 302 into `file://` or
+/// `http://localhost`.
+///
+/// One instance per request — never reuse. `run(request:maxBytes:)` is the
+/// only entry point callers should touch.
+final class PluginNetworkDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let maxBytes: Int
+    private let lock = NSLock()
+    private var accumulated = Data()
+    private var response: URLResponse?
+    private var continuation: CheckedContinuation<(Data, URLResponse), Error>?
+    private var settled = false
+    /// When a redirect is blocked we cancel the task — but URLSession then
+    /// surfaces `NSURLErrorCancelled` from `didCompleteWithError`, which
+    /// hides the real reason. Stash the validation error so `settle` can
+    /// prefer it over the cancellation.
+    private var blockedRedirect: Error?
+
+    private init(maxBytes: Int) {
+        self.maxBytes = maxBytes
+    }
+
+    /// Submit a request, await its (capped, redirect-validated) response.
+    static func run(request: URLRequest, maxBytes: Int) async throws -> (Data, URLResponse) {
+        let delegate = PluginNetworkDelegate(maxBytes: maxBytes)
+        let task = URLSession.shared.dataTask(with: request)
+        task.delegate = delegate
+        return try await withCheckedThrowingContinuation { cont in
+            delegate.lock.lock()
+            delegate.continuation = cont
+            delegate.lock.unlock()
+            task.resume()
+        }
+    }
+
+    /// Resume the continuation at most once and mark the request settled.
+    /// Subsequent didReceive / didComplete callbacks become no-ops.
+    private func settle(_ result: Result<(Data, URLResponse), Error>, cancel task: URLSessionTask?) {
+        lock.lock()
+        if settled {
+            lock.unlock()
+            return
+        }
+        settled = true
+        let cont = continuation
+        continuation = nil
+        lock.unlock()
+        if let task { task.cancel() }
+        switch result {
+        case .success(let v): cont?.resume(returning: v)
+        case .failure(let e): cont?.resume(throwing: e)
+        }
+    }
+
+    // Capture the URLResponse before any body data arrives.
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        lock.lock()
+        self.response = response
+        lock.unlock()
+        completionHandler(.allow)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive data: Data
+    ) {
+        lock.lock()
+        accumulated.append(data)
+        let exceeded = accumulated.count > maxBytes
+        lock.unlock()
+        if exceeded {
+            settle(
+                .failure(
+                    PluginError.runtime(
+                        "response exceeded \(maxBytes / 1024 / 1024) MB cap")),
+                cancel: dataTask)
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        lock.lock()
+        let blocked = blockedRedirect
+        blockedRedirect = nil
+        lock.unlock()
+        if let blocked {
+            settle(.failure(blocked), cancel: nil)
+            return
+        }
+        if let error {
+            settle(.failure(error), cancel: nil)
+            return
+        }
+        lock.lock()
+        let resp = response
+        let acc = accumulated
+        lock.unlock()
+        guard let resp else {
+            settle(.failure(PluginError.invalidResponse), cancel: nil)
+            return
+        }
+        settle(.success((acc, resp)), cancel: nil)
+    }
+
+    // Completion-handler form (not async) — Swift 6.3's SILGen crashes
+    // when generating the ObjC thunk for the async overload of this
+    // delegate method.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let url = request.url else {
+            completionHandler(nil)
+            return
+        }
+        do {
+            _ = try PluginURLValidator.validateNetworkURL(url)
+            completionHandler(request)
+        } catch {
+            pluginLogger.warning(
+                "blocked plugin redirect to \(url.absoluteString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            lock.lock()
+            if blockedRedirect == nil { blockedRedirect = error }
+            lock.unlock()
+            completionHandler(nil)
+        }
+    }
 }

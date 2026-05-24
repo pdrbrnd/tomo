@@ -61,11 +61,14 @@ final class PluginSource: Identifiable {
         fallbackBrowserURL: URL?
     ) throws -> PluginDownloadOutcome {
         if value.isString {
-            guard let urlString = value.toString(),
-                !urlString.isEmpty,
-                let url = URL(string: urlString)
-            else {
+            guard let urlString = value.toString(), !urlString.isEmpty else {
                 throw PluginError.runtime("plugin download() returned invalid URL string")
+            }
+            let url: URL
+            do {
+                url = try PluginURLValidator.validateNetworkURL(urlString)
+            } catch {
+                throw PluginError.runtime("plugin download() URL rejected: \(error.localizedDescription)")
             }
             return .url(url)
         }
@@ -84,9 +87,16 @@ final class PluginSource: Identifiable {
             let urlValue = value.forProperty("url")
             let urlString =
                 (urlValue?.isString == true) ? urlValue?.toString() : nil
-            if let urlString, !urlString.isEmpty, let url = URL(string: urlString) {
-                return .browser(url)
+            if let urlString, !urlString.isEmpty {
+                do {
+                    let url = try PluginURLValidator.validateNetworkURL(urlString)
+                    return .browser(url)
+                } catch {
+                    throw PluginError.runtime("plugin browser URL rejected: \(error.localizedDescription)")
+                }
             }
+            // `fallbackBrowserURL` is `result.detailURL`, already validated at
+            // PluginResult parse time, so no re-check needed here.
             if let fallback = fallbackBrowserURL {
                 return .browser(fallback)
             }
@@ -116,6 +126,12 @@ enum PluginDownloadOutcome: Sendable {
 /// during `AppState.bootstrap`. The MainActor-only step (constructing
 /// `PluginSource` from pre-read JS) is `loadAllPlugins(from:)`.
 nonisolated enum PluginDirectory {
+    /// Maximum plugin source size. Even a heavyweight scraper with a tucked-in
+    /// vendor lib fits in a few hundred KB; 2 MB is comically generous and
+    /// blocks the "ship a huge payload" abuse path at install time and on
+    /// every cold-load read.
+    static let maxPluginBytes = 2 * 1024 * 1024
+
     static func directoryURL() -> URL? {
         guard
             let appSupport = FileManager.default.urls(
@@ -157,12 +173,27 @@ nonisolated enum PluginDirectory {
     /// Reads every `.js` file in the plugins directory off-main. Returns the
     /// successfully-read sources plus the first read error (if any) — JS
     /// parsing happens later in `loadAllPlugins(from:)` on MainActor.
+    /// Skips files over `maxPluginBytes` — defence against a malicious or
+    /// runaway file already on disk.
     static func readAllPluginSources() -> (sources: [LoadedPluginSource], firstError: Error?) {
         var sources: [LoadedPluginSource] = []
         var firstError: Error?
         for url in availablePluginURLs() {
             let fallbackID = url.deletingPathExtension().lastPathComponent
             do {
+                let attrs = try FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))
+                let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
+                if size > maxPluginBytes {
+                    pluginLogger.error(
+                        "skipping \(url.lastPathComponent, privacy: .public): \(size) bytes > \(maxPluginBytes) cap"
+                    )
+                    if firstError == nil {
+                        firstError = PluginError.loadFailed(
+                            "\(url.lastPathComponent) is \(size) bytes — exceeds \(maxPluginBytes / 1024 / 1024) MB plugin cap"
+                        )
+                    }
+                    continue
+                }
                 let source = try String(contentsOf: url, encoding: .utf8)
                 sources.append(LoadedPluginSource(fallbackID: fallbackID, source: source))
             } catch {
@@ -206,12 +237,17 @@ nonisolated enum PluginDirectory {
 
     /// Writes `<id>.js` into the plugins directory atomically. Refuses to
     /// clobber an existing file unless `replace` is true (install refuses;
-    /// update replaces).
+    /// update replaces). Refuses files over `maxPluginBytes`.
     static func writePluginFile(
         id: String,
         bytes: Data,
         replace: Bool
     ) throws -> URL {
+        guard bytes.count <= maxPluginBytes else {
+            throw PluginError.loadFailed(
+                "plugin source is \(bytes.count) bytes — exceeds \(maxPluginBytes / 1024 / 1024) MB cap"
+            )
+        }
         guard let dir = directoryURL() else {
             throw PluginError.loadFailed("plugins directory unavailable")
         }

@@ -2491,11 +2491,51 @@ private final class ProgressDownloadDelegate: NSObject, URLSessionDownloadDelega
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         // Success path: didFinishDownloadingTo already resumed the
         // continuation; consumeContinuation() returns nil here. Failure path
-        // (including URLError.cancelled): resume with the error. Always
-        // invalidate the session so the delegate is released.
-        if let error {
+        // (including URLError.cancelled): if we cancelled due to a blocked
+        // redirect, surface the validation error rather than "cancelled".
+        let blocked = consumeBlockedRedirect()
+        if let blocked {
+            consumeContinuation()?.resume(throwing: blocked)
+        } else if let error {
             consumeContinuation()?.resume(throwing: error)
         }
         session.finishTasksAndInvalidate()
+    }
+
+    private var blockedRedirect: Error?
+    private func stashBlockedRedirect(_ error: Error) {
+        lock.lock()
+        defer { lock.unlock() }
+        if blockedRedirect == nil { blockedRedirect = error }
+    }
+    private func consumeBlockedRedirect() -> Error? {
+        lock.lock()
+        defer { lock.unlock() }
+        let e = blockedRedirect
+        blockedRedirect = nil
+        return e
+    }
+
+    // Plugin downloads can be steered into private/internal hosts by a 302
+    // chain. Re-validate every redirect target. Completion-handler form (not
+    // async) to dodge a Swift 6.3 SILGen crash in the async-thunk codegen.
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        guard let url = request.url else {
+            completionHandler(nil)
+            return
+        }
+        do {
+            _ = try PluginURLValidator.validateNetworkURL(url)
+            completionHandler(request)
+        } catch {
+            stashBlockedRedirect(error)
+            completionHandler(nil)
+        }
     }
 }
