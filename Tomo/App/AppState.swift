@@ -379,10 +379,15 @@ final class AppState {
     /// Cleared by `SettingsRoot` once applied.
     var pendingSettingsSection: String?
 
-    /// What the standalone reader window is showing, or nil when nothing has
-    /// been opened. Set right before `openWindow(readerWindowID)`; the reader
-    /// window observes it and swaps content (re-keyed on the file URL).
-    var readerTarget: ReaderTarget?
+    // Imperative AppKit handle for the library window, so "Add to Library" can
+    // bring it forward. Not observed — plumbing, not view state.
+    @ObservationIgnored weak var libraryWindow: NSWindow?
+
+    /// Brings the library window to the front. Used when the user explicitly
+    /// wants it — e.g. "Add to Library" from the reader.
+    func showLibraryWindow() {
+        libraryWindow?.makeKeyAndOrderFront(nil)
+    }
 
     private nonisolated(unsafe) var mountTask: Task<Void, Never>?
     private nonisolated(unsafe) var unmountTask: Task<Void, Never>?

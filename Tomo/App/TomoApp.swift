@@ -30,7 +30,10 @@ struct TomoApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Tomo") {
+        // Singleton `Window`, not `WindowGroup`: a library app only ever wants
+        // one library window, and `WindowGroup` would spawn a *second* one
+        // whenever a file/URL is opened. `Window` can't duplicate.
+        Window("Tomo", id: Self.libraryWindowID) {
             LibraryView(state: state)
         }
         .windowStyle(.hiddenTitleBar)
@@ -81,8 +84,11 @@ struct TomoApp: App {
         .windowResizability(.contentSize)
         .commandsRemoved()
 
-        Window("Reader", id: Self.readerWindowID) {
-            ReaderWindowRoot(state: state)
+        // Value-based: one independent window per book (like Books' reading
+        // windows), restored across launches. Opened via
+        // `openWindow(id:value:)` — never by the library.
+        WindowGroup(id: Self.readerWindowID, for: ReaderRoute.self) { $route in
+            ReaderWindowRoot(route: route, state: state)
         }
         .windowStyle(.hiddenTitleBar)
         // Wider than the text column (which stays capped at ~62ch) so the
@@ -91,6 +97,9 @@ struct TomoApp: App {
         .defaultSize(width: 1000, height: 940)
         .commandsRemoved()
     }
+
+    /// Stable identifier for the singleton library window.
+    static let libraryWindowID = "tomo.library"
 
     /// Stable identifier so `OpenSettingsButton` can target this window
     /// via the `openWindow` environment.

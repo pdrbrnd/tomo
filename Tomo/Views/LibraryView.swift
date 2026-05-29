@@ -385,12 +385,18 @@ struct LibraryView: View {
             )
         }
         .background(WindowCustomizer())
+        .background(
+            WindowAccessor { window in
+                state.libraryWindow = window
+            }
+        )
         .frame(minWidth: 880, minHeight: 600)
         .animation(paneAnimation, value: inspectorOpen)
         .animation(paneAnimation, value: sidebarOpen)
         .focusedSceneValue(\.libraryContext, libraryFocusContext)
         .task { await state.bootstrap() }
         .task(id: state.libraryFolder) { await state.syncWithDisk() }
+        .onOpenURL { url in handleFinderOpen(url) }
         .onChange(of: searchText) { _, newValue in
             schedulePluginSearch(for: newValue)
             // Each new search session starts fresh. Within a session
@@ -1718,11 +1724,24 @@ struct LibraryView: View {
         }
     }
 
-    /// Opens the book in the standalone reader window. Double-click reads;
-    /// the inspector stays on single-select + ⌘I.
+    /// Opens the book in its own reader window. Double-click reads; the
+    /// inspector stays on single-select + ⌘I.
     private func openReader(_ book: Book) {
-        state.readerTarget = .book(book)
-        openWindow(id: TomoApp.readerWindowID)
+        openWindow(
+            id: TomoApp.readerWindowID,
+            value: ReaderRoute(fileURL: book.fileURL, bookID: book.id))
+    }
+
+    /// Opens a file double-clicked (or "Open With → Tomo") in Finder into its
+    /// own reader window — read in place, nothing imported until the user taps
+    /// "Add to Library". Unsupported types are ignored (we register EPUB/PDF).
+    private func handleFinderOpen(_ url: URL) {
+        guard LibraryImporter.acceptedExtensions.contains(url.pathExtension.lowercased()) else {
+            return
+        }
+        openWindow(
+            id: TomoApp.readerWindowID,
+            value: ReaderRoute(fileURL: url, bookID: nil))
     }
 
     private func handleCommandClick(_ book: Book) {
