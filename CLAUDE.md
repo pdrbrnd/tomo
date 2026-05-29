@@ -10,11 +10,6 @@ The pitch: a minimal and well-designed macOS app that handles language variants
 natively and treats device delivery as a first-class workflow. Supported
 devices: Kindle and Kobo, over USB.
 
-## What this is NOT
-
-- Not an e-book reader (no in-app reading; double-click → Show details)
-- Not a DRM tool (out of scope; books arrive DRM-free or they don't arrive)
-
 Source plugins (JS files in `~/Library/Application Support/com.pdrbrnd.tomo/plugins/`) are a separate concept — they search external catalogues; they don't extend the app itself.
 
 ## Owner / context
@@ -219,7 +214,6 @@ Each device implements `BookDevice` (`Core/Delivery/BookDevice.swift`); the libr
 ## Out of scope (don't add without discussion)
 
 - DRM removal of any kind
-- In-app reading
 - Multi-device sync logic beyond "iCloud folder works fine"
 - News / RSS / feed fetching (Calibre-style)
 - iOS companion app

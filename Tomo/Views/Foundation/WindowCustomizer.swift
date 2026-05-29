@@ -81,8 +81,14 @@ struct WindowCustomizer: NSViewRepresentable {
         }
         window.hasShadow = true
 
-        offsetTrafficLights(in: window, by: trafficLightInset, coordinator: coordinator)
-        registerWindowObservers(window: window, view: view, coordinator: coordinator)
+        // When the NSThemeFrame layout swizzle is active it offsets the
+        // buttons every layout pass (jump-free), so doing it here too would
+        // double the inset. Only run the notification-based offset as a
+        // fallback when the swizzle couldn't attach.
+        if !WindowChromeOverride.repositionsTrafficLights {
+            offsetTrafficLights(in: window, by: trafficLightInset, coordinator: coordinator)
+            registerWindowObservers(window: window, view: view, coordinator: coordinator)
+        }
     }
 
     /// Nudges the standard window buttons (close, minimize, zoom) toward

@@ -379,6 +379,11 @@ final class AppState {
     /// Cleared by `SettingsRoot` once applied.
     var pendingSettingsSection: String?
 
+    /// What the standalone reader window is showing, or nil when nothing has
+    /// been opened. Set right before `openWindow(readerWindowID)`; the reader
+    /// window observes it and swaps content (re-keyed on the file URL).
+    var readerTarget: ReaderTarget?
+
     private nonisolated(unsafe) var mountTask: Task<Void, Never>?
     private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
     private var sendStateResetTask: Task<Void, Never>?

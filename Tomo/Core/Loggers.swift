@@ -8,3 +8,4 @@ nonisolated let classifierLogger = Logger(subsystem: "com.pdrbrnd.tomo", categor
 nonisolated let conversionLogger = Logger(subsystem: "com.pdrbrnd.tomo", category: "conversion")
 nonisolated let deliveryLogger = Logger(subsystem: "com.pdrbrnd.tomo", category: "delivery")
 nonisolated let pluginLogger = Logger(subsystem: "com.pdrbrnd.tomo", category: "plugin")
+nonisolated let readerLogger = Logger(subsystem: "com.pdrbrnd.tomo", category: "reader")

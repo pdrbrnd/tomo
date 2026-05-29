@@ -12,7 +12,9 @@ struct TomoApp: App {
         // Must run before any window is shown so NSThemeFrame returns our
         // value the first time it lays out. macOS Tahoe doesn't expose a
         // public knob for window corner radius — see WindowChromeOverride.
-        WindowChromeOverride.install(cornerRadius: Theme.Radius.window)
+        WindowChromeOverride.install(
+            cornerRadius: Theme.Radius.window,
+            trafficLightInset: Theme.Chrome.trafficLightInset)
 
         // Crash reporting before Sparkle so it catches updater errors too.
         // No-op if user opted out or no DSN is baked into Info.plist.
@@ -78,11 +80,24 @@ struct TomoApp: App {
         // sizes to the content and the user can't resize it.
         .windowResizability(.contentSize)
         .commandsRemoved()
+
+        Window("Reader", id: Self.readerWindowID) {
+            ReaderWindowRoot(state: state)
+        }
+        .windowStyle(.hiddenTitleBar)
+        // Wider than the text column (which stays capped at ~62ch) so the
+        // reading measure floats centred with generous side margins, clear of
+        // the traffic lights and the contents button.
+        .defaultSize(width: 1000, height: 940)
+        .commandsRemoved()
     }
 
     /// Stable identifier so `OpenSettingsButton` can target this window
     /// via the `openWindow` environment.
     static let settingsWindowID = "tomo.settings"
+
+    /// Stable identifier for the standalone reader window.
+    static let readerWindowID = "tomo.reader"
 }
 
 /// Menu item that opens the custom Settings window. Lives as a separate

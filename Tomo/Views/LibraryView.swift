@@ -1641,7 +1641,7 @@ struct LibraryView: View {
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
                 handlePlainClick(book)
-                inspectorOpen = true
+                openReader(book)
             }
         )
         .overlay(
@@ -1716,6 +1716,13 @@ struct LibraryView: View {
             selectedSourceID = nil
             searchFocused = false
         }
+    }
+
+    /// Opens the book in the standalone reader window. Double-click reads;
+    /// the inspector stays on single-select + ⌘I.
+    private func openReader(_ book: Book) {
+        state.readerTarget = .book(book)
+        openWindow(id: TomoApp.readerWindowID)
     }
 
     private func handleCommandClick(_ book: Book) {

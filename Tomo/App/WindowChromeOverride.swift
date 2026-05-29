@@ -43,9 +43,15 @@ enum WindowChromeOverride {
     private static let logger = Logger(subsystem: "com.pdrbrnd.tomo", category: "window-chrome")
     private static var installed = false
 
+    /// True once the traffic-light offset is applied inside `NSThemeFrame`'s
+    /// layout pass (the jump-free path). `WindowCustomizer` reads this to
+    /// decide whether to keep its notification-based offset as a fallback —
+    /// when this is true, it must NOT offset too, or the inset doubles.
+    private(set) static var repositionsTrafficLights = false
+
     /// Installs the override. Idempotent — only swizzles on the first call.
     /// Must be called *before* the first window is shown (TomoApp.init).
-    static func install(cornerRadius: CGFloat) {
+    static func install(cornerRadius: CGFloat, trafficLightInset: CGFloat) {
         guard !installed else { return }
         installed = true
 
@@ -77,6 +83,62 @@ enum WindowChromeOverride {
                 "\(missingCount) of \(succeeded.count) corner-radius selectors missing — partial override; corners may render inconsistently"
             )
         }
+
+        repositionsTrafficLights = installTrafficLightOffset(themeFrame, inset: trafficLightInset)
+    }
+
+    /// Offsets the standard window buttons by `inset` *inside* `NSThemeFrame`'s
+    /// `-layout`, after AppKit has placed them at their defaults. Because this
+    /// runs on every layout pass (including each live-resize frame), the
+    /// buttons never lag behind — eliminating the resize jump that the
+    /// notification-driven re-apply in `WindowCustomizer` couldn't avoid.
+    ///
+    /// Refuses to swizzle unless `NSThemeFrame` implements `-layout` *itself*:
+    /// otherwise `class_getInstanceMethod` would resolve to `NSView.layout`
+    /// and `method_setImplementation` would clobber layout for every view in
+    /// the process. On refusal `WindowCustomizer` keeps its fallback offset.
+    private static func installTrafficLightOffset(_ cls: AnyClass, inset: CGFloat) -> Bool {
+        let sel = NSSelectorFromString("layout")
+        guard classDirectlyImplements(cls, sel),
+            let method = class_getInstanceMethod(cls, sel)
+        else {
+            logger.warning(
+                "NSThemeFrame doesn't implement -layout directly — keeping notification-based traffic-light offset"
+            )
+            return false
+        }
+
+        typealias LayoutFunc = @convention(c) (AnyObject, Selector) -> Void
+        let originalIMP = method_getImplementation(method)
+        let block: @convention(block) (AnyObject) -> Void = { themeFrame in
+            // Let AppKit lay the frame (and buttons at their defaults) out first.
+            unsafeBitCast(originalIMP, to: LayoutFunc.self)(themeFrame, sel)
+            // `-layout` is always called on the main thread.
+            MainActor.assumeIsolated {
+                guard let view = themeFrame as? NSView, let window = view.window else { return }
+                for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                    guard let button = window.standardWindowButton(type) else { continue }
+                    // Title-bar coords aren't flipped — moving DOWN means a
+                    // smaller Y. Offset from the freshly-laid-out default, so
+                    // it never compounds across passes.
+                    let origin = button.frame.origin
+                    button.setFrameOrigin(NSPoint(x: origin.x + inset, y: origin.y - inset))
+                }
+            }
+        }
+        method_setImplementation(method, imp_implementationWithBlock(block))
+        return true
+    }
+
+    /// Whether `cls` implements `sel` in its own method list (not inherited).
+    private static func classDirectlyImplements(_ cls: AnyClass, _ sel: Selector) -> Bool {
+        var count: UInt32 = 0
+        guard let list = class_copyMethodList(cls, &count) else { return false }
+        defer { free(list) }
+        for index in 0..<Int(count) where method_getName(list[index]) == sel {
+            return true
+        }
+        return false
     }
 
     @discardableResult
