@@ -152,10 +152,17 @@ struct LibraryView: View {
     private func bookMatches(book: Book, query: PluginQuery) -> Bool {
         if query.isbn != nil || query.publisher != nil { return false }
         if !query.text.isEmpty {
-            let needle = query.text.lowercased()
-            let titleMatch = book.title.lowercased().contains(needle)
-            let authorMatch = book.authors.contains { $0.lowercased().contains(needle) }
-            if !titleMatch && !authorMatch { return false }
+            // Implicit-AND across words: every word in the query must appear
+            // somewhere in the combined title + authors text, in any order and
+            // across either field. Lets "vonnegut slaughterhouse" match
+            // "Slaughterhouse-Five" by "Kurt Vonnegut". Substring (not
+            // word-boundary) matching keeps "slaughterhouse" matching inside
+            // "Slaughterhouse-Five".
+            let haystack = ([book.title] + book.authors).joined(separator: " ").lowercased()
+            let words = query.text.lowercased().split(whereSeparator: \.isWhitespace)
+            for word in words where !haystack.contains(word) {
+                return false
+            }
         }
         if let title = query.title?.lowercased(), !title.isEmpty,
             !book.title.lowercased().contains(title)
@@ -384,7 +391,7 @@ struct LibraryView: View {
                 onToggleInspector: { inspectorOpen.toggle() }
             )
         }
-        .background(WindowCustomizer())
+        .background(WindowCustomizer(windowID: .libraryWindow, wantsInsetTrafficLights: true))
         .background(
             WindowAccessor { window in
                 state.libraryWindow = window
