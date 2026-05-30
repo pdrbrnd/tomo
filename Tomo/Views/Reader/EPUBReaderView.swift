@@ -106,7 +106,6 @@ struct ScrollRequest: Equatable {
 struct EPUBReaderView: View {
     let fileURL: URL
     let bookID: UUID?
-    let title: String
 
     @State private var model: EPUBReaderModel?
     @State private var phase: LoadPhase = .loading

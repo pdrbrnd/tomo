@@ -91,6 +91,9 @@ struct ReaderWindowRoot: View {
         // user shrinks the window, so text never tucks under the chrome.
         .frame(minWidth: 720, minHeight: 560)
         .ignoresSafeArea(.all)
+        // Window title — invisible in the chromeless window, but labels each
+        // reader window in the Window menu and Mission Control.
+        .navigationTitle(active.map(resolvedTitle) ?? "Reader")
     }
 
     private func addToLibraryBar(url: URL) -> some View {
@@ -137,12 +140,11 @@ struct ReaderWindowRoot: View {
 
     @ViewBuilder
     private func content(for route: ReaderRoute) -> some View {
-        let title = resolvedTitle(for: route)
         switch route.fileURL.pathExtension.lowercased() {
         case "pdf":
-            PDFReaderScreen(fileURL: route.fileURL, bookID: route.bookID, title: title)
+            PDFReaderScreen(fileURL: route.fileURL, bookID: route.bookID)
         default:
-            EPUBReaderView(fileURL: route.fileURL, bookID: route.bookID, title: title)
+            EPUBReaderView(fileURL: route.fileURL, bookID: route.bookID)
         }
     }
 

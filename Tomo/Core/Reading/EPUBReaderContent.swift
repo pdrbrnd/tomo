@@ -132,9 +132,22 @@ private nonisolated func sanitize(
     for name in presentationalAttributes {
         element.removeAttribute(forName: name)
     }
+    // Strip inline event handlers (onclick, onerror, onload…). JS is enabled in
+    // the reader for our own scroll script, so book content must not be able to
+    // run script via attributes.
+    for attribute in element.attributes ?? [] {
+        guard let name = attribute.name, name.lowercased().hasPrefix("on") else { continue }
+        element.removeAttribute(forName: name)
+    }
 
     switch element.localName?.lowercased() {
-    case "img", "source":
+    case "img":
+        rewriteResourceAttribute(element, named: "src", spineDir: spineDir)
+        // Only fetch/decode images as they approach the viewport — keeps a
+        // big, image-heavy book from loading every image up front.
+        setAttribute(element, name: "loading", value: "lazy")
+        setAttribute(element, name: "decoding", value: "async")
+    case "source":
         rewriteResourceAttribute(element, named: "src", spineDir: spineDir)
     case "image":
         rewriteResourceAttribute(element, named: "href", spineDir: spineDir)
@@ -148,7 +161,10 @@ private nonisolated func sanitize(
     var toRemove: [XMLElement] = []
     for child in element.children ?? [] {
         guard let childElement = child as? XMLElement else { continue }
-        if ["script", "style", "link"].contains(childElement.localName?.lowercased()) {
+        // Drop scripts, the book's own styles, and remote-content embeds.
+        if ["script", "style", "link", "iframe", "object", "embed"].contains(
+            childElement.localName?.lowercased())
+        {
             toRemove.append(childElement)
         } else {
             sanitize(childElement, spineDir: spineDir, spineIndexByPath: spineIndexByPath)

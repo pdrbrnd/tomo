@@ -4,12 +4,11 @@ import SwiftUI
 import os
 
 /// PDF reader: PDFKit's continuous-scroll viewer, the file loaded in place
-/// (no import), with remembered page. A thin top bar carries the title and
-/// clears the offset traffic lights.
+/// (no import), with remembered page. Chromeless — the window title (set by
+/// `ReaderWindowRoot`) carries identity; traffic lights float over the pages.
 struct PDFReaderScreen: View {
     let fileURL: URL
     let bookID: UUID?
-    let title: String
 
     @State private var phase: LoadPhase = .loading
 
