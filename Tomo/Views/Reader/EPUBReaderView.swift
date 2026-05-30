@@ -89,6 +89,14 @@ final class EPUBReaderModel {
         self.loader = EPUBResourceLoader(archive: archive, combinedHTML: content.html)
         self.toc = content.toc
     }
+
+    /// Whether the contents control is worth showing: more than one distinct
+    /// destination. A single-chapter book — or a malformed one whose nav
+    /// entries all resolve to the same spine document — has nothing useful to
+    /// navigate, so we hide the button and panel entirely.
+    var hasNavigableTOC: Bool {
+        Set(toc.map(\.anchor)).count >= 2
+    }
 }
 
 /// A one-shot request to scroll the reader to a chapter anchor. The `id`
@@ -188,14 +196,14 @@ struct EPUBReaderView: View {
             // Scrim and panel are inserted as direct siblings so each carries
             // its own transition — a `.move` on a child of a conditionally
             // inserted container only ever fades.
-            if showTOC, !model.toc.isEmpty {
+            if showTOC, model.hasNavigableTOC {
                 scrim
                     .transition(.opacity)
                 tocPanel(model)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
-            if !model.toc.isEmpty {
+            if model.hasNavigableTOC {
                 contentsButton
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }

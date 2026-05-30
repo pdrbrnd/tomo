@@ -115,7 +115,12 @@ enum WindowChromeOverride {
             unsafeBitCast(originalIMP, to: LayoutFunc.self)(themeFrame, sel)
             // `-layout` is always called on the main thread.
             MainActor.assumeIsolated {
-                guard let view = themeFrame as? NSView, let window = view.window else { return }
+                guard let view = themeFrame as? NSView, let window = view.window,
+                    // Only the library window wants inset lights. Offsetting the
+                    // buttons on other windows left their click region behind the
+                    // visual position (dead-zone — you had to click higher).
+                    window.identifier == .libraryWindow
+                else { return }
                 for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
                     guard let button = window.standardWindowButton(type) else { continue }
                     // Title-bar coords aren't flipped — moving DOWN means a

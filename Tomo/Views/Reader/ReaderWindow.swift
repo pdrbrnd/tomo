@@ -2,10 +2,13 @@ import AppKit
 import SwiftUI
 
 /// A transparent overlay that makes a chromeless window draggable by its
-/// edges. It hit-tests as itself only within `edgeWidth` of the bounds and
-/// returns nil elsewhere, so edge clicks move the window (via
-/// `mouseDownCanMoveWindow`) while clicks in the centre fall through to the
-/// content below for scrolling and text selection.
+/// edges. It hit-tests as itself only within `edgeWidth` of the top, bottom,
+/// and left edges and returns nil elsewhere, so edge clicks move the window
+/// (via `mouseDownCanMoveWindow`) while clicks in the centre fall through to
+/// the content below for scrolling and text selection.
+///
+/// The **right** edge is deliberately not draggable: that's where the
+/// scrollbar lives, and the user must be able to grab its handle.
 struct WindowEdgeDragRegion: NSViewRepresentable {
     var edgeWidth: CGFloat = 24
 
@@ -29,9 +32,12 @@ private final class EdgeDragView: NSView {
         guard let superview else { return nil }
         let local = convert(point, from: superview)
         guard bounds.contains(local) else { return nil }
+        // Left / top / bottom only — never the right edge, so the scrollbar
+        // handle stays grabbable.
         let nearEdge =
-            local.x < edgeWidth || local.x > bounds.width - edgeWidth
-            || local.y < edgeWidth || local.y > bounds.height - edgeWidth
+            local.x < edgeWidth
+            || local.y < edgeWidth
+            || local.y > bounds.height - edgeWidth
         return nearEdge ? self : nil
     }
 }

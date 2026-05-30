@@ -26,7 +26,7 @@ struct SettingsRoot: View {
         }
         .ignoresSafeArea(.all)
         .background(Theme.canvas)
-        .background(WindowCustomizer())
+        .background(WindowCustomizer(wantsInsetTrafficLights: true))
         .frame(width: Self.windowWidth, height: Self.windowHeight)
         .onAppear { applyPendingSection() }
         .onChange(of: state.pendingSettingsSection) { _, _ in applyPendingSection() }

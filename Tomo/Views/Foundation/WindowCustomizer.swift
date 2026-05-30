@@ -17,6 +17,17 @@ extension NSUserInterfaceItemIdentifier {
 /// repositioning (with re-apply on AppKit-driven state changes).
 struct WindowCustomizer: NSViewRepresentable {
     var trafficLightInset: CGFloat = Theme.Chrome.trafficLightInset
+    /// Set only on the library window — `WindowChromeOverride`'s layout swizzle
+    /// offsets its standard buttons for this identifier (jump-free during live
+    /// resize).
+    var windowID: NSUserInterfaceItemIdentifier?
+
+    /// Whether this window's traffic lights should be inset to align with its
+    /// rounded panes. The library uses the swizzle (above); other windows that
+    /// want the inset (Settings) get the notification-based offset here —
+    /// which keeps the click region in sync. Safe for non-resizable windows
+    /// like Settings, where there's no live-resize jump to worry about.
+    var wantsInsetTrafficLights = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -65,10 +76,15 @@ struct WindowCustomizer: NSViewRepresentable {
     private func apply(to view: NSView, coordinator: Coordinator) {
         guard let window = view.window else { return }
 
-        // Tag the library window so `WindowChromeOverride` can apply our
-        // custom corner radius only here — Settings (and any other
-        // standard-titled window) gets the system default.
-        window.identifier = .libraryWindow
+        // Tag only the window that wants inset traffic lights. The layout
+        // swizzle offsets the buttons for this identifier; other windows keep
+        // their default, fully clickable positions. Nudge a relayout so the
+        // offset applies now rather than waiting for the first resize (the
+        // identifier is set after the initial layout pass).
+        if let windowID {
+            window.identifier = windowID
+            window.contentView?.superview?.needsLayout = true
+        }
 
         // Fill the rounded mask with our canvas colour. With NSThemeFrame
         // returning our radius, the system clips this to the right shape —
@@ -81,11 +97,14 @@ struct WindowCustomizer: NSViewRepresentable {
         }
         window.hasShadow = true
 
-        // When the NSThemeFrame layout swizzle is active it offsets the
-        // buttons every layout pass (jump-free), so doing it here too would
-        // double the inset. Only run the notification-based offset as a
-        // fallback when the swizzle couldn't attach.
-        if !WindowChromeOverride.repositionsTrafficLights {
+        // The library's lights are offset by the layout swizzle (gated on its
+        // identifier); doing it here too would double the inset. Every other
+        // window that wants the inset uses the notification-based offset, which
+        // keeps the click region aligned with the buttons. Also the fallback
+        // path for the library if the swizzle couldn't attach.
+        let swizzleHandlesThisWindow =
+            WindowChromeOverride.repositionsTrafficLights && windowID == .libraryWindow
+        if wantsInsetTrafficLights && !swizzleHandlesThisWindow {
             offsetTrafficLights(in: window, by: trafficLightInset, coordinator: coordinator)
             registerWindowObservers(window: window, view: view, coordinator: coordinator)
         }
