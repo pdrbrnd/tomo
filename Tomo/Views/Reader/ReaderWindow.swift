@@ -84,7 +84,7 @@ struct ReaderWindowRoot: View {
                 addToLibraryBar(url: active.fileURL)
             }
         }
-        .background(WindowCustomizer())
+        .background(WindowCustomizer(windowID: .readerWindow, wantsInsetTrafficLights: true))
         .background(
             WindowAccessor { window in
                 // Front + activate on open so a reader opened from Finder lands

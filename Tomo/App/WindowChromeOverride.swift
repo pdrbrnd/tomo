@@ -30,10 +30,10 @@ import os
 ///   - App Store would reject this. Tomo ships via Homebrew cask
 ///     (sandbox off) per `CLAUDE.md`, so it's a non-issue.
 ///   - Replaces `NSThemeFrame`'s implementation globally for the process,
-///     i.e. *every* window in the app gets the same corner radius. Any
-///     other window we add (Settings, About, etc.) needs to live with
-///     this radius and inset its traffic lights to match — see
-///     `WindowCustomizer.offsetTrafficLights` for the pattern.
+///     i.e. *every* window in the app gets the same corner radius. The
+///     library's traffic lights are then offset to sit concentrically with
+///     that radius (see `installTrafficLightOffset`); other windows use the
+///     notification-based offset in `WindowCustomizer`.
 ///
 /// **Reference.** The four-selector pattern is documented at
 /// https://github.com/m4rkw/macos-corner-fix and discussed in Mark
@@ -43,10 +43,9 @@ enum WindowChromeOverride {
     private static let logger = Logger(subsystem: "com.pdrbrnd.tomo", category: "window-chrome")
     private static var installed = false
 
-    /// True once the traffic-light offset is applied inside `NSThemeFrame`'s
-    /// layout pass (the jump-free path). `WindowCustomizer` reads this to
-    /// decide whether to keep its notification-based offset as a fallback —
-    /// when this is true, it must NOT offset too, or the inset doubles.
+    /// True once the library's traffic-light offset is applied inside
+    /// `NSThemeFrame`'s layout pass (the jump-free path). `WindowCustomizer`
+    /// reads this so it doesn't *also* offset the library and double the inset.
     private(set) static var repositionsTrafficLights = false
 
     /// Installs the override. Idempotent — only swizzles on the first call.
@@ -88,15 +87,17 @@ enum WindowChromeOverride {
     }
 
     /// Offsets the standard window buttons by `inset` *inside* `NSThemeFrame`'s
-    /// `-layout`, after AppKit has placed them at their defaults. Because this
-    /// runs on every layout pass (including each live-resize frame), the
-    /// buttons never lag behind — eliminating the resize jump that the
-    /// notification-driven re-apply in `WindowCustomizer` couldn't avoid.
+    /// `-layout`, after AppKit places them at their defaults. Running every
+    /// layout pass (including each live-resize frame) means the buttons never
+    /// lag — no resize jump. Used for the library (resizable); short-title-bar
+    /// windows (Settings/reader) use the notification offset instead, since the
+    /// swizzle left their click region behind the visual position.
     ///
     /// Refuses to swizzle unless `NSThemeFrame` implements `-layout` *itself*:
-    /// otherwise `class_getInstanceMethod` would resolve to `NSView.layout`
-    /// and `method_setImplementation` would clobber layout for every view in
-    /// the process. On refusal `WindowCustomizer` keeps its fallback offset.
+    /// otherwise `class_getInstanceMethod` resolves to `NSView.layout` and
+    /// `method_setImplementation` would clobber layout for every view in the
+    /// process. On refusal `WindowCustomizer` falls back to the notification
+    /// offset for the library too.
     private static func installTrafficLightOffset(_ cls: AnyClass, inset: CGFloat) -> Bool {
         let sel = NSSelectorFromString("layout")
         guard classDirectlyImplements(cls, sel),
@@ -116,10 +117,11 @@ enum WindowChromeOverride {
             // `-layout` is always called on the main thread.
             MainActor.assumeIsolated {
                 guard let view = themeFrame as? NSView, let window = view.window,
-                    // Only the library window wants inset lights. Offsetting the
-                    // buttons on other windows left their click region behind the
-                    // visual position (dead-zone — you had to click higher).
-                    window.identifier == .libraryWindow
+                    // The resizable inset windows (library + reader). The
+                    // non-resizable Settings window is excluded — the swizzle
+                    // left its click region behind the visual position there,
+                    // so it uses the notification offset instead.
+                    window.identifier == .libraryWindow || window.identifier == .readerWindow
                 else { return }
                 for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
                     guard let button = window.standardWindowButton(type) else { continue }
@@ -128,7 +130,15 @@ enum WindowChromeOverride {
                     // it never compounds across passes.
                     let origin = button.frame.origin
                     button.setFrameOrigin(NSPoint(x: origin.x + inset, y: origin.y - inset))
+                    // Rebuild the button's hover tracking at its new position so
+                    // the glyph reveal triggers on the button, not its old spot.
+                    button.updateTrackingAreas()
                 }
+                // Per-button tracking is fixed above; the cluster's group hover
+                // rect lives on an ancestor and needs an explicit rebuild —
+                // otherwise the all-glyphs hover stays at the default spot until
+                // a resize relayout rebuilds it.
+                window.rebuildTrafficLightClusterTracking()
             }
         }
         method_setImplementation(method, imp_implementationWithBlock(block))

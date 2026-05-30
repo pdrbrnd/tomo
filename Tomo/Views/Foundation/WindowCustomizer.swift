@@ -1,32 +1,64 @@
 import AppKit
 import SwiftUI
 
-extension NSUserInterfaceItemIdentifier {
-    /// Tags Tomo's primary library window so window-level customisations
-    /// (corner radius, traffic-light offsets) only apply where we want them.
-    static let libraryWindow = NSUserInterfaceItemIdentifier("tomo.libraryWindow")
+extension NSWindow {
+    /// Rebuilds the traffic-light cluster's *group* hover tracking rect at the
+    /// buttons' current (offset) positions.
+    ///
+    /// Moving the standard buttons by hand and calling `updateTrackingAreas()`
+    /// on each button fixes their individual rects, but the rect that reveals
+    /// all three glyphs when you hover anywhere over the cluster is owned by an
+    /// ancestor view in the title bar, not the buttons. AppKit only rebuilds it
+    /// on a relayout — which is why a window resize "fixes" the hover, and why
+    /// the non-resizable Settings window never recovers on its own.
+    ///
+    /// Walking `updateTrackingAreas()` up from the button's superview to
+    /// `NSThemeFrame` forces that rebuild now, at the offset positions.
+    @MainActor
+    func rebuildTrafficLightClusterTracking() {
+        guard let close = standardWindowButton(.closeButton) else { return }
+        var view: NSView? = close.superview
+        while let current = view {
+            current.updateTrackingAreas()
+            if NSStringFromClass(type(of: current)) == "NSThemeFrame" { break }
+            view = current.superview
+        }
+    }
 }
 
-/// Window-level chrome adjustments that need direct NSWindow access.
+extension NSUserInterfaceItemIdentifier {
+    /// Tags the resizable windows whose traffic lights the `NSThemeFrame`
+    /// layout swizzle offsets — jump-free during live resize. (The
+    /// non-resizable Settings window uses the notification offset instead; the
+    /// swizzle left its click region behind on that one.)
+    static let libraryWindow = NSUserInterfaceItemIdentifier("tomo.libraryWindow")
+    static let readerWindow = NSUserInterfaceItemIdentifier("tomo.readerWindow")
+}
+
+/// Window-level chrome that needs direct `NSWindow` access: fills the rounded
+/// mask with our canvas colour, turns on the shadow, and insets the traffic
+/// lights to sit concentrically with our rounded panes.
 ///
-/// The corner radius itself is *not* set here — AppKit's `NSThemeFrame` is
-/// swizzled at app launch by `WindowChromeOverride` so the system draws the
-/// frame, mask, and shadow at our preferred radius natively. This view only
-/// handles things that survive on the window proper: background colour
-/// (so the rounded mask is filled), shadow toggle, and traffic-light
-/// repositioning (with re-apply on AppKit-driven state changes).
+/// macOS has no API to place the standard buttons at an arbitrary point, so we
+/// reposition them with `setFrameOrigin`. Two mechanisms, by window:
+///   - **Library** (resizable): `WindowChromeOverride`'s layout swizzle does it
+///     every layout pass, so the buttons never lag during a live resize.
+///   - **Settings / reader**: the notification-based offset here, which keeps
+///     the click region aligned with the buttons (the swizzle desynced clicks
+///     on these short-title-bar windows).
+///
+/// Repositioning by hand leaves AppKit's *group* hover rect (the one that
+/// reveals all three glyphs) at the default spot until a relayout rebuilds it.
+/// Both paths call `rebuildTrafficLightClusterTracking()` after offsetting to
+/// force that rebuild now, so the hover aligns on first show without a resize.
 struct WindowCustomizer: NSViewRepresentable {
     var trafficLightInset: CGFloat = Theme.Chrome.trafficLightInset
-    /// Set only on the library window — `WindowChromeOverride`'s layout swizzle
-    /// offsets its standard buttons for this identifier (jump-free during live
-    /// resize).
+    /// Set only on the library window — the layout swizzle offsets its buttons
+    /// for this identifier.
     var windowID: NSUserInterfaceItemIdentifier?
-
-    /// Whether this window's traffic lights should be inset to align with its
-    /// rounded panes. The library uses the swizzle (above); other windows that
-    /// want the inset (Settings) get the notification-based offset here —
-    /// which keeps the click region in sync. Safe for non-resizable windows
-    /// like Settings, where there's no live-resize jump to worry about.
+    /// Whether this window's traffic lights should be inset. The library uses
+    /// the swizzle (above); other windows that want the inset get the
+    /// notification-based offset here.
     var wantsInsetTrafficLights = false
 
     func makeCoordinator() -> Coordinator {
@@ -35,15 +67,9 @@ struct WindowCustomizer: NSViewRepresentable {
 
     /// State holder for the AppKit bridge. `@MainActor` because every read /
     /// write goes through SwiftUI's plumbing on the main actor; the
-    /// `nonisolated deinit` lets us tear down observers without hopping
-    /// back even if the last reference drops on a background thread
+    /// `nonisolated deinit` lets us tear down observers without hopping back
+    /// even if the last reference drops on a background thread
     /// (`NotificationCenter.removeObserver` is itself thread-safe).
-    ///
-    /// We deliberately stay on the callback API rather than the async-
-    /// sequence form — Swift 6's `sending` rules choke on capturing a
-    /// non-Sendable `NSView` across the implicit task hop, and the
-    /// workarounds (`WeakBox`, separate per-name tasks) cost more
-    /// clarity than they save.
     @MainActor final class Coordinator {
         var originalOrigins: [NSWindow.ButtonType: NSPoint] = [:]
         nonisolated(unsafe) var observers: [NSObjectProtocol] = []
@@ -76,19 +102,16 @@ struct WindowCustomizer: NSViewRepresentable {
     private func apply(to view: NSView, coordinator: Coordinator) {
         guard let window = view.window else { return }
 
-        // Tag only the window that wants inset traffic lights. The layout
-        // swizzle offsets the buttons for this identifier; other windows keep
-        // their default, fully clickable positions. Nudge a relayout so the
-        // offset applies now rather than waiting for the first resize (the
-        // identifier is set after the initial layout pass).
+        // Tag the library window so the layout swizzle offsets its buttons.
+        // Nudge a relayout so the offset applies now rather than on first
+        // resize (the identifier is set after the initial layout pass).
         if let windowID {
             window.identifier = windowID
             window.contentView?.superview?.needsLayout = true
         }
 
         // Fill the rounded mask with our canvas colour. With NSThemeFrame
-        // returning our radius, the system clips this to the right shape —
-        // no contentView layer overrides or shadow invalidation needed.
+        // returning our radius, the system clips this to the right shape.
         window.backgroundColor = NSColor(name: nil) { appearance in
             if isDarkAppearance(appearance) {
                 return NSColor(srgbRed: 0.062, green: 0.062, blue: 0.066, alpha: 1.0)
@@ -100,20 +123,22 @@ struct WindowCustomizer: NSViewRepresentable {
         // The library's lights are offset by the layout swizzle (gated on its
         // identifier); doing it here too would double the inset. Every other
         // window that wants the inset uses the notification-based offset, which
-        // keeps the click region aligned with the buttons. Also the fallback
-        // path for the library if the swizzle couldn't attach.
-        let swizzleHandlesThisWindow =
-            WindowChromeOverride.repositionsTrafficLights && windowID == .libraryWindow
+        // keeps the click region aligned. Also the library's fallback if the
+        // swizzle couldn't attach.
         if wantsInsetTrafficLights && !swizzleHandlesThisWindow {
             offsetTrafficLights(in: window, by: trafficLightInset, coordinator: coordinator)
             registerWindowObservers(window: window, view: view, coordinator: coordinator)
         }
     }
 
-    /// Nudges the standard window buttons (close, minimize, zoom) toward
-    /// the content area by `inset` on both axes. Caches each button's
-    /// original origin so subsequent applies are idempotent rather than
-    /// compounding.
+    private var swizzleHandlesThisWindow: Bool {
+        WindowChromeOverride.repositionsTrafficLights
+            && (windowID == .libraryWindow || windowID == .readerWindow)
+    }
+
+    /// Nudges the standard window buttons toward the content area by `inset` on
+    /// both axes. Caches each button's original origin so re-applies are
+    /// idempotent rather than compounding.
     private func offsetTrafficLights(in window: NSWindow, by inset: CGFloat, coordinator: Coordinator) {
         let types: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
@@ -126,21 +151,22 @@ struct WindowCustomizer: NSViewRepresentable {
                 original = button.frame.origin
                 coordinator.originalOrigins[type] = original
             }
-            // Title-bar coords aren't flipped — larger Y is higher on
-            // screen, so visually moving DOWN means decreasing Y.
-            button.setFrameOrigin(
-                NSPoint(
-                    x: original.x + inset,
-                    y: original.y - inset
-                ))
+            // Title-bar coords aren't flipped — larger Y is higher on screen,
+            // so visually moving DOWN means decreasing Y.
+            button.setFrameOrigin(NSPoint(x: original.x + inset, y: original.y - inset))
             // Pin the button so window resize / auto-layout can't drag it.
             button.autoresizingMask = []
+            // Rebuild the hover tracking at the new position so the glyph
+            // reveal triggers on the button, not its old spot.
+            button.updateTrackingAreas()
         }
+        // Per-button tracking is fixed above; the cluster's group hover rect
+        // lives on an ancestor and needs an explicit rebuild.
+        window.rebuildTrafficLightClusterTracking()
     }
 
     /// AppKit resets traffic-light positions on certain window state
-    /// transitions (full-screen, mini, key changes). Observe those and
-    /// re-apply our offsets so the buttons stay where we put them.
+    /// transitions. Observe those and re-apply our offsets.
     private func registerWindowObservers(window: NSWindow, view: NSView, coordinator: Coordinator) {
         guard coordinator.observers.isEmpty else { return }
 
@@ -155,14 +181,9 @@ struct WindowCustomizer: NSViewRepresentable {
             NSWindow.didChangeBackingPropertiesNotification,
         ]
         for name in names {
-            let token = nc.addObserver(
-                forName: name,
-                object: window,
-                queue: .main
-            ) { [weak view] _ in
+            let token = nc.addObserver(forName: name, object: window, queue: .main) { [weak view] _ in
                 // Hop onto MainActor explicitly rather than asserting the
-                // queue's isolation — robust against later refactors that
-                // might change `queue:` or this struct's isolation.
+                // queue's isolation — robust against later refactors.
                 Task { @MainActor in
                     guard let view else { return }
                     apply(to: view, coordinator: coordinator)
