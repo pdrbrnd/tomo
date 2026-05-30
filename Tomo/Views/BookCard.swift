@@ -48,6 +48,10 @@ struct BookCard: View {
     /// becomes a cancel target — hovering swaps the down-arrow icon for
     /// an xmark and clicking calls this.
     var onCancelDownload: (() -> Void)? = nil
+    /// Source cards: a preview download is in flight. Shows an "Opening…"
+    /// capsule. Kept separate from `downloadState` (which drives the Get →
+    /// added morph) so a non-committal preview never removes the card.
+    var isPreviewing: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHoveringCancel: Bool = false
@@ -64,6 +68,7 @@ struct BookCard: View {
     private var coverDimmed: Bool {
         if isDimmed { return true }
         if item.isSource && downloadState != .idle { return true }
+        if item.isSource && isPreviewing { return true }
         return false
     }
 
@@ -99,6 +104,9 @@ struct BookCard: View {
                             .combined(with: .opacity)
                             .combined(with: .scale(scale: 0.92))
                     )
+            } else if item.isSource && isPreviewing {
+                previewingCapsule
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
         }
         .frame(width: cardWidth, height: cardHeight)
@@ -111,6 +119,27 @@ struct BookCard: View {
         .scaleEffect(scaleAmount)
         .animation(reduceMotion ? .easeOut(duration: 0.16) : .spring(duration: 0.32, bounce: 0.20), value: isSelected)
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.32), value: downloadState)
+        .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.32), value: isPreviewing)
+    }
+
+    /// "Opening…" capsule shown while a preview download is in flight. Same
+    /// DeviceTile shape as `stateCapsule` so the two read as one family.
+    private var previewingCapsule: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(Color.white)
+            Text("Opening…")
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule(style: .continuous).fill(Color(white: 0.16, opacity: 0.92)))
+        .clipShape(Capsule(style: .continuous))
+        .softShadow(elevated: true)
+        .padding(.horizontal, Theme.Spacing.sm)
     }
 
     private var scaleAmount: CGFloat {

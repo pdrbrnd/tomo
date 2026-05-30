@@ -19,6 +19,13 @@ struct SearchResultRow: View {
     let onActivate: () -> Void
     var onDownload: (() -> Void)? = nil
     var onCancelDownload: (() -> Void)? = nil
+    /// Hover-revealed secondary action: "Open" for library books (reader),
+    /// "Preview" for source results (temp download → reader). Nil hides it.
+    var onSecondaryAction: (() -> Void)? = nil
+    /// Source rows: a preview download is in flight — shows a spinner in place
+    /// of the Preview button. Kept separate from `downloadState` so the Get
+    /// morph (→ .added → row removal) never fires for a non-committal preview.
+    var isPreviewing: Bool = false
 
     @State private var isHovering: Bool = false
     @State private var isHoveringCancel: Bool = false
@@ -68,6 +75,7 @@ struct SearchResultRow: View {
         .onHover { isHovering = $0 }
         .animation(reduceMotion ? .easeOut(duration: 0.12) : .snappy(duration: 0.18), value: isSelected)
         .animation(.easeInOut(duration: 0.14), value: isHovering)
+        .animation(.easeInOut(duration: 0.14), value: isPreviewing)
     }
 
     // MARK: - Thumb
@@ -162,13 +170,43 @@ struct SearchResultRow: View {
     private var actionSlot: some View {
         switch item {
         case .book:
-            // Library rows: no primary action — the row click selects, the
-            // context menu / inspector covers the rest. Empty slot keeps the
-            // grid lined up across rows.
-            Color.clear.frame(width: 1, height: 1)
+            // "Open" is always present (subtle enough not to compete with the
+            // row) so double-click isn't the only way into the reader.
+            if let onSecondaryAction {
+                secondaryButton(label: "Open", action: onSecondaryAction)
+            } else {
+                Color.clear.frame(width: 1, height: 1)
+            }
         case .source:
             sourceAction
         }
+    }
+
+    /// Subtle secondary capsule, styled like the reader's "Add to Library"
+    /// bar so it reads as a lower-priority sibling of the blue "Get".
+    private func secondaryButton(label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Theme.overlaySurface, in: Capsule(style: .continuous))
+                .overlay(Capsule(style: .continuous).stroke(Theme.hairline, lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
+        .transition(.opacity)
+    }
+
+    private var previewingCapsule: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            Text("Opening…")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.primary.opacity(Theme.Text.secondary))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder
@@ -183,17 +221,26 @@ struct SearchResultRow: View {
                         .font(.system(size: 11.5, weight: .regular))
                         .foregroundStyle(.primary.opacity(Theme.Text.muted))
                 }
-            } else if let onDownload {
-                Button(action: onDownload) {
-                    Text("Get")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Capsule(style: .continuous).fill(Color.accentColor))
+            } else {
+                HStack(spacing: 6) {
+                    if isPreviewing {
+                        previewingCapsule
+                    } else if let onSecondaryAction {
+                        secondaryButton(label: "Preview", action: onSecondaryAction)
+                    }
+                    if let onDownload {
+                        Button(action: onDownload) {
+                            Text("Get")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(Capsule(style: .continuous).fill(Color.accentColor))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Download to library")
+                    }
                 }
-                .buttonStyle(.plain)
-                .help("Download to library")
             }
         case .downloading(let progress):
             downloadProgressCapsule(progress: progress)

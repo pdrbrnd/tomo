@@ -60,6 +60,10 @@ struct LibraryView: View {
     /// instant the task is created so the user's cancel click can hit
     /// `task.cancel()` even before the first byte arrives.
     @State private var downloadTasks: [String: URLSessionTask] = [:]
+    /// Source results with a preview download in flight, keyed by
+    /// `PluginResult.id`. Kept separate from `downloadStates` so a
+    /// non-committal preview never triggers the Get → added → removed morph.
+    @State private var previewingResultIDs: Set<String> = []
     /// Selection slot for source results — separate from `selectedBookIDs`
     /// because source items aren't part of the multi-select model. Setting
     /// this clears `selectedBookIDs` (and vice versa) so only one item can
@@ -506,8 +510,21 @@ struct LibraryView: View {
             BrowserDownloadSheet(
                 startURL: request.url,
                 onCompleted: { fileURL in
+                    let intent = request.intent
+                    let result = request.result
                     browserDownloadRequest = nil
-                    Task { await importBrowserDownload(request.result, from: fileURL) }
+                    switch intent {
+                    case .add:
+                        Task { await importBrowserDownload(result, from: fileURL) }
+                    case .preview:
+                        // Open the captured file loose (bookID nil) so the
+                        // reader shows the "Add to Library" bar — the user
+                        // vets it before committing. dedup hides the source
+                        // row once they add.
+                        openWindow(
+                            id: TomoApp.readerWindowID,
+                            value: ReaderRoute(fileURL: fileURL, bookID: nil))
+                    }
                 },
                 onCancel: { browserDownloadRequest = nil }
             )
@@ -928,7 +945,11 @@ struct LibraryView: View {
                         onSelect: { handlePlainClick(book) },
                         onActivate: {
                             handlePlainClick(book)
-                            inspectorOpen = true
+                            openReader(book)
+                        },
+                        onSecondaryAction: {
+                            handlePlainClick(book)
+                            openReader(book)
                         }
                     )
                     .overlay(
@@ -1062,14 +1083,21 @@ struct LibraryView: View {
                     selectedSourceID = result.id
                     searchFocused = false
                 }
-                inspectorOpen = true
+                Task { await previewSourceResult(result) }
             },
             onDownload: {
                 Task { await downloadAndImport(result) }
             },
             onCancelDownload: {
                 cancelDownload(result)
-            }
+            },
+            onSecondaryAction: {
+                selectedBookIDs = []
+                selectionAnchor = nil
+                selectedSourceID = result.id
+                Task { await previewSourceResult(result) }
+            },
+            isPreviewing: previewingResultIDs.contains(result.id)
         )
         .overlay(
             RightClickCatcher {
@@ -1152,7 +1180,8 @@ struct LibraryView: View {
             },
             onCancelDownload: {
                 cancelDownload(result)
-            }
+            },
+            isPreviewing: previewingResultIDs.contains(result.id)
         )
         .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .simultaneousGesture(
@@ -1163,7 +1192,7 @@ struct LibraryView: View {
                     selectedSourceID = result.id
                 }
                 searchFocused = false
-                inspectorOpen = true
+                Task { await previewSourceResult(result) }
             }
         )
         .simultaneousGesture(
@@ -1203,6 +1232,11 @@ struct LibraryView: View {
 
     @ViewBuilder
     private func sourceMenu(for result: PluginResult, dismiss: @escaping () -> Void) -> some View {
+        bookMenuItem("Preview", icon: "eye") {
+            selectedSourceID = result.id
+            Task { await previewSourceResult(result) }
+            dismiss()
+        }
         bookMenuItem("Show Details", icon: "info.circle") {
             selectedSourceID = result.id
             inspectorOpen = true
@@ -1525,6 +1559,54 @@ struct LibraryView: View {
     /// which collapses the capsule back to idle without a toast.
     private func cancelDownload(_ result: PluginResult) {
         downloadTasks[result.id]?.cancel()
+    }
+
+    /// Preview an external source book *before* adding it: download to a temp
+    /// file (or run the browser flow), then open it in the reader with the
+    /// "Add to Library" bar. Unlike `downloadAndImport`, this never touches the
+    /// library or `downloadStates` — the result stays in search until the user
+    /// actually adds it (at which point dedup hides the row). Spinner is driven
+    /// by `previewingResultIDs`.
+    private func previewSourceResult(_ result: PluginResult) async {
+        guard !previewingResultIDs.contains(result.id) else { return }
+        guard let source = state.plugin(withID: result.pluginID) else {
+            state.showToast(.error("Plugin '\(result.pluginID)' is no longer loaded."))
+            return
+        }
+        previewingResultIDs.insert(result.id)
+        defer { previewingResultIDs.remove(result.id) }
+        do {
+            let outcome = try await source.download(result)
+            switch outcome {
+            case .browser(let url):
+                // Browser-gated result: hand off to the same sheet the Get
+                // path uses, but tell it to preview (open reader) instead of
+                // import. Drop the spinner now — the sheet owns the UI.
+                previewingResultIDs.remove(result.id)
+                browserDownloadRequest = BrowserDownloadRequest(
+                    result: result, url: url, intent: .preview)
+            case .url(let url):
+                let tempURL = try await fetchToTempFile(
+                    url: url,
+                    format: result.format,
+                    fallbackExpectedBytes: result.sizeBytes.map(Int64.init),
+                    onTaskCreated: { _ in },
+                    onProgress: { _ in }
+                )
+                openWindow(
+                    id: TomoApp.readerWindowID,
+                    value: ReaderRoute(fileURL: tempURL, bookID: nil))
+            }
+        } catch {
+            // User cancelled (no cancel affordance today, but a future one
+            // surfaces URLError.cancelled) — stay silent. Everything else is
+            // a real failure worth a toast.
+            if let urlError = error as? URLError, urlError.code == .cancelled {
+                return
+            }
+            state.showToast(.error("Preview failed: \(error.localizedDescription)"))
+            pluginLogger.error("preview failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Mirrors the post-fetch tail of `downloadAndImport` for files that
@@ -1850,6 +1932,11 @@ struct LibraryView: View {
 
     @ViewBuilder
     private func singleMenu(for book: Book, dismiss: @escaping () -> Void) -> some View {
+        bookMenuItem("Open", icon: "book") {
+            handlePlainClick(book)
+            openReader(book)
+            dismiss()
+        }
         bookMenuItem("Show Details", icon: "info.circle") {
             selectedBookIDs = [book.id]
             selectionAnchor = book.id
@@ -2383,8 +2470,14 @@ private struct PluginSearchOutcome: Sendable {
 /// `{ kind: "browser", url: "..." }` so it can deep-link to a specific
 /// partner page when it knows one.
 struct BrowserDownloadRequest: Identifiable, Equatable {
+    /// What to do with the file once the browser flow captures it.
+    enum Intent { case add, preview }
+
     let result: PluginResult
     let url: URL
+    /// Defaults to `.add` so existing call sites (download/import) are
+    /// unchanged; preview sets `.preview` to open the reader instead.
+    var intent: Intent = .add
 
     var id: String { result.fingerprint }
 }

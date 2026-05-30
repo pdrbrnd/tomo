@@ -109,7 +109,7 @@ struct BrowserDownloadSheet: View {
         switch status {
         case .browsing: "Waiting for download"
         case .downloading(let filename): "Downloading \(filename)…"
-        case .done: "Download complete — importing"
+        case .done: "Download complete"
         case .failed(let message): "Download failed: \(message)"
         }
     }
