@@ -265,19 +265,16 @@ actor BookIndex {
         }
 
         m.registerMigration("v3_unified_locale") { db in
-            // Add new columns
             try db.alter(table: "books") { t in
                 t.add(column: "locale", .text).notNull().defaults(to: "und")
                 t.add(column: "locale_confidence", .double)
             }
-            // Backfill from old columns
             try db.execute(
                 sql: """
                     UPDATE books SET
                             locale = COALESCE(language_profile_id, language_code, 'und'),
                             locale_confidence = language_confidence
                     """)
-            // Drop old columns
             try db.alter(table: "books") { t in
                 t.drop(column: "language_code")
                 t.drop(column: "language_profile_id")

@@ -21,7 +21,6 @@ nonisolated enum EPUBSource {
             throw EPUBArchiveError.missingTitle
         }
 
-        // Pass 1: pull each spine item's body inner HTML.
         var rawChunks: [String] = []
         var spineDirs: [String] = []
         var spinePathToChunk: [String: Int] = [:]
@@ -37,8 +36,6 @@ nonisolated enum EPUBSource {
             throw EPUBArchiveError.noReadableContent
         }
 
-        // Pass 2: rewrite `<img src>` to `kindle:embed:NNNN` and collect
-        // the referenced body images.
         let cover: ImageData? =
             switch coverSource {
             case .epub: extractCover(from: epub)
@@ -64,7 +61,6 @@ nonisolated enum EPUBSource {
             return text
         }
 
-        // TOC: parse nav.xhtml or toc.ncx, map each entry to a chunk index.
         let toc: [TocEntry] = EPUBNavigation.parse(in: epub).compactMap { entry in
             guard let chunkIndex = spinePathToChunk[entry.resourcePath] else {
                 return nil
@@ -166,14 +162,12 @@ private nonisolated func rewriteAndCollectBodyImages(
     // Regex<...> isn't Sendable in Swift 6, so build it locally.
     let imgSrcPattern = /src\s*=\s*(?:"([^"]+)"|'([^']+)')/
 
-    // Image manifest items keyed by archive-absolute path.
     var imageItemByPath: [String: ManifestItem] = [:]
     for item in epub.opf.manifest where item.mediaType.hasPrefix("image/") {
         let path = EPUBArchive.resolvePath(item.href, baseDir: epub.opfDir)
         imageItemByPath[path] = item
     }
 
-    // Walk chunks once to discover body images in encounter order.
     var bodyImagePaths: [String] = []
     var seen: Set<String> = coverArchivePath.map { [$0] } ?? []
     for (chunk, spineDir) in zip(chunks, spineDirs) {
@@ -190,8 +184,7 @@ private nonisolated func rewriteAndCollectBodyImages(
         }
     }
 
-    // Image array: cover at index 0 (if present) then body images.
-    // Kindle's `kindle:embed:NNNN` URI is 1-based.
+    // Kindle's `kindle:embed:NNNN` URI is 1-based; cover takes index 1.
     var pathToEmbedIndex: [String: Int] = [:]
     if let cover = coverArchivePath {
         pathToEmbedIndex[cover] = 1
@@ -201,7 +194,6 @@ private nonisolated func rewriteAndCollectBodyImages(
         pathToEmbedIndex[path] = bodyStart + i
     }
 
-    // Rewrite each chunk's src URLs.
     let rewritten = zip(chunks, spineDirs).map { (chunk, spineDir) -> String in
         chunk.replacing(imgSrcPattern) { match in
             let url =
@@ -216,7 +208,6 @@ private nonisolated func rewriteAndCollectBodyImages(
         }
     }
 
-    // Read body image bytes.
     var bodyImages: [ImageData] = []
     for path in bodyImagePaths {
         guard let bytes = epub.data(at: path) else { continue }

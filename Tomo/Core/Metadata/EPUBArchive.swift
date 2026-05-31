@@ -201,7 +201,6 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
         return first("//*[local-name()='identifier']")
     }()
 
-    // Manifest in document order, with id/href/media-type/properties.
     let itemNodes = (try? doc.nodes(forXPath: "//*[local-name()='manifest']/*[local-name()='item']")) ?? []
     var manifest: [ManifestItem] = []
     var hrefByID: [String: String] = [:]
