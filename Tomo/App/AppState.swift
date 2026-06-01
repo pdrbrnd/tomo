@@ -1046,6 +1046,9 @@ final class AppState {
     /// disk allows. Indexes immediately and reloads.
     func retryImportRow(_ rowID: ImportSession.Row.ID) {
         guard let session = importSession,
+            // Per-row actions are only valid once the batch has settled —
+            // retrying mid-run would race the batch-end index write + reload.
+            !session.isRunning,
             let idx = session.rows.firstIndex(where: { $0.id == rowID })
         else { return }
         let url = session.rows[idx].url

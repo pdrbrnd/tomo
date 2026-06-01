@@ -86,6 +86,7 @@ struct ImportProgressSheet: View {
                             OutcomeRow(filename: row.filename, detail: matchDetail(row.status)) {
                                 Button("Keep Both") { state.retryImportRow(row.id) }
                                     .buttonStyle(PillButtonStyle())
+                                    .disabled(session.isRunning)
                             }
                         }
                     }
@@ -98,6 +99,7 @@ struct ImportProgressSheet: View {
                             OutcomeRow(filename: row.filename, detail: failureMessage(row.status)) {
                                 Button("Retry") { state.retryImportRow(row.id) }
                                     .buttonStyle(PillButtonStyle())
+                                    .disabled(session.isRunning)
                                 Button {
                                     NSWorkspace.shared.activateFileViewerSelecting([row.url])
                                 } label: {

@@ -190,7 +190,10 @@ actor LibraryImporter {
             return .failed(sourceURL, err.errorDescription ?? "Couldn't import this file.")
         } catch {
             libraryLogger.error("metadata parse failed: \(error.localizedDescription, privacy: .public)")
-            return .failed(sourceURL, LibraryImporterError.parsingFailed.errorDescription!)
+            return .failed(
+                sourceURL,
+                LibraryImporterError.parsingFailed.errorDescription
+                    ?? "Could not read the file's metadata.")
         }
 
         let bookFolder = bookFolderURL(in: libraryFolder, metadata: metadata)
