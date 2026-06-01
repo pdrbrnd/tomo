@@ -53,6 +53,34 @@ actor BookIndex {
         }
     }
 
+    /// Inserts many books in a single write transaction. Used by batch import
+    /// to avoid one transaction (and one full reload) per file. Mirrors the
+    /// INSERT in `add`; callers reload once after the whole batch.
+    func addBooks(_ books: [Book]) async throws {
+        guard !books.isEmpty else { return }
+        let rows = try books.map { ($0, try Self.encodeJSON($0.authors)) }
+        try await pool.write { db in
+            for (book, authorsJson) in rows {
+                try db.execute(
+                    sql: """
+                        INSERT INTO books (id, title, authors_json, locale, year, file_path, cover_path, date_added)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                    arguments: [
+                        book.id.uuidString,
+                        book.title,
+                        authorsJson,
+                        book.locale,
+                        book.year,
+                        book.fileURL.path(percentEncoded: false),
+                        book.coverPath,
+                        book.dateAdded,
+                    ]
+                )
+            }
+        }
+    }
+
     func all() async throws -> [Book] {
         try await pool.read { db in
             let bookRows = try Row.fetchAll(db, sql: "SELECT * FROM books ORDER BY date_added DESC")

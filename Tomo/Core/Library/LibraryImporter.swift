@@ -5,6 +5,7 @@ enum LibraryImporterError: LocalizedError {
     case unsupportedFormat(String)
     case parsingFailed
     case destinationExists
+    case importFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -14,7 +15,56 @@ enum LibraryImporterError: LocalizedError {
             return "Could not read the file's metadata."
         case .destinationExists:
             return "A book with this title and author is already in the library."
+        case .importFailed(let message):
+            return message
         }
+    }
+}
+
+/// The existing book a `possibleDuplicate` matched, used to explain the match
+/// in the progress UI ("Matches 'Dune' by Herbert…").
+struct ImportMatch: Sendable {
+    let title: String
+    let author: String?
+}
+
+/// Result of preparing one file for import. `imported` means the file is copied
+/// into the library and its `metadata.json` sidecar is written, but the book is
+/// *not* yet in the index — batch import collects these and does one bulk
+/// `index.addBooks`. The two duplicate flavours are deliberately distinct:
+///
+/// - `alreadyInLibrary`: the file's exact on-disk identity (`Author/Title
+///   (Year)/`) already exists. Terminal — we never merge, so there's nothing to
+///   override.
+/// - `possibleDuplicate`: matches an existing book by title+author but would
+///   land at a *different* path (different year, or the existing one has none).
+///   Probably the same work with different metadata; importable on demand.
+///
+/// All non-imported cases carry the source URL so the UI can offer the right
+/// action (import-as-separate / retry / reveal).
+enum ImportOutcome: Sendable {
+    case imported(Book)
+    case alreadyInLibrary(URL)
+    case possibleDuplicate(URL, matched: ImportMatch)
+    case failed(URL, String)
+}
+
+/// Serializes the tiny check-and-claim of duplicate fingerprints so concurrent
+/// `prepareImport` calls agree on within-batch duplicates (and against the
+/// library snapshot it's seeded with). `claim` returns nil when the fingerprint
+/// is newly taken (and records the ref), or the already-recorded match when it
+/// was present (i.e. a duplicate).
+actor FingerprintClaims {
+    private var seen: [String: ImportMatch]
+
+    init(_ initial: [String: ImportMatch]) {
+        seen = initial
+    }
+
+    func claim(_ fingerprint: String, ref: ImportMatch) -> ImportMatch? {
+        if let existing = seen[fingerprint] { return existing }
+        seen[fingerprint] = ref
+        return nil
     }
 }
 
@@ -81,21 +131,66 @@ actor LibraryImporter {
         }
     }
 
+    /// Single-file import: prepare the file on disk, then index it. Used by the
+    /// one-off paths (reader "add to library", plugin download). Batch import
+    /// uses `prepareImport` directly and indexes in bulk. Throws so existing
+    /// callers keep their toast-on-failure behaviour.
     func importBook(
         from sourceURL: URL,
         into libraryFolder: URL,
         profiles: [LanguageProfile]
     ) async throws -> Book {
+        let outcome = await Self.prepareImport(
+            from: sourceURL,
+            into: libraryFolder,
+            profiles: profiles,
+            claims: nil,
+            allowDuplicate: true
+        )
+        switch outcome {
+        case .imported(let book):
+            try await index.add(book)
+            libraryLogger.info(
+                "imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
+            return book
+        case .alreadyInLibrary, .possibleDuplicate:
+            // Single-file paths pass claims == nil, so possibleDuplicate can't
+            // occur; alreadyInLibrary is an exact on-disk collision. Surface
+            // both as the existing "already in library" error.
+            throw LibraryImporterError.destinationExists
+        case .failed(_, let message):
+            throw LibraryImporterError.importFailed(message)
+        }
+    }
+
+    /// Prepares one file for import without touching the index: reads metadata,
+    /// dedup-checks (when `claims` is provided), copies the file in, writes the
+    /// cover and the `metadata.json` sidecar. The returned `imported` book is on
+    /// disk but not yet indexed — the caller indexes it (`index.add`) or batches
+    /// it (`index.addBooks`). Never throws: every failure is a `.failed` outcome
+    /// so one bad file can't abort a batch.
+    ///
+    /// `nonisolated static` on purpose — it touches no actor state, so a batch
+    /// can run many of these concurrently off the actor. Duplicate detection is
+    /// serialized through `claims` (seed it with the library's fingerprints);
+    /// pass `nil` to skip dedup entirely (single-file / import-anyway paths).
+    nonisolated static func prepareImport(
+        from sourceURL: URL,
+        into libraryFolder: URL,
+        profiles: [LanguageProfile],
+        claims: FingerprintClaims?,
+        allowDuplicate: Bool
+    ) async -> ImportOutcome {
         libraryLogger.info("importing \(sourceURL.lastPathComponent, privacy: .public)")
 
         let metadata: ImportedFileMetadata
         do {
-            metadata = try Self.readMetadata(from: sourceURL)
+            metadata = try readMetadata(from: sourceURL)
         } catch let err as LibraryImporterError {
-            throw err
+            return .failed(sourceURL, err.errorDescription ?? "Couldn't import this file.")
         } catch {
             libraryLogger.error("metadata parse failed: \(error.localizedDescription, privacy: .public)")
-            throw LibraryImporterError.parsingFailed
+            return .failed(sourceURL, LibraryImporterError.parsingFailed.errorDescription!)
         }
 
         let bookFolder = bookFolderURL(in: libraryFolder, metadata: metadata)
@@ -110,37 +205,52 @@ actor LibraryImporter {
         )
         let destFile = bookFolder.appending(component: filename)
 
+        // Exact on-disk identity already present — terminal. We never merge, so
+        // even "import anyway" can't apply here.
         if FileManager.default.fileExists(atPath: destFile.path(percentEncoded: false)) {
-            throw LibraryImporterError.destinationExists
+            return .alreadyInLibrary(sourceURL)
         }
 
-        try FileManager.default.createDirectory(at: bookFolder, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: sourceURL, to: destFile)
+        // Fingerprint match at a *different* path (different year, or the
+        // existing one has none) — probably the same work with different
+        // metadata. Skipped by default; the user can import it as a separate
+        // book. `allowDuplicate` (import-anyway / single-file paths) skips this.
+        if !allowDuplicate, let claims {
+            let fingerprint = bookFingerprint(
+                title: metadata.title, firstAuthor: metadata.authors.first)
+            let ref = ImportMatch(title: metadata.title, author: metadata.authors.first)
+            if let matched = await claims.claim(fingerprint, ref: ref) {
+                return .possibleDuplicate(sourceURL, matched: matched)
+            }
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: bookFolder, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: sourceURL, to: destFile)
+        } catch {
+            libraryLogger.error("copy failed: \(error.localizedDescription, privacy: .public)")
+            return .failed(sourceURL, "Couldn't copy the file into the library.")
+        }
 
         // Past this point, any failure must roll back the partially-created folder.
+        let coverFileName = writeCover(metadata.coverImage, for: metadata.title, in: bookFolder)
+        let locale = resolveLocale(declared: metadata.language, file: destFile, profiles: profiles)
+        let book = Book(
+            id: bookID,
+            title: metadata.title,
+            authors: metadata.authors,
+            year: metadata.year,
+            locale: locale,
+            coverPath: coverFileName,
+            dateAdded: .now,
+            fileURL: destFile
+        )
+
         do {
-            let coverFileName = writeCover(metadata.coverImage, for: metadata.title, in: bookFolder)
-            let locale = Self.resolveLocale(declared: metadata.language, file: destFile, profiles: profiles)
-
-            let book = Book(
-                id: bookID,
-                title: metadata.title,
-                authors: metadata.authors,
-                year: metadata.year,
-                locale: locale,
-                coverPath: coverFileName,
-                dateAdded: .now,
-                fileURL: destFile
-            )
-
             // Fresh import: no collections yet. Membership is added later
             // from the inspector / drag-to-sidebar.
             try MetadataSidecar.write(book, collectionNames: [], to: bookFolder)
-            try await index.add(book)
-
-            libraryLogger.info(
-                "imported: \(book.title, privacy: .public) by \(book.authors.first ?? "Unknown", privacy: .public)")
-            return book
+            return .imported(book)
         } catch {
             do {
                 try FileManager.default.trashItem(at: bookFolder, resultingItemURL: nil)
@@ -151,7 +261,7 @@ actor LibraryImporter {
                     "rollback failed for \(bookFolder.path(percentEncoded: false), privacy: .public): \(cleanupError.localizedDescription, privacy: .public)"
                 )
             }
-            throw error
+            return .failed(sourceURL, "Couldn't write the book's metadata.")
         }
     }
 

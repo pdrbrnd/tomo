@@ -301,6 +301,13 @@ final class AppState {
     /// task is cancelled when superseded by a new toast.
     var currentToast: Toast?
 
+    /// Live state of the current batch import, or nil when none is running /
+    /// dismissed. Drives `ImportProgressSheet`.
+    var importSession: ImportSession?
+
+    /// The running batch-import task, held so `cancelImport` can stop it.
+    private var importTask: Task<Void, Never>?
+
     /// User-loaded JS plugins used as search sources. All `.js` files in the
     /// plugins directory; replaced wholesale on reload. Empty until
     /// `reloadPluginSource()` runs (via `bootstrap()` or a user-triggered reload).
@@ -907,6 +914,181 @@ final class AppState {
             libraryLogger.error("import failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    /// Batch import: copy many files into the library in one O(n) pass with a
+    /// live progress sheet, deduping against the library and within the batch.
+    /// Fire-and-forget — sets up `importSession` + `importTask` and returns so
+    /// the drop handler can complete synchronously.
+    func importBooks(from urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        // Supersede any session still on screen.
+        importTask?.cancel()
+        let session = ImportSession(urls: urls)
+        importSession = session
+        importTask = Task { [weak self] in
+            await self?.runImport(session)
+        }
+    }
+
+    private func runImport(_ session: ImportSession) async {
+        await openIndexIfNeeded()
+        guard let libraryFolder, let index else {
+            for i in session.rows.indices {
+                session.rows[i].status = .failed("Library isn't ready.")
+            }
+            session.isRunning = false
+            if importSession === session { importTask = nil }
+            return
+        }
+
+        let profiles = enabledProfiles
+        let claims = FingerprintClaims(
+            Dictionary(
+                books.map {
+                    (
+                        bookFingerprint(title: $0.title, firstAuthor: $0.authors.first),
+                        ImportMatch(title: $0.title, author: $0.authors.first)
+                    )
+                },
+                uniquingKeysWith: { _, latest in latest }))
+        let urls = session.rows.map(\.url)
+        // Process in chunks so a huge batch doesn't swamp the cooperative pool;
+        // the heavy work is disk + EPUB parsing, so a handful in flight is plenty.
+        // Each chunk runs concurrently; session updates happen on the main actor
+        // between chunks (the task-group closure is nonisolated and can't touch
+        // `session`). Per-chunk progress is plenty granular for the UI.
+        let cap = min(max(ProcessInfo.processInfo.activeProcessorCount, 2), 8)
+
+        var imported: [Book] = []
+        var idx = 0
+        while idx < urls.count {
+            if Task.isCancelled {
+                for i in idx..<urls.count where session.rows[i].status == .pending {
+                    session.rows[i].status = .failed("Cancelled")
+                }
+                break
+            }
+
+            let base = idx
+            let chunk = Array(urls[base..<min(base + cap, urls.count)])
+            for j in chunk.indices { session.rows[base + j].status = .importing }
+
+            let outcomes: [(Int, ImportOutcome)] = await withTaskGroup(
+                of: (Int, ImportOutcome).self
+            ) { group in
+                for (j, url) in chunk.enumerated() {
+                    group.addTask {
+                        let outcome = await LibraryImporter.prepareImport(
+                            from: url,
+                            into: libraryFolder,
+                            profiles: profiles,
+                            claims: claims,
+                            allowDuplicate: false
+                        )
+                        return (base + j, outcome)
+                    }
+                }
+                var results: [(Int, ImportOutcome)] = []
+                for await result in group { results.append(result) }
+                return results
+            }
+
+            for (rowIdx, outcome) in outcomes {
+                switch outcome {
+                case .imported(let book):
+                    imported.append(book)
+                    session.rows[rowIdx].status = .imported
+                case .alreadyInLibrary:
+                    session.rows[rowIdx].status = .alreadyInLibrary
+                case .possibleDuplicate(_, let matched):
+                    session.rows[rowIdx].status = .possibleDuplicate(
+                        matchedLabel: importMatchLabel(matched))
+                case .failed(_, let message):
+                    session.rows[rowIdx].status = .failed(message)
+                }
+            }
+
+            idx += chunk.count
+        }
+
+        // One bulk index write + one reload for the whole batch. Sidecars are
+        // already on disk, so an index-write failure is recoverable via the
+        // next disk sync — we still surface it.
+        if !imported.isEmpty {
+            do {
+                try await index.addBooks(imported)
+            } catch {
+                libraryLogger.error(
+                    "batch index write failed: \(error.localizedDescription, privacy: .public)")
+                showToast(.error("Imported to disk, but the library index didn't update."))
+            }
+            await loadBooks()
+        }
+
+        session.isRunning = false
+        if importSession === session { importTask = nil }
+    }
+
+    /// Cancels the running batch. Files already imported stay; pending ones are
+    /// marked cancelled.
+    func cancelImport() {
+        importTask?.cancel()
+    }
+
+    /// Closes the import sheet (does not undo anything).
+    func dismissImportSession() {
+        importSession = nil
+    }
+
+    /// Re-attempts a single failed row, or force-imports a duplicate row.
+    /// Bypasses dedup (claims: nil) so a deliberate retry always proceeds if
+    /// disk allows. Indexes immediately and reloads.
+    func retryImportRow(_ rowID: ImportSession.Row.ID) {
+        guard let session = importSession,
+            let idx = session.rows.firstIndex(where: { $0.id == rowID })
+        else { return }
+        let url = session.rows[idx].url
+        Task { [weak self] in
+            guard let self else { return }
+            await openIndexIfNeeded()
+            guard let libraryFolder, let index else { return }
+            session.rows[idx].status = .importing
+            let outcome = await LibraryImporter.prepareImport(
+                from: url,
+                into: libraryFolder,
+                profiles: enabledProfiles,
+                claims: nil,
+                allowDuplicate: true
+            )
+            switch outcome {
+            case .imported(let book):
+                do {
+                    try await index.add(book)
+                    session.rows[idx].status = .imported
+                    await loadBooks()
+                } catch {
+                    session.rows[idx].status = .failed("Couldn't update the library index.")
+                }
+            case .alreadyInLibrary:
+                session.rows[idx].status = .alreadyInLibrary
+            case .possibleDuplicate(_, let matched):
+                session.rows[idx].status = .possibleDuplicate(
+                    matchedLabel: importMatchLabel(matched))
+            case .failed(_, let message):
+                session.rows[idx].status = .failed(message)
+            }
+        }
+    }
+
+    /// Human-readable explanation of a fingerprint match, shown under a
+    /// possible-duplicate row. No "already in your library" suffix — the match
+    /// may be an earlier file in the same batch, not yet in the library.
+    private func importMatchLabel(_ match: ImportMatch) -> String {
+        if let author = match.author, !author.isEmpty {
+            return "Matches “\(match.title)” by \(author)"
+        }
+        return "Matches “\(match.title)”"
     }
 
     func updateBook(_ book: Book) async {

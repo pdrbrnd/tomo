@@ -270,11 +270,11 @@ struct LibraryView: View {
     }
 
     private func libraryFingerprint(forBook book: Book) -> String {
-        "\(book.title.lowercased())|\(book.authors.first?.lowercased() ?? "")"
+        bookFingerprint(title: book.title, firstAuthor: book.authors.first)
     }
 
     private func libraryFingerprint(forResult result: PluginResult) -> String {
-        "\(result.title.lowercased())|\(result.authors.first?.lowercased() ?? "")"
+        bookFingerprint(title: result.title, firstAuthor: result.authors.first)
     }
 
     /// "Search" → "Search Sci-Fi" / "Search Portuguese" when a scope is
@@ -546,6 +546,9 @@ struct LibraryView: View {
         .onChange(of: state.device == nil) { _, deviceGone in
             if deviceGone { deviceContentsSheetOpen = false }
         }
+        .sheet(item: Bindable(state).importSession) { session in
+            ImportProgressSheet(session: session, state: state)
+        }
     }
 
     private var deleteDialogTitle: String {
@@ -687,11 +690,7 @@ struct LibraryView: View {
             guard !accepted.isEmpty else {
                 return directoriesYieldedNothing || !rejected.isEmpty
             }
-            Task {
-                for url in accepted {
-                    await state.importBook(from: url)
-                }
-            }
+            state.importBooks(from: accepted)
             return true
         } isTargeted: { targeted in
             withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .snappy(duration: 0.20)) {
