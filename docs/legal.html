@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Privacy &amp; Terms — Tomo</title>
+    <meta
+      name="description"
+      content="Privacy policy and terms for Tomo, a local-first macOS e-book library manager."
+    />
+    <meta
+      name="theme-color"
+      content="#f6f5f3"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#020202"
+      media="(prefers-color-scheme: dark)"
+    />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="img/icon-512.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="img/icon-180.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="legal">
+      <header>
+        <a class="back" href="index.html">← Tomo</a>
+        <h1>Privacy &amp; Terms</h1>
+        <p class="tagline">Short version: it's your library, on your Mac.</p>
+      </header>
+
+      <section>
+        <h2>Privacy</h2>
+        <p>
+          Tomo is a local-first macOS app. Your library is a folder of files on
+          your own disk — wherever you put it, including iCloud Drive if you
+          choose. There is no Tomo server, no account, no login, no sign-up.
+        </p>
+        <p>
+          <b>Crash reports.</b> On by default, opt-out any time in
+          Settings&nbsp;→&nbsp;Privacy. When something goes wrong, Tomo sends
+          the crash stack trace and your macOS version to a hosted error tracker
+          (Sentry) so I can fix it. Paths under your home folder are scrubbed
+          before anything leaves your Mac. No library contents, no identifiers,
+          no analytics, no usage tracking — ever.
+        </p>
+        <p>
+          <b>Updates.</b> Tomo checks <code>tomolibrary.com/appcast.xml</code>
+          for new versions on launch (via Sparkle, the standard macOS updater).
+          That's an ordinary web request with no personal data attached; you can
+          turn automatic checks off.
+        </p>
+        <p>
+          <b>Things you trigger.</b> Cover and metadata lookups (Open Library,
+          Apple, Google Books) and fetching the plugin registry happen only when
+          you click. Search plugins you install make requests to their own
+          third-party sources — those sites have their own terms, and what you
+          install is your call.
+        </p>
+      </section>
+
+      <hr />
+
+      <section>
+        <h2>Terms</h2>
+        <p>
+          Tomo is free and open source under the
+          <a href="https://github.com/pdrbrnd/tomo/blob/main/LICENSE"
+            >AGPL-3.0</a
+          >
+          licence. The source is on
+          <a href="https://github.com/pdrbrnd/tomo">GitHub</a>.
+        </p>
+        <p>
+          It's provided <b>“as is”</b>, with no warranty of any kind. Tomo
+          organises your files and writes books to your e-reader — use it at
+          your own risk and keep backups of anything you care about.
+        </p>
+        <p>
+          Tomo is an independent project. It is not affiliated with, endorsed
+          by, or connected to Amazon/Kindle, Kobo, or any catalogue or metadata
+          source it talks to.
+        </p>
+        <p>
+          Plugins are third-party code you choose to install; you're responsible
+          for what you run. Tomo does not remove or circumvent DRM.
+        </p>
+        <p>
+          Questions? Email
+          <a href="mailto:feedback@tomolibrary.com">feedback@tomolibrary.com</a
+          >.
+        </p>
+      </section>
+
+      <footer>
+        <a href="index.html">Tomo</a>
+        <span class="dot">·</span>
+        <a href="https://github.com/pdrbrnd/tomo">GitHub</a>
+        <span class="dot">·</span>
+        <a href="https://github.com/pdrbrnd/tomo/blob/main/LICENSE">AGPL-3.0</a>
+      </footer>
+    </main>
+  </body>
+</html>

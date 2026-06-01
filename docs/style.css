@@ -250,6 +250,70 @@ hr {
   letter-spacing: 0.005em;
 }
 
+.legal {
+  gap: 32px;
+}
+
+.legal .back {
+  display: inline-block;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  text-decoration: none;
+  margin-bottom: 20px;
+  transition: color 0.12s ease;
+}
+
+.legal .back:hover {
+  color: var(--ink);
+}
+
+.legal h2 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.014em;
+  margin-bottom: 16px;
+}
+
+.legal section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.legal p {
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: -0.005em;
+  color: var(--ink-secondary);
+}
+
+.legal p b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.legal a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--ink-tertiary);
+}
+
+.legal a:hover {
+  text-decoration-color: var(--ink);
+}
+
+.legal code {
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--surface);
+  border: 0.5px solid var(--hairline);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
 footer {
   font-size: 12.5px;
   color: var(--ink-tertiary);
