@@ -2,12 +2,17 @@ import Foundation
 
 /// Shared XHTML/HTML parser that tries strict XML first, falls back to
 /// `documentTidyHTML` for the malformed shapes real-world EPUBs ship with.
-/// Used by `EPUBText`, `EPUBNavigation`, and `EPUBSource`.
-nonisolated func parseXHTMLOrTidy(_ data: Data) -> XMLDocument? {
-    if let strict = try? XMLDocument(data: data, options: []) {
+/// Used by `EPUBText`, `EPUBNavigation`, `EPUBSource`, and the reader.
+///
+/// `options` is OR'd into both attempts. The reader passes
+/// `.nodePreserveWhitespace` so lone spaces between inline elements (e.g. the
+/// space-only span after a footnote marker) survive the round-trip; HTML's own
+/// whitespace collapsing then handles any pretty-print indentation at render.
+nonisolated func parseXHTMLOrTidy(_ data: Data, options: XMLNode.Options = []) -> XMLDocument? {
+    if let strict = try? XMLDocument(data: data, options: options) {
         return strict
     }
-    return try? XMLDocument(data: data, options: .documentTidyHTML)
+    return try? XMLDocument(data: data, options: options.union(.documentTidyHTML))
 }
 
 /// Best-effort EPUB `<dc:date>` parser. The spec ranges from `2023` through

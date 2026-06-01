@@ -114,7 +114,7 @@ private nonisolated let presentationalAttributes: [String] = [
 private nonisolated func sanitizedBody(
     _ data: Data, spineDir: String, spineIndexByPath: [String: Int]
 ) -> String? {
-    guard let doc = parseXHTMLOrTidy(data),
+    guard let doc = parseXHTMLOrTidy(data, options: .nodePreserveWhitespace),
         let body = (try? doc.nodes(forXPath: "//*[local-name()='body']"))?.first as? XMLElement
     else { return nil }
 
@@ -123,7 +123,10 @@ private nonisolated func sanitizedBody(
     let inner = (body.children ?? [])
         .map { $0.xmlString(options: [.nodePreserveCDATA]) }
         .joined()
-    return inner.isEmpty ? nil : inner
+    // Skip whitespace-only spine docs (blank placeholder pages). Preserving
+    // whitespace keeps their stray spaces, which would otherwise render as an
+    // empty chapter — a 6rem gap and a separator rule between real chapters.
+    return inner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : inner
 }
 
 private nonisolated func sanitize(
@@ -214,6 +217,9 @@ private nonisolated func rewriteAnchor(
 
     // Pure in-page anchor (#note) — already valid in the combined document.
     if filePart.isEmpty {
+        if isFootnoteReference(element) {
+            setAttribute(element, name: "data-footnote", value: fragment)
+        }
         return
     }
 
@@ -221,12 +227,45 @@ private nonisolated func rewriteAnchor(
     if !fragment.isEmpty {
         // The fragment's id is preserved in the merged document.
         setAttribute(element, name: "href", value: "#\(fragment)")
+        // Footnote references get a popover instead of a place-losing jump. The
+        // runtime JS keys off this attribute; the href stays as the fallback.
+        if isFootnoteReference(element) {
+            setAttribute(element, name: "data-footnote", value: fragment)
+        }
     } else if let index = spineIndexByPath[resolved] {
         setAttribute(element, name: "href", value: "#ch-\(index)")
     } else {
         // Target isn't part of the readable spine — drop the link target.
         element.removeAttribute(forName: "href")
     }
+}
+
+/// Whether an in-page anchor is a footnote/endnote reference (so it should
+/// open in a popover rather than jump). Detection, in order of confidence:
+/// EPUB3 semantics (`epub:type`/`role`), then a `<sup>` wrapper/child, then a
+/// bare footnote-marker text (`1`, `[1]`, `*`, `†`). Prose cross-references
+/// ("see Chapter 3") match none of these and keep their navigation behaviour.
+nonisolated func isFootnoteReference(_ element: XMLElement) -> Bool {
+    if let epubType = element.attribute(forName: "epub:type")?.stringValue {
+        let tokens = epubType.lowercased().split(whereSeparator: { $0 == " " || $0 == "\t" })
+        if tokens.contains("noteref") { return true }
+    }
+    if element.attribute(forName: "role")?.stringValue?.lowercased() == "doc-noteref" {
+        return true
+    }
+
+    if (element.parent as? XMLElement)?.localName?.lowercased() == "sup" { return true }
+    if let sups = try? element.nodes(forXPath: ".//*[local-name()='sup']"), !sups.isEmpty {
+        return true
+    }
+
+    let text = (element.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !text.isEmpty, text.count <= 6,
+        text.wholeMatch(of: /^[\[(]?\s*[\d*†‡§¶]+\s*[\])]?$/) != nil
+    {
+        return true
+    }
+    return false
 }
 
 private nonisolated func setAttribute(_ element: XMLElement, name: String, value: String) {
@@ -354,4 +393,43 @@ private nonisolated let readerCSS = """
       padding-top: 6rem;
       border-top: 1px solid var(--rule);
     }
+    .reader a[data-footnote] {
+      cursor: pointer;
+      font-size: 0.72em;
+      vertical-align: super;
+      line-height: 0;
+      border-bottom: none;
+      font-weight: 600;
+    }
+    /* Source already raised it (wrapped in <sup>/<sub>) — don't compound. */
+    .reader sup a[data-footnote], .reader sub a[data-footnote] {
+      font-size: inherit;
+      vertical-align: baseline;
+    }
+    .tomo-fn-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      background: transparent;
+    }
+    .tomo-fn-popover {
+      position: fixed;
+      z-index: 9999;
+      max-width: min(38ch, calc(100vw - 2rem));
+      max-height: 40vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 1rem 1.15rem;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--rule);
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.12), 0 8px 28px rgba(0,0,0,0.22);
+      font-family: ui-serif, "New York", Iowan Old Style, Georgia, serif;
+      font-size: 1rem;
+      line-height: 1.6;
+    }
+    .tomo-fn-popover > :first-child { margin-top: 0; }
+    .tomo-fn-popover > :last-child { margin-bottom: 0; }
+    .tomo-fn-popover p { margin: 0 0 0.7em; }
     """

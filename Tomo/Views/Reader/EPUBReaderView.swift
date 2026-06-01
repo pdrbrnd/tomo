@@ -347,6 +347,11 @@ private struct EPUBWebView: NSViewRepresentable {
                 source: Self.scrollReporterScript,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true))
+        controller.addUserScript(
+            WKUserScript(
+                source: Self.footnotePopoverScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true))
         controller.add(context.coordinator, name: "tomoScroll")
         configuration.userContentController = controller
 
@@ -457,6 +462,80 @@ private struct EPUBWebView: NSViewRepresentable {
             if (!ticking) { ticking = true; requestAnimationFrame(report); }
           }, { passive: true });
           report();
+        })();
+        """
+
+    // Footnote references (tagged `data-footnote` at build time) open the note
+    // in a popover anchored at the tap, instead of a place-losing anchor jump.
+    // Self-contained DOM only — no Swift round-trip.
+    private static let footnotePopoverScript = """
+        (function(){
+          var backdrop = null, popover = null;
+
+          function close(){
+            if (popover) { popover.remove(); popover = null; }
+            if (backdrop) { backdrop.remove(); backdrop = null; }
+          }
+
+          // Walk up to the nearest block-level element so an inline id marker
+          // (an <a> or <span> sitting in the note text) yields the whole note.
+          function noteBlock(el){
+            var blocks = { 'aside':1,'li':1,'p':1,'div':1,'section':1,'td':1,'blockquote':1 };
+            var node = el;
+            while (node && node !== document.body) {
+              if (blocks[node.tagName.toLowerCase()]) return node;
+              node = node.parentElement;
+            }
+            return el;
+          }
+
+          function open(ref, fragment){
+            close();
+            var target = document.getElementById(fragment);
+            if (!target) return;
+            var content = noteBlock(target).cloneNode(true);
+            // Neutralise links inside the note so taps can't navigate away.
+            content.querySelectorAll('a').forEach(function(a){
+              a.removeAttribute('href');
+              a.removeAttribute('data-footnote');
+            });
+            // Strip ids so moving the clone into the live DOM can't duplicate one.
+            content.removeAttribute('id');
+            content.querySelectorAll('[id]').forEach(function(n){ n.removeAttribute('id'); });
+
+            backdrop = document.createElement('div');
+            backdrop.className = 'tomo-fn-backdrop';
+            backdrop.addEventListener('click', close);
+
+            popover = document.createElement('div');
+            popover.className = 'tomo-fn-popover';
+            while (content.firstChild) popover.appendChild(content.firstChild);
+            popover.addEventListener('click', function(e){ e.stopPropagation(); });
+
+            document.body.appendChild(backdrop);
+            document.body.appendChild(popover);
+
+            // Position near the reference, clamped to the viewport.
+            var r = ref.getBoundingClientRect();
+            var pr = popover.getBoundingClientRect();
+            var margin = 8;
+            var left = Math.min(Math.max(margin, r.left), window.innerWidth - pr.width - margin);
+            var top = r.bottom + margin;
+            if (top + pr.height > window.innerHeight - margin) {
+              top = Math.max(margin, r.top - pr.height - margin);
+            }
+            popover.style.left = left + 'px';
+            popover.style.top = top + 'px';
+          }
+
+          document.addEventListener('click', function(e){
+            var ref = e.target.closest ? e.target.closest('[data-footnote]') : null;
+            if (!ref) return;
+            e.preventDefault();
+            open(ref, ref.getAttribute('data-footnote'));
+          });
+          document.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
+          window.addEventListener('scroll', close, { passive: true });
         })();
         """
 }
