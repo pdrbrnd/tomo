@@ -15,9 +15,30 @@ nonisolated enum EPUBSource {
         case override(URL?)
     }
 
-    static func read(from url: URL, coverSource: CoverSource = .epub) throws -> BookManifest {
+    /// User-edited metadata projected onto the manifest, so the AZW3 carries
+    /// what the user accepted in Tomo rather than the EPUB's embedded OPF
+    /// values. A `nil` field falls back to the EPUB. Mirrors `CoverSource` —
+    /// the library file is never mutated; the correction lives in the
+    /// delivered copy only.
+    struct MetadataOverride: Sendable {
+        var title: String?
+        var authors: [String]?
+        var language: String?
+
+        init(title: String? = nil, authors: [String]? = nil, language: String? = nil) {
+            self.title = title
+            self.authors = authors
+            self.language = language
+        }
+    }
+
+    static func read(
+        from url: URL,
+        coverSource: CoverSource = .epub,
+        metadata: MetadataOverride = .init()
+    ) throws -> BookManifest {
         let epub = try EPUBArchive.open(url)
-        guard let title = epub.opf.title else {
+        guard let title = metadata.title ?? epub.opf.title else {
             throw EPUBArchiveError.missingTitle
         }
 
@@ -70,8 +91,8 @@ nonisolated enum EPUBSource {
 
         return BookManifest(
             title: title,
-            authors: epub.opf.authors,
-            language: epub.opf.language ?? "und",
+            authors: metadata.authors ?? epub.opf.authors,
+            language: metadata.language ?? epub.opf.language ?? "und",
             chunks: chunks,
             cover: cover,
             bodyImages: bodyImages,

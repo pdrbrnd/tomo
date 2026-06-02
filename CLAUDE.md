@@ -211,6 +211,8 @@ Each device implements `BookDevice` (`Core/Delivery/BookDevice.swift`); the libr
 - **Kindle** (`Core/Delivery/Kindle.swift`): identified by `documents/` + `system/` at the volume root. Writes books to `documents/`. EPUB needs conversion (see above); AZW3/MOBI/PDF passthrough.
 - **Kobo** (`Core/Delivery/Kobo.swift`): identified by `.kobo/` at the volume root (contains `KoboReader.sqlite`, present on every Kobo from Touch onwards). Writes books to the volume root — Kobo's scanner walks the whole device on disconnect. EPUB and PDF passthrough; no conversion, no cover-thumbnail workaround (Kobo extracts covers from EPUB metadata natively).
 
+**Metadata projection on delivery.** Devices read the file's *embedded* metadata, not Tomo's sidecar, so the user's edited title/author/language is projected onto the **delivered copy** at send time — the library file is never mutated (sidecar stays canonical; Principle 1). Kindle gets it for free: `EPUBToAZW3Converter` takes an `EPUBSource.MetadataOverride` built from the `Book` and the `AZW3Writer` serialises it. Kobo (raw EPUB passthrough) needs an actual OPF rewrite: `Core/Metadata/EPUBMetadataWriter.metadataCorrectedCopy` produces a scratch copy with the differing `<dc:*>` fields overwritten, sent in place of the original. It's **diff-only** (untouched authors keep their `opf:file-as`/role) and **best-effort** (DRM/malformed/no-diff → returns nil → original sent untouched). Scope is title/author/language only — no `file-as` synthesis. An opt-in "embed metadata into library files" action (Calibre-style) is deliberately out of scope.
+
 ## Out of scope (don't add without discussion)
 
 - DRM removal of any kind

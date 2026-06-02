@@ -196,7 +196,12 @@ nonisolated struct Kindle: BookDevice {
                     converted = try await epubConverter.convert(
                         source: book.fileURL,
                         into: scratch,
-                        coverSource: .override(book.coverURL)
+                        coverSource: .override(book.coverURL),
+                        metadata: EPUBSource.MetadataOverride(
+                            title: book.title,
+                            authors: book.authors.isEmpty ? nil : book.authors,
+                            language: book.locale
+                        )
                     )
                 } else {
                     converted = try await converter.convert(source: book.fileURL, into: scratch)

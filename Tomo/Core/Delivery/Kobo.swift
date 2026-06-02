@@ -99,7 +99,25 @@ nonisolated struct Kobo: BookDevice {
 
     func copy(_ book: Book) async throws {
         let dest = volumeURL.appending(component: deviceFilename(for: book))
-        try await performCopy(from: book.fileURL, to: dest)
+
+        // Kobo reads the EPUB's embedded `content.opf`, not Tomo's sidecar, so
+        // project the user's edited title/author/language onto a scratch copy
+        // before sending. Only EPUB carries rewritable OPF metadata; PDF and
+        // anything else passes through untouched. The rewrite is best-effort —
+        // `metadataCorrectedCopy` returns nil (and we send the original) when
+        // nothing changed or the EPUB can't be parsed.
+        guard book.fileURL.pathExtension.lowercased() == "epub" else {
+            try await performCopy(from: book.fileURL, to: dest)
+            return
+        }
+
+        try await ConversionScratch.withScratchDirectory { scratch in
+            let corrected = await Task.detached {
+                EPUBMetadataWriter.metadataCorrectedCopy(
+                    of: book.fileURL, for: book, into: scratch)
+            }.value
+            try await self.performCopy(from: corrected ?? book.fileURL, to: dest)
+        }
     }
 
     private func performCopy(from source: URL, to dest: URL) async throws {
