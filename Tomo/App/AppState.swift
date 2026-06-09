@@ -756,7 +756,7 @@ final class AppState {
                 deliveryLogger.error("device copy failed: \(error.localizedDescription, privacy: .public)")
             }
         }
-        deviceFilenames = device.filenames()
+        deviceFilenames = await Task.detached { device.filenames() }.value
 
         if let lastError, successes == 0 {
             deviceSendState = .error(lastError.localizedDescription)
@@ -786,7 +786,7 @@ final class AppState {
             try await device.remove(book)
             deliveryLogger.info(
                 "removed from \(device.displayName, privacy: .public): \(book.title, privacy: .public)")
-            deviceFilenames = device.filenames()
+            deviceFilenames = await Task.detached { device.filenames() }.value
         } catch {
             deliveryLogger.error("device remove failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -811,7 +811,7 @@ final class AppState {
                 )
             }
         }
-        deviceFilenames = device.filenames()
+        deviceFilenames = await Task.detached { device.filenames() }.value
     }
 
     func ejectDevice() async {
@@ -829,20 +829,31 @@ final class AppState {
         let center = NSWorkspace.shared.notificationCenter
         mountTask = Task { @MainActor [weak self] in
             for await _ in center.notifications(named: NSWorkspace.didMountNotification) {
-                self?.refreshDeviceState()
+                await self?.refreshDeviceState()
             }
         }
         unmountTask = Task { @MainActor [weak self] in
             for await _ in center.notifications(named: NSWorkspace.didUnmountNotification) {
-                self?.refreshDeviceState()
+                await self?.refreshDeviceState()
             }
         }
     }
 
-    private func refreshDeviceState() {
-        let detected = DeviceScanner.detect()
+    /// Detection and enumeration run detached, same as `bootstrap()`:
+    /// `DeviceScanner.detect()` stats every entry in /Volumes (a stale
+    /// network mount can block that for seconds) and `filenames()` walks
+    /// the device's documents folder over USB. Both fire on *every*
+    /// mount/unmount notification — not just e-readers — so keeping them
+    /// off main is what prevents app-hang reports when any volume comes
+    /// and goes.
+    private func refreshDeviceState() async {
+        let detected = await Task.detached { DeviceScanner.detect() }.value
         device = detected
-        deviceFilenames = detected?.filenames() ?? []
+        if let detected {
+            deviceFilenames = await Task.detached { detected.filenames() }.value
+        } else {
+            deviceFilenames = []
+        }
         if let kindle = detected as? Kindle {
             Task.detached { await KindleSync.run(volumeURL: kindle.volumeURL) }
         }
@@ -1481,19 +1492,24 @@ final class AppState {
                 }.value
             try await index.seedCollections(onDiskCollections ?? [])
 
-            // 3. Walk the library folder, read sidecars.
+            // 3. Walk the library folder, read sidecars. Detached: this is
+            //    one read + JSON decode per book, and doing it on main was
+            //    enough to trip the app-hang threshold on large libraries.
             let folders = try await LibraryFolder.bookFolders(in: libraryFolder)
-            var sidecars: [LoadedSidecar] = []
-            for folder in folders {
-                try Task.checkCancellation()
-                do {
-                    sidecars.append(try MetadataSidecar.read(from: folder))
-                } catch {
-                    libraryLogger.error(
-                        "sync: skipped \(folder.path(percentEncoded: false), privacy: .public): \(error.localizedDescription, privacy: .public)"
-                    )
+            let sidecars = await Task.detached {
+                var sidecars: [LoadedSidecar] = []
+                for folder in folders {
+                    do {
+                        sidecars.append(try MetadataSidecar.read(from: folder))
+                    } catch {
+                        libraryLogger.error(
+                            "sync: skipped \(folder.path(percentEncoded: false), privacy: .public): \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
                 }
-            }
+                return sidecars
+            }.value
+            try Task.checkCancellation()
             let onDisk = Set(sidecars.map(\.book.id))
             let inIndex = try await index.allIDs()
             let toAdd = onDisk.subtracting(inIndex)
