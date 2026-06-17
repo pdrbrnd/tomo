@@ -188,6 +188,15 @@ actor LibraryImporter {
             metadata = try readMetadata(from: sourceURL)
         } catch let err as LibraryImporterError {
             return .failed(sourceURL, err.errorDescription ?? "Couldn't import this file.")
+        } catch let err as EPUBArchiveError {
+            // The reader knows exactly why it failed (DRM, missing title,
+            // malformed XML…). Surface that instead of the generic message so
+            // the user — and any bug report — can tell the cases apart.
+            libraryLogger.error("EPUB metadata read failed: \(err.errorDescription ?? "", privacy: .public)")
+            return .failed(sourceURL, err.errorDescription ?? "Could not read the EPUB's metadata.")
+        } catch let err as PDFMetadataError {
+            libraryLogger.error("PDF metadata read failed: \(err.errorDescription ?? "", privacy: .public)")
+            return .failed(sourceURL, err.errorDescription ?? "Could not read the PDF's metadata.")
         } catch {
             libraryLogger.error("metadata parse failed: \(error.localizedDescription, privacy: .public)")
             return .failed(

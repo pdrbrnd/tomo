@@ -22,10 +22,15 @@ nonisolated struct EPUBArchive {
         } catch {
             throw EPUBArchiveError.cannotOpenArchive
         }
-        // DRM detection — `META-INF/encryption.xml` exists in any EPUB
-        // with encrypted resources. We refuse rather than emit garbage
-        // AZW3 from undecryptable bodies.
-        if archive["META-INF/encryption.xml"] != nil {
+        // DRM detection. `META-INF/encryption.xml` is present both in
+        // DRM-protected EPUBs *and* in plenty of DRM-free books that merely
+        // obfuscate embedded fonts (the IDPF/Adobe font-mangling spec). The
+        // latter are fully readable — refusing them rejects a large slice of
+        // commercially-produced EPUBs. So only refuse when the encryption
+        // isn't pure font obfuscation; obfuscation-only archives pass through.
+        if let entry = archive["META-INF/encryption.xml"],
+            isDRMEncryption(extractEntry(entry, from: archive))
+        {
             throw EPUBArchiveError.drmProtected
         }
         let containerXML = try archiveData(in: archive, at: "META-INF/container.xml", whenMissing: .missingContainer)
@@ -148,6 +153,39 @@ private nonisolated func archiveData(
     var out = Data()
     _ = try archive.extract(entry) { out.append($0) }
     return out
+}
+
+private nonisolated func extractEntry(_ entry: Entry, from archive: Archive) -> Data? {
+    var out = Data()
+    do {
+        _ = try archive.extract(entry) { out.append($0) }
+        return out
+    } catch {
+        return nil
+    }
+}
+
+/// EncryptionMethod algorithms that mean "obfuscated embedded fonts", not DRM.
+/// A book whose `encryption.xml` only uses these is fully readable.
+private nonisolated let fontObfuscationAlgorithms: Set<String> = [
+    "http://www.idpf.org/2008/embedding",  // IDPF/EPUB font obfuscation
+    "http://ns.adobe.com/pdf/enc#RC",  // Adobe font obfuscation
+]
+
+/// Decides whether a `META-INF/encryption.xml` payload represents real DRM
+/// (refuse) versus pure font obfuscation (safe to import).
+///
+/// Conservative: if the file is missing, unparseable, or declares no
+/// `EncryptionMethod` we can read, we treat it as DRM — we'd rather refuse an
+/// ambiguous file than emit a broken book. We only clear an archive when
+/// *every* declared algorithm is a known font-obfuscation algorithm.
+private nonisolated func isDRMEncryption(_ xml: Data?) -> Bool {
+    guard let xml, let doc = try? XMLDocument(data: xml) else { return true }
+    let algorithms = ((try? doc.nodes(forXPath: "//*[local-name()='EncryptionMethod']/@Algorithm")) ?? [])
+        .compactMap { $0.stringValue }
+        .filter { !$0.isEmpty }
+    guard !algorithms.isEmpty else { return true }
+    return !algorithms.allSatisfy { fontObfuscationAlgorithms.contains($0) }
 }
 
 private nonisolated func parseOPFPath(_ xml: Data) throws -> String {
