@@ -160,6 +160,10 @@ const r = await fetch("https://example.com/api", {
 
 `URLSession`-backed. Sets a desktop Safari user-agent by default. 30s timeout. Body is always returned as a UTF-8 string.
 
+**Anti-bot interstitials are handled for you** (since Tomo 1.15.0). If a response is a 403/503 "checking your browser" page (DDoS-Guard, Cloudflare), Tomo loads the same URL in an off-screen WKWebView so the challenge runs and clears itself, copies the cookies it earns into the store `fetch` reads from, and retries your request once. Your plugin sees only the retry's result, so no code change is needed.
+
+Two things to know. The first blocked request against a host takes ~15s, because the challenge inserts its own delay; later ones are plain fast HTTP until the cookies expire. And challenges needing a real click or a CAPTCHA can't be cleared this way — they time out (45s) and your `fetch` returns the interstitial. For sources gated like that, use `{ kind: "browser" }` from `download()` and let the user click through.
+
 ### `querySelectorAll(html, selector) -> Array<Match>`
 
 ```js

@@ -39,6 +39,12 @@ enum PluginLimits {
 /// CPU runs against a hard ceiling (`JSCExecutionLimit`).
 @MainActor
 final class PluginHost {
+    /// Sent by every plugin network binding, and by the challenge solver's
+    /// webview. Anti-bot cookies are issued against the UA that earned them,
+    /// so those two must not drift apart.
+    nonisolated static let browserUserAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
     let context: JSContext
     /// Read once at end of init — `var` only because the binding-install
     /// methods need `self`, which forces all stored properties to be
@@ -195,9 +201,7 @@ final class PluginHost {
         }
         var req = URLRequest(url: url)
         req.timeoutInterval = PluginLimits.networkTimeoutSeconds
-        req.setValue(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-            forHTTPHeaderField: "User-Agent")
+        req.setValue(browserUserAgent, forHTTPHeaderField: "User-Agent")
 
         if let m = options.method { req.httpMethod = m }
         if let hs = options.headers {
@@ -207,11 +211,44 @@ final class PluginHost {
             req.httpBody = b.data(using: .utf8)
         }
 
+        var result = try await send(req, requestedURL: urlString)
+
+        // An anti-bot interstitial isn't something a plugin can scrape past.
+        // Clear it once in a real browser engine, then retry — the retry is a
+        // plain fetch again, now carrying the cookies the challenge issued.
+        // See PluginChallengeSolver.
+        if PluginChallengeSolver.isChallengeResponse(status: result.status, body: result.body),
+            await PluginChallengeSolver.passChallenge(for: url)
+        {
+            result = try await send(req, requestedURL: urlString)
+        }
+
+        return result.payload
+    }
+
+    nonisolated private struct FetchResult: Sendable {
+        let status: Int
+        let body: String
+        let headers: [String: String]
+        let url: String
+
+        var payload: [String: any Sendable] {
+            [
+                "status": status,
+                "ok": (200..<300).contains(status),
+                "headers": headers,
+                "body": body,
+                "url": url,
+            ]
+        }
+    }
+
+    nonisolated private static func send(_ req: URLRequest, requestedURL: String) async throws
+        -> FetchResult
+    {
         let (data, response) = try await PluginNetworkDelegate.run(
             request: req, maxBytes: PluginLimits.fetchMaxBytes)
         let httpResp = response as? HTTPURLResponse
-        let status = httpResp?.statusCode ?? 0
-        let body = String(data: data, encoding: .utf8) ?? ""
         var headers: [String: String] = [:]
         if let allHeaders = httpResp?.allHeaderFields {
             for (k, v) in allHeaders {
@@ -220,13 +257,12 @@ final class PluginHost {
                 }
             }
         }
-        return [
-            "status": status,
-            "ok": (200..<300).contains(status),
-            "headers": headers,
-            "body": body,
-            "url": httpResp?.url?.absoluteString ?? urlString,
-        ]
+        return FetchResult(
+            status: httpResp?.statusCode ?? 0,
+            body: String(data: data, encoding: .utf8) ?? "",
+            headers: headers,
+            url: httpResp?.url?.absoluteString ?? requestedURL
+        )
     }
 
     /// `cacheImage(url, opts) -> Promise<String>` — downloads an image with
@@ -294,9 +330,7 @@ final class PluginHost {
 
         var req = URLRequest(url: url)
         req.timeoutInterval = 15
-        req.setValue(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-            forHTTPHeaderField: "User-Agent")
+        req.setValue(browserUserAgent, forHTTPHeaderField: "User-Agent")
         if let referer = options.referer {
             req.setValue(referer, forHTTPHeaderField: "Referer")
         }

@@ -15,21 +15,20 @@ Tomo follows semver for **app releases**, and uses the app version itself as the
 
 Declare `minAppVersion` as the lowest Tomo version that contains every host capability your plugin actually uses. Tomo 1.7.0 is the floor — it's the first version with the formal plugin contract (manifest, registry, compat gating). Pre-1.7 versions ran plugins but without manifests or version awareness, so a plugin authored against this contract won't work on them.
 
-## Capabilities (all available in 1.7.0)
+## Capabilities
 
-| Capability | Notes |
-|---|---|
-| `search(query)` / `download(result)` exports | Core contract. |
-| `query` fields: `text`, `title`, `author`, `language`, `isbn`, `format`, `year`, `publisher` | |
-| `Result` fields: `id`, `title`, `authors`, `year`, `language`, `format`, `sizeBytes`, `coverURL`, `detailURL`, `metadata[]` | |
-| `download()` returning `{ kind: "browser", url? }` | For sources that require user interaction (Cloudflare, slow-download partners). |
-| `fetch(url, opts?)` | URLSession-backed. |
-| `querySelectorAll(html, selector)` | SwiftSoup-backed. |
-| `cacheImage(url, opts?)` | For hotlink-protected covers. |
-| `console.log` / `console.error` | |
-| Manifest field: `minAppVersion` | Without this field the plugin is treated as "no constraint" — installs everywhere. |
-
-When new capabilities are added (in a future 1.8+), this table grows with an "Available since" column and the policy above kicks in.
+| Capability | Available since | Notes |
+|---|---|---|
+| `search(query)` / `download(result)` exports | 1.7.0 | Core contract. |
+| `query` fields: `text`, `title`, `author`, `language`, `isbn`, `format`, `year`, `publisher` | 1.7.0 | |
+| `Result` fields: `id`, `title`, `authors`, `year`, `language`, `format`, `sizeBytes`, `coverURL`, `detailURL`, `metadata[]` | 1.7.0 | |
+| `download()` returning `{ kind: "browser", url? }` | 1.7.0 | For sources that require user interaction (Cloudflare, slow-download partners). |
+| `fetch(url, opts?)` | 1.7.0 | URLSession-backed. |
+| `querySelectorAll(html, selector)` | 1.7.0 | SwiftSoup-backed. |
+| `cacheImage(url, opts?)` | 1.7.0 | For hotlink-protected covers. |
+| `console.log` / `console.error` | 1.7.0 | |
+| Manifest field: `minAppVersion` | 1.7.0 | Without this field the plugin is treated as "no constraint" — installs everywhere. |
+| `fetch()` transparently clears anti-bot interstitials | 1.15.0 | A 403/503 challenge page (DDoS-Guard, Cloudflare) is cleared in an off-screen WKWebView and the request retried once. No plugin-visible API change — but a plugin that *depends* on a gated source being reachable must declare `minAppVersion: "1.15.0"`, because on older hosts every such fetch returns the interstitial. Challenges needing a click or CAPTCHA still can't be cleared. See `PluginChallengeSolver.swift`. |
 
 ## Changing the contract (host-side)
 
@@ -46,6 +45,7 @@ The hope is that this happens approximately never. Additive evolution is the pat
 This doc describes intent. The authoritative surface lives in:
 
 - `Tomo/Core/Plugins/PluginHost.swift` — every host binding and its option shape.
+- `Tomo/Core/Plugins/PluginChallengeSolver.swift` — anti-bot interstitial clearing behind `fetch()`.
 - `Tomo/Core/Plugins/PluginResult.swift` — `PluginQuery` / `PluginResult` / `PluginField`.
 - `Tomo/Core/Plugins/PluginSource.swift` — `search` / `download` invocation, return-shape lifting.
 - `Tomo/Core/AppVersion.swift` — where the running app's version comes from.
