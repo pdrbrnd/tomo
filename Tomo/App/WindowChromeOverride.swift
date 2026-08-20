@@ -16,17 +16,24 @@ import os
 /// **What it does.** Replaces these four `NSThemeFrame` instance methods at
 /// app launch:
 ///   - `_cornerRadius` (CGFloat)
-///   - `_getCachedWindowCornerRadius` (CGFloat)
+///   - `_getCachedDefaultWindowCornerRadius` (CGFloat; named
+///     `_getCachedWindowCornerRadius` on macOS 26 — both are tried)
 ///   - `_topCornerSize` (CGSize)
 ///   - `_bottomCornerSize` (CGSize)
+///
+/// The per-corner machinery macOS 27 added (`_cornerRadii`, `_cornerPath`,
+/// `NSViewCornerRadii`) derives from these scalar getters as long as the
+/// swizzle lands *before* the first real window caches its radii — which is
+/// why `install` must stay in `TomoApp.init`.
 ///
 /// Once these return our value, AppKit draws frame, mask, and shadow at
 /// that radius natively — no compositing tricks, no shadow invalidation,
 /// no walk-up of layer hierarchies.
 ///
 /// **Risks and constraints.**
-///   - Private API. Verified on macOS 26.4 (2026-05-04). Re-verify after
-///     deployment-target bumps.
+///   - Private API. Verified on macOS 26.4 (2026-05-04) and macOS 27.0
+///     (2026-08-20; lazy class realization + renamed cached-radius
+///     selector). Re-verify after deployment-target bumps.
 ///   - App Store would reject this. Tomo ships via Homebrew cask
 ///     (sandbox off) per `CLAUDE.md`, so it's a non-issue.
 ///   - Replaces `NSThemeFrame`'s implementation globally for the process,
@@ -54,7 +61,7 @@ enum WindowChromeOverride {
         guard !installed else { return }
         installed = true
 
-        guard let themeFrame = NSClassFromString("NSThemeFrame") else {
+        guard let themeFrame = resolveThemeFrameClass() else {
             // NSThemeFrame is private — if Apple ever renames it, fail
             // soft and let the system render the default radius.
             logger.warning("NSThemeFrame not found — falling back to system corner radius")
@@ -68,7 +75,12 @@ enum WindowChromeOverride {
 
         let succeeded = [
             replace(themeFrame, selector: "_cornerRadius", with: cgFloatReturn),
-            replace(themeFrame, selector: "_getCachedWindowCornerRadius", with: cgFloatReturn),
+            // macOS 27 renamed the cached-radius getter; try new name first,
+            // fall back to the macOS 26 one. Either counts as success.
+            replace(
+                themeFrame, selector: "_getCachedDefaultWindowCornerRadius", with: cgFloatReturn,
+                warnIfMissing: false)
+                || replace(themeFrame, selector: "_getCachedWindowCornerRadius", with: cgFloatReturn),
             replace(themeFrame, selector: "_topCornerSize", with: cgSizeReturn),
             replace(themeFrame, selector: "_bottomCornerSize", with: cgSizeReturn),
         ]
@@ -156,15 +168,37 @@ enum WindowChromeOverride {
         return false
     }
 
+    /// Looks up `NSThemeFrame`, forcing AppKit to realize it first if needed.
+    /// On macOS 27 the class is registered lazily, so a plain
+    /// `NSClassFromString` at app init (before any window exists) returns
+    /// nil. Constructing a throwaway deferred window realizes the class;
+    /// the window is never ordered in and is released on return.
+    private static func resolveThemeFrameClass() -> AnyClass? {
+        if let cls = NSClassFromString("NSThemeFrame") { return cls }
+        let throwaway = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.titled], backing: .buffered, defer: true)
+        // Prefer taking the class straight off the live frame view — immune
+        // to name-lookup restrictions. Fall back to a post-realization lookup.
+        if let frameView = throwaway.contentView?.superview {
+            return type(of: frameView)
+        }
+        return NSClassFromString("NSThemeFrame")
+    }
+
     @discardableResult
     private static func replace(
         _ cls: AnyClass,
         selector name: String,
-        with block: Any
+        with block: Any,
+        warnIfMissing: Bool = true
     ) -> Bool {
         let sel = NSSelectorFromString(name)
         guard let method = class_getInstanceMethod(cls, sel) else {
-            logger.warning("Selector \(name) not found on \(NSStringFromClass(cls), privacy: .public)")
+            if warnIfMissing {
+                logger.warning(
+                    "Selector \(name) not found on \(NSStringFromClass(cls), privacy: .public)")
+            }
             return false
         }
         let imp = imp_implementationWithBlock(block)
