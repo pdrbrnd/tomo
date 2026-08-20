@@ -380,7 +380,9 @@ final class AppState {
     }
     var allRegistryURLs: [URL] { PluginRegistryStore.allRegistryURLs() }
     var userAddedRegistryURLs: [URL] { PluginRegistryStore.userAddedRegistryURLs() }
-    var defaultRegistryURL: URL { PluginRegistryStore.defaultRegistryURL }
+    var builtInRegistries: [PluginRegistryStore.BuiltInRegistry] {
+        PluginRegistryStore.builtInRegistries
+    }
 
     /// `SettingsSection.rawValue` to land on after `openWindow(settingsWindowID)`.
     /// Cleared by `SettingsRoot` once applied.
@@ -693,7 +695,7 @@ final class AppState {
     }
 
     func removeUserRegistry(_ url: URL) {
-        guard url != PluginRegistryStore.defaultRegistryURL else { return }
+        guard !PluginRegistryStore.builtInRegistryURLs.contains(url) else { return }
         var current = PluginRegistryStore.userAddedRegistryURLs()
         guard let idx = current.firstIndex(of: url) else { return }
         current.remove(at: idx)

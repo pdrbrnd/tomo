@@ -37,12 +37,13 @@ struct PluginsSettingsView: View {
             }
 
             section(title: "Registries", helper: registriesHelper) {
-                registriesRow(
-                    name: cachedRegistryName(for: state.defaultRegistryURL)
-                        ?? "Tomo Official Plugins",
-                    url: state.defaultRegistryURL,
-                    canRemove: false
-                )
+                ForEach(state.builtInRegistries, id: \.url) { registry in
+                    registriesRow(
+                        name: cachedRegistryName(for: registry.url) ?? registry.fallbackName,
+                        url: registry.url,
+                        canRemove: false
+                    )
+                }
                 ForEach(state.userAddedRegistryURLs, id: \.self) { url in
                     registriesRow(
                         name: cachedRegistryName(for: url) ?? url.host ?? url.absoluteString,

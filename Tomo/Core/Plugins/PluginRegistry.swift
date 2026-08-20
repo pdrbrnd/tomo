@@ -56,12 +56,30 @@ enum PluginRegistryError: Error, LocalizedError, Sendable {
 /// Reads / writes the user's registry URL list and per-URL cached responses.
 /// Network calls are explicit (`fetch...`) — nothing here runs on launch.
 nonisolated enum PluginRegistryStore {
-    /// The default Tomo registry. Hardcoded; always present in
-    /// `allRegistryURLs` regardless of user-added list. Users can't remove
-    /// it from settings (only ignore its plugins).
-    static let defaultRegistryURL = URL(
-        string: "https://raw.githubusercontent.com/pdrbrnd/tomo-plugins/main/registry.json"
-    )!
+    /// A registry that ships with the app. `fallbackName` labels the
+    /// settings row before the registry has ever been fetched (after a
+    /// fetch the registry's own `name` wins).
+    nonisolated struct BuiltInRegistry: Sendable, Hashable {
+        let fallbackName: String
+        let url: URL
+    }
+
+    /// The registries baked into the app. Hardcoded; always present in
+    /// `allRegistryURLs` regardless of the user-added list. Users can't
+    /// remove them from settings (only ignore their plugins). Each
+    /// registry is hosted and versioned independently.
+    static let builtInRegistries: [BuiltInRegistry] = [
+        BuiltInRegistry(
+            fallbackName: "Tomo Official Plugins",
+            url: URL(
+                string: "https://raw.githubusercontent.com/pdrbrnd/tomo-plugins/main/registry.json"
+            )!),
+        BuiltInRegistry(
+            fallbackName: "Tomo Extras",
+            url: URL(string: "https://extras.tomolibrary.com/registry.json")!),
+    ]
+
+    static var builtInRegistryURLs: [URL] { builtInRegistries.map(\.url) }
 
     private static let userAddedRegistriesKey = "pluginRegistries"
 
@@ -75,12 +93,12 @@ nonisolated enum PluginRegistryStore {
         UserDefaults.standard.set(urls.map(\.absoluteString), forKey: userAddedRegistriesKey)
     }
 
-    /// Default registry first, then user-added, deduped while preserving
+    /// Built-in registries first, then user-added, deduped while preserving
     /// order. Iteration order matches the Plugins settings UI.
     static func allRegistryURLs() -> [URL] {
         var seen = Set<URL>()
         var out: [URL] = []
-        for url in [defaultRegistryURL] + userAddedRegistryURLs() {
+        for url in builtInRegistryURLs + userAddedRegistryURLs() {
             if seen.insert(url).inserted { out.append(url) }
         }
         return out
