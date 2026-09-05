@@ -201,7 +201,7 @@ private struct SourcesPopoverContent: View {
         panel.allowedContentTypes = [UTType.javaScript, UTType(filenameExtension: "js") ?? UTType.javaScript]
         panel.prompt = "Install"
         panel.message = "Choose a plugin .js file."
-        if panel.runModal() == .OK, let url = panel.url {
+        if CrashReporter.runModal(panel) == .OK, let url = panel.url {
             Task { await state.installPlugin(from: url) }
         }
     }

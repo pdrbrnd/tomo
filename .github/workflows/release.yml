@@ -129,6 +129,19 @@ jobs:
             dist/Tomo-*.dmg.sha256
           generate_release_notes: true
 
+      # Without symbols, Sentry shows Tomo's own frames as <unknown> and
+      # every hang/crash is unattributable. The archive step already emits
+      # dSYMs (Release is dwarf-with-dsym). Runs after the release exists
+      # so a Sentry outage can't block shipping the DMG.
+      - name: Upload dSYMs to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: pdrbrnd
+          SENTRY_PROJECT: tomo-macos
+        run: |
+          curl -sL https://sentry.io/get-cli/ | SENTRY_CLI_VERSION="3.7.0" bash
+          sentry-cli debug-files upload --include-sources "$RUNNER_TEMP/Tomo.xcarchive/dSYMs"
+
       - name: Update appcast and landing page
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

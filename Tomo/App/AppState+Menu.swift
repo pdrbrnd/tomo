@@ -21,7 +21,7 @@ extension AppState {
             UTType(filenameExtension: $0)
         }
         panel.prompt = "Import"
-        guard panel.runModal() == .OK else { return }
+        guard CrashReporter.runModal(panel) == .OK else { return }
         importBooks(from: panel.urls)
     }
 
@@ -33,7 +33,7 @@ extension AppState {
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         panel.message = "Select your Tomo library folder."
-        if panel.runModal() == .OK, let url = panel.url {
+        if CrashReporter.runModal(panel) == .OK, let url = panel.url {
             libraryFolder = url
         }
     }
@@ -47,7 +47,7 @@ extension AppState {
         panel.allowedContentTypes = [UTType(filenameExtension: "js") ?? .javaScript]
         panel.prompt = "Install"
         panel.message = "Choose a plugin .js file."
-        if panel.runModal() == .OK, let url = panel.url {
+        if CrashReporter.runModal(panel) == .OK, let url = panel.url {
             await installPlugin(from: url)
         }
     }

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Sentry
 import os
@@ -43,6 +44,20 @@ enum CrashReporter {
             telemetryLogger.info("Sent test event to Sentry")
         }
     #endif
+
+    /// Runs a modal file panel without it being reported as an app hang.
+    ///
+    /// `runModal` blocks the main run loop for as long as the panel is up —
+    /// that's what modal means — and Sentry's hang detector can't tell it
+    /// apart from a stall. It was the single noisiest issue in the project
+    /// (TOMO-MACOS-7). Pausing only mutes *reporting*; detection keeps
+    /// running and resumes reporting when the panel closes. Safe to call
+    /// when the SDK isn't started (both calls no-op).
+    static func runModal(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
+        SentrySDK.pauseAppHangTracking()
+        defer { SentrySDK.resumeAppHangTracking() }
+        return panel.runModal()
+    }
 
     static func start() {
         guard isEnabled else {
