@@ -14,15 +14,20 @@ import Testing
 ///     TEST_RUNNER_TOMO_PLUGIN_E2E=1 \
 ///     TEST_RUNNER_TOMO_PLUGIN_E2E_DIR="$HOME/code/tomo-plugins/plugins:$HOME/Library/Application Support/com.pdrbrnd.tomo/plugins" \
 ///     xcodebuild test -project Tomo.xcodeproj -scheme Tomo -destination 'platform=macOS' \
-///       -only-testing:TomoTests/PluginEndToEndTests
+///       -parallel-testing-enabled NO -only-testing:TomoTests/PluginEndToEndTests
 ///
 /// (`xcodebuild` forwards `TEST_RUNNER_*` variables to the test process with
 /// the prefix stripped.) `TOMO_PLUGIN_E2E_DIR` is a colon-separated list of
 /// directories; it defaults to the app's installed plugins folder.
 /// `TOMO_PLUGIN_E2E_QUERY` overrides the search text for every plugin.
 ///
-/// Runs serialized: plugins share `HTTPCookieStorage.shared` and the challenge
-/// solver's webview, and parallel scraping of the same host gets rate-limited.
+/// Runs serialized, and `-parallel-testing-enabled NO` matters: with it on,
+/// Xcode spawns two runner processes that both execute this suite at once.
+/// Two clients solving the same DDoS-Guard challenge from one IP invalidate
+/// each other's cookies, so one of them fails — a harness artifact that looks
+/// exactly like a plugin bug (that's how it was first misdiagnosed).
+/// Plugins also share `HTTPCookieStorage.shared` and the solver's webview,
+/// and bursts against one host get 429 rate-limit pages.
 @Suite("Plugins end-to-end", .enabled(if: PluginEndToEnd.isEnabled), .serialized)
 @MainActor
 struct PluginEndToEndTests {
