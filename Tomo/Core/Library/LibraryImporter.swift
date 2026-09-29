@@ -251,6 +251,7 @@ actor LibraryImporter {
             id: bookID,
             title: metadata.title,
             authors: metadata.authors,
+            series: metadata.series,
             year: metadata.year,
             locale: locale,
             coverPath: coverFileName,
@@ -288,6 +289,7 @@ actor LibraryImporter {
             return ImportedFileMetadata(
                 title: m.title,
                 authors: m.authors,
+                series: m.series,
                 language: m.language,
                 year: m.year,
                 coverImage: m.coverImage.map {
@@ -299,6 +301,7 @@ actor LibraryImporter {
             return ImportedFileMetadata(
                 title: m.title,
                 authors: m.authors,
+                series: [],
                 language: m.language,
                 year: m.year,
                 coverImage: m.coverImage.map {
@@ -346,6 +349,7 @@ actor LibraryImporter {
 struct ImportedFileMetadata: Sendable {
     let title: String
     let authors: [String]
+    let series: [BookSeries]
     let language: String?
     let year: Int?
     let coverImage: CoverImage?

@@ -11,17 +11,21 @@ import ZIPFoundation
         title: String,
         authors: [String],
         locale: String,
+        series: [BookSeries] = [],
+        metadataVersion: Int = Book.currentMetadataVersion,
         fileURL: URL
     ) -> Book {
         Book(
             id: UUID(),
             title: title,
             authors: authors,
+            series: series,
             year: nil,
             locale: locale,
             coverPath: nil,
             dateAdded: Date(),
-            fileURL: fileURL
+            fileURL: fileURL,
+            metadataVersion: metadataVersion
         )
     }
 
@@ -147,6 +151,127 @@ import ZIPFoundation
         #expect(opfText.contains("Le Guin, Ursula K."))
     }
 
+    // MARK: - Series
+
+    private static let epub3Series = """
+        <meta property="belongs-to-collection" id="c1">Saga</meta>
+        <meta refines="#c1" property="collection-type">series</meta>
+        <meta refines="#c1" property="group-position">5.0</meta>
+        <meta property="belongs-to-collection" id="c2">Publisher Set</meta>
+        """
+
+    private static let calibreSeries = """
+        <meta name="calibre:series" content="Saga"/>
+        <meta name="calibre:series_index" content="2.0"/>
+        """
+
+    /// Book whose title/authors/language match `seriesEPUB`, so only series
+    /// can trigger a rewrite.
+    private func matchingBook(
+        series: [BookSeries],
+        metadataVersion: Int = Book.currentMetadataVersion,
+        fileURL: URL
+    ) -> Book {
+        makeBook(
+            title: "Title", authors: ["Author"], locale: "en", series: series,
+            metadataVersion: metadataVersion, fileURL: fileURL)
+    }
+
+    @Test func parsesEPUB3SeriesAndSkipsOtherCollections() throws {
+        let source = try MetaEPUBFixture.series(version: "3.0", metadata: Self.epub3Series)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let epub = try EPUBArchive.open(source)
+        #expect(epub.opf.series == [BookSeries(name: "Saga", position: "5")])
+    }
+
+    @Test func parsesCalibreSeriesFallback() throws {
+        let source = try MetaEPUBFixture.series(version: "2.0", metadata: Self.calibreSeries)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let epub = try EPUBArchive.open(source)
+        #expect(epub.opf.series == [BookSeries(name: "Saga", position: "2")])
+    }
+
+    @Test func removedSeriesIsStrippedFromCopy() throws {
+        let source = try MetaEPUBFixture.series(version: "3.0", metadata: Self.epub3Series)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let book = matchingBook(series: [], fileURL: source)
+        let corrected = try #require(
+            EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch))
+
+        let epub = try EPUBArchive.open(corrected)
+        #expect(epub.opf.series.isEmpty)
+        let opfText = String(decoding: try #require(epub.data(at: epub.opfPath)), as: UTF8.self)
+        #expect(opfText.contains("Publisher Set"))
+    }
+
+    @Test func unmigratedBookKeepsEPUBSeries() throws {
+        let source = try MetaEPUBFixture.series(version: "3.0", metadata: Self.epub3Series)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        // Empty because Tomo hasn't read the series yet, not because the
+        // user removed it.
+        let book = matchingBook(series: [], metadataVersion: 1, fileURL: source)
+        #expect(EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch) == nil)
+    }
+
+    @Test func rewritesEPUB3SeriesAndKeepsOtherCollections() throws {
+        let source = try MetaEPUBFixture.series(version: "3.0", metadata: Self.epub3Series)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let book = matchingBook(series: [BookSeries(name: "Other Saga", position: "1.5")], fileURL: source)
+        let corrected = try #require(
+            EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch))
+
+        let epub = try EPUBArchive.open(corrected)
+        #expect(epub.opf.series == [BookSeries(name: "Other Saga", position: "1.5")])
+        let opfText = String(decoding: try #require(epub.data(at: epub.opfPath)), as: UTF8.self)
+        #expect(opfText.contains("Publisher Set"))
+        #expect(!opfText.contains(">Saga<"))
+    }
+
+    @Test func rewritesEPUB2SeriesAsCalibreTags() throws {
+        let source = try MetaEPUBFixture.series(version: "2.0", metadata: Self.calibreSeries)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let book = matchingBook(
+            series: [BookSeries(name: "Saga", position: "3"), BookSeries(name: "Second", position: "1")],
+            fileURL: source)
+        let corrected = try #require(
+            EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch))
+
+        // EPUB 2 carries a single series: the first one.
+        let epub = try EPUBArchive.open(corrected)
+        #expect(epub.opf.series == [BookSeries(name: "Saga", position: "3")])
+    }
+
+    @Test func unwritablePositionDoesNotForceRewrite() throws {
+        let source = try MetaEPUBFixture.series(
+            version: "3.0",
+            metadata: """
+                <meta property="belongs-to-collection" id="c1">Saga</meta>
+                <meta refines="#c1" property="collection-type">series</meta>
+                """)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        // "2a" can't go into `group-position`, so writing would produce what
+        // the EPUB already has.
+        let book = matchingBook(series: [BookSeries(name: "Saga", position: "2a")], fileURL: source)
+        #expect(EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch) == nil)
+    }
+
     @Test func overrideAppliesInEPUBSource() throws {
         let source = try MetaEPUBFixture.minimal(
             title: "Old", authors: ["Old"], language: "en",
@@ -209,6 +334,34 @@ private enum MetaEPUBFixture {
             files[doc.href] = Data(xhtml.utf8)
         }
         return try custom(opf: opf, files: files)
+    }
+
+    /// Title "Title", author "Author", language "en", plus `metadata` spliced
+    /// into `<metadata>`.
+    static func series(version: String, metadata: String) throws -> URL {
+        let opf = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package xmlns="http://www.idpf.org/2007/opf" version="\(version)" unique-identifier="id">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+                <dc:title>Title</dc:title>
+                <dc:identifier id="id">x</dc:identifier>
+                <dc:creator>Author</dc:creator>
+                <dc:language>en</dc:language>
+                \(metadata)
+              </metadata>
+              <manifest>
+                <item id="item0" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+              </manifest>
+              <spine>
+                <itemref idref="item0"/>
+              </spine>
+            </package>
+            """
+        let body = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml"><head><title>x</title></head><body><p>B</p></body></html>
+            """
+        return try custom(opf: opf, files: ["ch1.xhtml": Data(body.utf8)])
     }
 
     /// Builds a ZIP with `mimetype`, `META-INF/container.xml`,

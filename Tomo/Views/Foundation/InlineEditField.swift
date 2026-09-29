@@ -20,7 +20,13 @@ struct InlineEditField: View {
     var font: Font = .system(size: 13)
     var color: Color = .primary
     var alignment: Alignment = .leading
+    /// Wrap onto a second line instead of scrolling. Only for values that
+    /// are often long (titles, author lists): a wrapping field grows an empty
+    /// second line when its text ends exactly at the edge.
+    var wraps = false
     var completion: ((String) -> String?)? = nil
+    /// Focus the field as soon as it appears (e.g. a row the user just added).
+    var focusOnAppear = false
     let onCommit: (String) -> Void
 
     @State private var draft = ""
@@ -32,12 +38,12 @@ struct InlineEditField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        TextField(placeholder, text: $draft, axis: .vertical)
+        TextField(placeholder, text: $draft, axis: wraps ? .vertical : .horizontal)
             .textFieldStyle(.plain)
             .font(font)
             .foregroundStyle(color)
             .multilineTextAlignment(alignment.horizontal == .trailing ? .trailing : .leading)
-            .lineLimit(1...2)
+            .lineLimit(wraps ? 2 : 1)
             .focused($focused)
             .overlay(alignment: .topLeading) { completionGhost }
             .onSubmit { focused = false }
@@ -56,6 +62,11 @@ struct InlineEditField: View {
                 typingAtEnd = focused && new != old && (new.hasPrefix(old) || old.hasPrefix(new))
             }
             .onAppear { draft = value }
+            .task {
+                // Deferred past `onAppear` so the field is in the window
+                // when focus is requested.
+                if focusOnAppear { focused = true }
+            }
             .onChange(of: value) { _, newValue in
                 if !focused { draft = newValue }
             }
@@ -97,7 +108,7 @@ struct InlineEditField: View {
             let remainder = String(completed.dropFirst(draft.count))
             Text("\(Text(draft).foregroundStyle(.clear))\(Text(remainder).foregroundStyle(.primary.opacity(Theme.Text.placeholder)))")
                 .font(font)
-                .lineLimit(1...2)
+                .lineLimit(wraps ? 2 : 1)
                 .allowsHitTesting(false)
         }
     }
@@ -109,8 +120,8 @@ struct InlineEditField: View {
     }
 
     private func commit() {
-        // The field wraps, so a pasted or Option-Return line break can get
-        // in. Values are single-line (titles become folder names).
+        // A wrapping field accepts pasted or Option-Return line breaks.
+        // Values are single-line (titles become folder names).
         let singleLine = draft
             .components(separatedBy: .newlines)
             .joined(separator: " ")

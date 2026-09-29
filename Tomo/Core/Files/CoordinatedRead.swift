@@ -37,7 +37,7 @@ enum CoordinatedRead {
 
     /// True only for an iCloud item that isn't downloaded yet. A local file,
     /// or an iCloud file already present, returns false.
-    private static func needsDownload(_ url: URL) -> Bool {
+    nonisolated static func needsDownload(_ url: URL) -> Bool {
         let keys: Set<URLResourceKey> = [
             .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
         ]

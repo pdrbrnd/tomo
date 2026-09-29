@@ -101,9 +101,9 @@ nonisolated struct Kobo: BookDevice {
         let dest = volumeURL.appending(component: deviceFilename(for: book))
 
         // Kobo reads the EPUB's embedded `content.opf`, not Tomo's sidecar, so
-        // project the user's edited title/author/language onto a scratch copy
-        // before sending. Only EPUB carries rewritable OPF metadata; PDF and
-        // anything else passes through untouched. The rewrite is best-effort —
+        // project the user's edited title/author/language/series onto a
+        // scratch copy before sending. Only EPUB carries rewritable OPF
+        // metadata; PDF and anything else passes through untouched. The rewrite is best-effort —
         // `metadataCorrectedCopy` returns nil (and we send the original) when
         // nothing changed or the EPUB can't be parsed.
         guard book.fileURL.pathExtension.lowercased() == "epub" else {

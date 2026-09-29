@@ -43,6 +43,8 @@ struct BookInspector: View {
     let allCollections: [Collection]
     /// Book count per author, for inline completion in the Authors field.
     var authorCounts: [String: Int] = [:]
+    /// Book count per series, for inline completion in the series name field.
+    var seriesCounts: [String: Int] = [:]
 
     let onUpdate: (Book) -> Void
     /// Runs the classifier on the inspector's book. Returns the classifier
@@ -81,6 +83,9 @@ struct BookInspector: View {
     @State private var transientClassification: Classification?
     @State private var classifyingTask: Task<Void, Never>?
     @State private var clearConfidenceTask: Task<Void, Never>?
+    /// Index of the series row "Add series" just appended; its name field
+    /// takes focus when the row appears after the save.
+    @State private var seriesIndexToFocus: Int?
 
     @Environment(\.openWindow) private var openWindow
 
@@ -107,6 +112,7 @@ struct BookInspector: View {
             classifyingTask?.cancel()
             clearConfidenceTask?.cancel()
             transientClassification = nil
+            seriesIndexToFocus = nil
         }
     }
 
@@ -208,8 +214,8 @@ struct BookInspector: View {
         }
     }
 
-    /// Bibliographic section: title, authors, year. Same metaRow visual
-    /// treatment as the standard metadata below, but conceptually a
+    /// Bibliographic section: title, authors, series, year. Same metaRow
+    /// visual treatment as the standard metadata below, but conceptually a
     /// distinct group (the things describing the work itself, vs. file /
     /// origin / state metadata).
     private func bibliographicSection(for book: Book) -> some View {
@@ -220,6 +226,7 @@ struct BookInspector: View {
                     placeholder: "Title",
                     font: .system(size: 12, weight: .regular),
                     color: .primary.opacity(0.92),
+                    wraps: true,
                     onCommit: { newValue in
                         guard !newValue.isEmpty else { return }
                         var updated = book
@@ -235,6 +242,7 @@ struct BookInspector: View {
                     placeholder: "Authors",
                     font: .system(size: 12, weight: .regular),
                     color: .primary.opacity(0.92),
+                    wraps: true,
                     completion: { listCompletion(for: $0, in: authorCounts) },
                     onCommit: { newValue in
                         let parsed =
@@ -261,6 +269,78 @@ struct BookInspector: View {
                         onUpdate(updated)
                     }
                 )
+            }
+
+            ForEach(book.series.indices, id: \.self) { index in
+                let membership = book.series[index]
+                editableRow(label: index == 0 ? "Series" : "") {
+                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                        InlineEditField(
+                            value: membership.name,
+                            placeholder: "Series name",
+                            font: .system(size: 12, weight: .regular),
+                            color: .primary.opacity(0.92),
+                            completion: { prefixCompletion(for: $0, in: seriesCounts) },
+                            focusOnAppear: index == seriesIndexToFocus,
+                            onCommit: { newValue in
+                                var updated = book
+                                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if trimmed.isEmpty && updated.series[index].position == nil {
+                                    updated.series.remove(at: index)
+                                } else {
+                                    updated.series[index].name = trimmed
+                                }
+                                onUpdate(updated)
+                            }
+                        )
+
+                        InlineEditField(
+                            value: membership.position ?? "",
+                            placeholder: "No.",
+                            font: .system(size: 12, weight: .regular).monospacedDigit(),
+                            color: .primary.opacity(0.92),
+                            alignment: .trailing,
+                            onCommit: { newValue in
+                                var updated = book
+                                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                updated.series[index].position = trimmed.isEmpty ? nil : trimmed
+                                if updated.series[index].name.isEmpty && updated.series[index].position == nil {
+                                    updated.series.remove(at: index)
+                                }
+                                onUpdate(updated)
+                            }
+                        )
+                        .frame(width: 44)
+
+                        Button {
+                            var updated = book
+                            updated.series.remove(at: index)
+                            onUpdate(updated)
+                        } label: {
+                            Icon(symbol: "minus.circle", weight: .regular, size: 12)
+                                .foregroundStyle(.primary.opacity(Theme.Text.placeholder))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove series")
+                    }
+                }
+            }
+
+            editableRow(label: book.series.isEmpty ? "Series" : "") {
+                Button {
+                    var updated = book
+                    updated.series.append(BookSeries(name: "", position: nil))
+                    seriesIndexToFocus = book.series.count
+                    onUpdate(updated)
+                } label: {
+                    HStack(spacing: 5) {
+                        Icon(symbol: "plus", weight: .regular, size: 11)
+                        Text("Add series")
+                    }
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(.primary.opacity(Theme.Text.muted))
+                }
+                .buttonStyle(.plain)
             }
         }
     }

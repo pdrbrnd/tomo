@@ -59,6 +59,15 @@ nonisolated enum FolderRelocateOutcome: Equatable {
     case collision(target: URL)
 }
 
+/// Whether an edit changes the fields used to derive a book's library folder.
+/// Metadata-only edits (series, language, cover, and similar fields) should not
+/// try to relocate a book that already lives in a non-canonical folder.
+nonisolated func bookFolderMetadataChanged(from original: Book, to updated: Book) -> Bool {
+    original.title != updated.title
+        || original.authors.first != updated.authors.first
+        || original.year != updated.year
+}
+
 nonisolated struct FolderRelocateResult {
     let book: Book
     let outcome: FolderRelocateOutcome
@@ -231,6 +240,10 @@ final class AppState {
     /// book counts once per distinct author it credits.
     private(set) var authorCounts: [String: Int] = [:]
 
+    /// Number of books per series name. Series names are trimmed and matched
+    /// case-insensitively, and a book counts once per distinct series.
+    private(set) var seriesCounts: [String: Int] = [:]
+
     private func recomputeCounts() {
         var coll: [UUID: Int] = [:]
         for book in books {
@@ -265,6 +278,22 @@ final class AppState {
             }
         }
         authorCounts = auth
+
+        var seriesNames: [String: String] = [:]
+        var series: [String: Int] = [:]
+        for book in books {
+            var seen: Set<String> = []
+            for membership in book.series {
+                let name = membership.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { continue }
+                let key = name.lowercased()
+                guard seen.insert(key).inserted else { continue }
+                let displayName = seriesNames[key] ?? name
+                seriesNames[key] = displayName
+                series[displayName, default: 0] += 1
+            }
+        }
+        seriesCounts = series
     }
 
     /// Splits a raw author field on commas and trims. Empties drop out.
@@ -746,7 +775,19 @@ final class AppState {
 
         var successes = 0
         var lastError: Error?
+        var didMigrate = false
         for (index, book) in toSend.enumerated() {
+            var book = book
+            if MetadataMigration.needsMigration(book) {
+                // The background pass skips evicted files. Sending needs the
+                // file anyway, so download and migrate first: the device gets
+                // the book's full metadata.
+                try? await CoordinatedRead.ensureDownloaded(book.fileURL)
+                if let migrated = await migrateMetadata(of: book) {
+                    book = migrated
+                    didMigrate = true
+                }
+            }
             do {
                 try await device.copy(book)
                 successes += 1
@@ -759,6 +800,7 @@ final class AppState {
             }
         }
         deviceFilenames = await Task.detached { device.filenames() }.value
+        if didMigrate { await loadBooks() }
 
         if let lastError, successes == 0 {
             deviceSendState = .error(lastError.localizedDescription)
@@ -1118,8 +1160,13 @@ final class AppState {
         // then file slug (author-title-year.ext). Folder first so the slug
         // rename happens inside the new folder and we don't have to undo a
         // file move across folder boundaries on failure.
+        let previousBook = books.first { $0.id == book.id }
+        let shouldRelocate = previousBook.map {
+            bookFolderMetadataChanged(from: $0, to: book)
+        } ?? true
+
         let relocated: FolderRelocateResult
-        if let libraryFolder {
+        if let libraryFolder, shouldRelocate {
             relocated = await Task.detached {
                 relocateBookFolderIfChanged(book, libraryRoot: libraryFolder)
             }.value
@@ -1553,6 +1600,7 @@ final class AppState {
                 "sync: \(sidecars.count) on disk, +\(toAdd.count) -\(orphans.count)")
             await loadBooks()
             await migrateBookFilenames()
+            await migrateBookMetadata()
         } catch is CancellationError {
             libraryLogger.info("sync cancelled")
         } catch {
@@ -1600,6 +1648,53 @@ final class AppState {
             libraryLogger.info(
                 "filename migration: renamed \(migrated, privacy: .public) book(s)")
             await loadBooks()
+        }
+    }
+
+    /// Per-book metadata migration (see `MetadataMigration`): fills fields
+    /// newer versions read on import into books imported before them. Books
+    /// whose file is evicted from iCloud are skipped and retried on the next
+    /// sync, so this never triggers downloads.
+    private func migrateBookMetadata() async {
+        let stale = books.filter(MetadataMigration.needsMigration)
+        guard !stale.isEmpty else { return }
+        var migrated = 0
+        for book in stale {
+            // Sync is cancelled when the library folder changes; stop rather
+            // than keep writing into the previous library.
+            if Task.isCancelled { break }
+            if await migrateMetadata(of: book) != nil { migrated += 1 }
+        }
+        if migrated > 0 {
+            libraryLogger.info(
+                "metadata migration: updated \(migrated, privacy: .public) of \(stale.count, privacy: .public) book(s)")
+            await loadBooks()
+        }
+    }
+
+    /// Migrates and persists one book. Returns the migrated book, or nil when
+    /// it was skipped (file evicted) or the write failed. Caller reloads.
+    private func migrateMetadata(of book: Book) async -> Book? {
+        guard let index else { return nil }
+        let source = await Task.detached { MetadataMigration.readSource(for: book) }.value
+        if case .evicted = source { return nil }
+        // Apply onto the book as it is now, in case it was edited while the
+        // file was being read.
+        let current = books.first { $0.id == book.id } ?? book
+        let updated = MetadataMigration.migrated(current, from: source)
+        let bookFolder = updated.fileURL.deletingLastPathComponent()
+        let names = collectionNames(for: updated.collectionIDs)
+        do {
+            try await Task.detached {
+                try MetadataSidecar.write(updated, collectionNames: names, to: bookFolder)
+            }.value
+            try await index.update(updated)
+            return updated
+        } catch {
+            libraryLogger.error(
+                "metadata migration failed for \(book.title, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
         }
     }
 

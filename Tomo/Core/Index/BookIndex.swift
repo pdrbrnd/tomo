@@ -33,21 +33,24 @@ actor BookIndex {
 
     func add(_ book: Book) async throws {
         let authorsJson = try Self.encodeJSON(book.authors)
+        let seriesJson = try Self.encodeJSON(book.series)
         try await pool.write { db in
             try db.execute(
                 sql: """
-                    INSERT INTO books (id, title, authors_json, locale, year, file_path, cover_path, date_added)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO books (id, title, authors_json, series_json, locale, year, file_path, cover_path, date_added, metadata_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                 arguments: [
                     book.id.uuidString,
                     book.title,
                     authorsJson,
+                    seriesJson,
                     book.locale,
                     book.year,
                     book.fileURL.path(percentEncoded: false),
                     book.coverPath,
                     book.dateAdded,
+                    book.metadataVersion,
                 ]
             )
         }
@@ -58,23 +61,27 @@ actor BookIndex {
     /// INSERT in `add`; callers reload once after the whole batch.
     func addBooks(_ books: [Book]) async throws {
         guard !books.isEmpty else { return }
-        let rows = try books.map { ($0, try Self.encodeJSON($0.authors)) }
+        let rows = try books.map {
+            ($0, try Self.encodeJSON($0.authors), try Self.encodeJSON($0.series))
+        }
         try await pool.write { db in
-            for (book, authorsJson) in rows {
+            for (book, authorsJson, seriesJson) in rows {
                 try db.execute(
                     sql: """
-                        INSERT INTO books (id, title, authors_json, locale, year, file_path, cover_path, date_added)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO books (id, title, authors_json, series_json, locale, year, file_path, cover_path, date_added, metadata_version)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                     arguments: [
                         book.id.uuidString,
                         book.title,
                         authorsJson,
+                        seriesJson,
                         book.locale,
                         book.year,
                         book.fileURL.path(percentEncoded: false),
                         book.coverPath,
                         book.dateAdded,
+                        book.metadataVersion,
                     ]
                 )
             }
@@ -229,27 +236,32 @@ actor BookIndex {
 
     func update(_ book: Book) async throws {
         let authorsJson = try Self.encodeJSON(book.authors)
+        let seriesJson = try Self.encodeJSON(book.series)
         try await pool.write { db in
             try db.execute(
                 sql: """
                     UPDATE books SET
                             title = ?,
                             authors_json = ?,
+                            series_json = ?,
                             locale = ?,
                             year = ?,
                             file_path = ?,
                             cover_path = ?,
-                            date_added = ?
+                            date_added = ?,
+                            metadata_version = ?
                     WHERE id = ?
                     """,
                 arguments: [
                     book.title,
                     authorsJson,
+                    seriesJson,
                     book.locale,
                     book.year,
                     book.fileURL.path(percentEncoded: false),
                     book.coverPath,
                     book.dateAdded,
+                    book.metadataVersion,
                     book.id.uuidString,
                 ]
             )
@@ -350,6 +362,20 @@ actor BookIndex {
             }
         }
 
+        m.registerMigration("v7_book_series") { db in
+            try db.alter(table: "books") { t in
+                t.add(column: "series_json", .text).notNull().defaults(to: "[]")
+            }
+        }
+
+        // Existing rows predate the column, so they get 1 — matching their
+        // sidecars, which were all written at version 1.
+        m.registerMigration("v8_metadata_version") { db in
+            try db.alter(table: "books") { t in
+                t.add(column: "metadata_version", .integer).notNull().defaults(to: 1)
+            }
+        }
+
         return m
     }
 
@@ -400,6 +426,7 @@ actor BookIndex {
         let idString: String? = row["id"]
         let title: String? = row["title"]
         let authorsJson: String? = row["authors_json"]
+        let seriesJson: String? = row["series_json"]
         let filePath: String? = row["file_path"]
         let dateAdded: Date? = row["date_added"]
 
@@ -419,16 +446,20 @@ actor BookIndex {
         let locale: String = row["locale"] ?? "und"
         let year: Int? = row["year"]
         let coverPath: String? = row["cover_path"]
+        let series = seriesJson.flatMap { decodeJSON($0, as: [BookSeries].self) } ?? []
+        let metadataVersion: Int = row["metadata_version"] ?? 1
 
         return Book(
             id: id,
             title: title,
             authors: authors,
+            series: series,
             year: year,
             locale: locale,
             coverPath: coverPath,
             dateAdded: dateAdded,
-            fileURL: URL(fileURLWithPath: filePath)
+            fileURL: URL(fileURLWithPath: filePath),
+            metadataVersion: metadataVersion
         )
     }
 }

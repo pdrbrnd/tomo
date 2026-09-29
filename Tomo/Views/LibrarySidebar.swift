@@ -12,15 +12,18 @@ enum DeviceFilter: String, Hashable {
 ///   - All Books (clears all axes)
 ///   - Device (only when a device is connected)
 ///   - Collections (user-created, with create/rename/delete + drag-to-add)
+///   - Series (auto-populated from book metadata)
 ///   - Languages (auto-populated from the books' locales)
 struct LibrarySidebar: View {
     @Binding var selectedCollection: UUID?
+    @Binding var selectedSeries: String?
     @Binding var selectedLanguage: String?
     @Binding var selectedAuthor: String?
     @Binding var selectedDeviceFilter: DeviceFilter?
     let totalBooks: Int
     let collections: [Collection]
     let collectionCounts: [UUID: Int]
+    let seriesCounts: [String: Int]
     let languageCounts: [String: Int]
     let authorCounts: [String: Int]
     let deviceConnected: Bool
@@ -80,6 +83,10 @@ struct LibrarySidebar: View {
         authorCounts.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
+    private var sortedSeries: [String] {
+        seriesCounts.keys.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     private var collapsedSections: Set<String> {
         Set(collapsedRaw.split(separator: ",").map(String.init))
     }
@@ -101,6 +108,7 @@ struct LibrarySidebar: View {
     private enum SectionID {
         static let device = "device"
         static let collections = "collections"
+        static let series = "series"
         static let languages = "languages"
         static let authors = "authors"
     }
@@ -118,6 +126,10 @@ struct LibrarySidebar: View {
                         }
 
                         collectionsSection
+
+                        if !sortedSeries.isEmpty {
+                            seriesSection
+                        }
 
                         if !sortedAuthors.isEmpty {
                             authorsSection
@@ -145,6 +157,7 @@ struct LibrarySidebar: View {
                 label: "All Books",
                 count: totalBooks,
                 isSelected: selectedCollection == nil
+                    && selectedSeries == nil
                     && selectedLanguage == nil
                     && selectedAuthor == nil
                     && selectedDeviceFilter == nil
@@ -201,6 +214,29 @@ struct LibrarySidebar: View {
 
                     if creatingCollection {
                         newCollectionField
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Series
+
+    private var seriesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sidebarSectionHeader("Series", id: SectionID.series)
+
+            if !isCollapsed(SectionID.series) {
+                VStack(spacing: Self.rowSpacing) {
+                    ForEach(sortedSeries, id: \.self) { name in
+                        row(
+                            label: name,
+                            count: seriesCounts[name] ?? 0,
+                            isSelected: selectedSeries?.localizedCaseInsensitiveCompare(name) == .orderedSame
+                        ) {
+                            selectedSeries = selectedSeries?.localizedCaseInsensitiveCompare(name) == .orderedSame
+                                ? nil : name
+                        }
                     }
                 }
             }

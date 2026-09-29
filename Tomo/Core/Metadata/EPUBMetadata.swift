@@ -4,6 +4,7 @@ import os
 struct EPUBMetadata: Sendable {
     let title: String
     let authors: [String]
+    let series: [BookSeries]
     let language: String?
     let year: Int?
     let coverImage: CoverImage?
@@ -23,6 +24,7 @@ extension EPUBMetadata {
         return EPUBMetadata(
             title: title,
             authors: epub.opf.authors,
+            series: epub.opf.series,
             language: epub.opf.language,
             year: epub.opf.date.flatMap(yearFromEPUBDate),
             coverImage: readCover(from: epub)

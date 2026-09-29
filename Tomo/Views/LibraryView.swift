@@ -20,6 +20,7 @@ struct LibraryView: View {
     @State private var searchText = ""
     @State private var selectedLanguage: String?
     @State private var selectedCollection: UUID?
+    @State private var selectedSeries: String?
     @State private var selectedAuthor: String?
     @State private var selectedDeviceFilter: DeviceFilter?
     @State private var booksPendingDelete: [Book] = []
@@ -103,9 +104,8 @@ struct LibraryView: View {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// Collection + language are independent axes AND'd with each other and
-    /// with the search query. Standard "OR within an axis, AND between axes"
-    /// — degenerate to single-select since each axis only holds one value.
+    /// Collection, series, language, author, and device are independent axes
+    /// AND'd with each other and with the search query.
     private var sortKey: BookSort {
         BookSort(rawValue: sortKeyRaw) ?? .title
     }
@@ -123,13 +123,33 @@ struct LibraryView: View {
         }
         let filtered = bySearch.filter { book in
             (selectedCollection.map { book.collectionIDs.contains($0) } ?? true)
+                && (selectedSeries.map { name in
+                    book.series.contains {
+                        $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame
+                    }
+                } ?? true)
                 && (selectedLanguage.map { matchesSidebarLanguage(book: book, base: $0) } ?? true)
                 && (selectedAuthor.map { author in
                     book.authors.flatMap(AppState.splitAuthors).contains(author)
                 } ?? true)
                 && (selectedDeviceFilter.map { matches(deviceFilter: $0, book: book) } ?? true)
         }
+        if let selectedSeries {
+            return filtered.sorted { lhs, rhs in
+                let leftPosition = seriesMembership(in: lhs, named: selectedSeries)?.position
+                let rightPosition = seriesMembership(in: rhs, named: selectedSeries)?.position
+                if BookSeries.positionComesBefore(leftPosition, rightPosition) { return true }
+                if BookSeries.positionComesBefore(rightPosition, leftPosition) { return false }
+                return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+            }
+        }
         return filtered.sorted(by: sortKey, ascending: sortAscending)
+    }
+
+    private func seriesMembership(in book: Book, named name: String) -> BookSeries? {
+        book.series.first {
+            $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }
     }
 
     /// Sidebar language selections are base BCP 47 codes ("pt", "en"). A
@@ -157,12 +177,13 @@ struct LibraryView: View {
         if query.isbn != nil || query.publisher != nil { return false }
         if !query.text.isEmpty {
             // Implicit-AND across words: every word in the query must appear
-            // somewhere in the combined title + authors text, in any order and
-            // across either field. Lets "vonnegut slaughterhouse" match
+            // somewhere in the combined title + authors + series text, in any
+            // order and across any field. Lets "vonnegut slaughterhouse" match
             // "Slaughterhouse-Five" by "Kurt Vonnegut". Substring (not
             // word-boundary) matching keeps "slaughterhouse" matching inside
             // "Slaughterhouse-Five".
-            let haystack = ([book.title] + book.authors).joined(separator: " ").lowercased()
+            let haystack = ([book.title] + book.authors + book.series.map(\.name))
+                .joined(separator: " ").lowercased()
             let words = query.text.lowercased().split(whereSeparator: \.isWhitespace)
             for word in words where !haystack.contains(word) {
                 return false
@@ -278,13 +299,16 @@ struct LibraryView: View {
     }
 
     /// "Search" → "Search Sci-Fi" / "Search Portuguese" when a scope is
-    /// active. Collection wins over language when both are set, since the
-    /// collection is the more specific scope.
+    /// active. Collection wins over series, which wins over language, when
+    /// multiple scopes are active.
     private var searchPlaceholder: String {
         if let id = selectedCollection,
             let collection = state.collections.first(where: { $0.id == id })
         {
             return "Search \(collection.name)"
+        }
+        if let selectedSeries {
+            return "Search \(selectedSeries)"
         }
         if let lang = selectedLanguage {
             let display = Locale.current.localizedString(forIdentifier: lang) ?? lang
@@ -545,6 +569,15 @@ struct LibraryView: View {
         }
         .onChange(of: state.device == nil) { _, deviceGone in
             if deviceGone { deviceContentsSheetOpen = false }
+        }
+        // Renaming the last book out of a series removes it from the sidebar;
+        // drop the selection too rather than filtering to an empty grid.
+        .onChange(of: state.seriesCounts) { _, counts in
+            guard let series = selectedSeries else { return }
+            let stillExists = counts.keys.contains {
+                $0.localizedCaseInsensitiveCompare(series) == .orderedSame
+            }
+            if !stillExists { selectedSeries = nil }
         }
         .sheet(item: Bindable(state).importSession) { session in
             ImportProgressSheet(session: session, state: state)
@@ -2064,12 +2097,14 @@ struct LibraryView: View {
     private var sidebarPane: some View {
         LibrarySidebar(
             selectedCollection: $selectedCollection,
+            selectedSeries: $selectedSeries,
             selectedLanguage: $selectedLanguage,
             selectedAuthor: $selectedAuthor,
             selectedDeviceFilter: $selectedDeviceFilter,
             totalBooks: state.books.count,
             collections: state.collections,
             collectionCounts: state.collectionCounts,
+            seriesCounts: state.seriesCounts,
             languageCounts: state.languageCounts,
             authorCounts: state.authorCounts,
             deviceConnected: state.device != nil,
@@ -2098,6 +2133,7 @@ struct LibraryView: View {
             },
             onSelectAllBooks: {
                 selectedCollection = nil
+                selectedSeries = nil
                 selectedLanguage = nil
                 selectedAuthor = nil
                 selectedDeviceFilter = nil
@@ -2147,6 +2183,7 @@ struct LibraryView: View {
             profiles: state.allProfiles,
             allCollections: state.collections,
             authorCounts: state.authorCounts,
+            seriesCounts: state.seriesCounts,
             onUpdate: { updated in
                 Task { await state.updateBook(updated) }
             },

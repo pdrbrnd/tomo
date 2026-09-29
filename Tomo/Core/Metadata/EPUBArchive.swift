@@ -97,6 +97,9 @@ struct ParsedOPF: Sendable {
     /// throw `EPUBArchiveError.missingTitle`.
     let title: String?
     let authors: [String]
+    let series: [BookSeries]
+    /// `<package version>`: "2.0", "3.0", … nil if absent.
+    let version: String?
     /// BCP 47 `<dc:language>`, or nil if absent.
     let language: String?
     /// Raw `<dc:date>` string. ISO-8601-ish but real-world EPUBs are messy.
@@ -228,6 +231,47 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
     let language = first("//*[local-name()='language']")
     let date = first("//*[local-name()='date']")
 
+    let metadataElements = ((try? doc.nodes(forXPath: "//*[local-name()='metadata']/*[local-name()='meta']")) ?? [])
+        .compactMap { $0 as? XMLElement }
+    var series: [BookSeries] = []
+    for element in metadataElements where
+        element.attribute(forName: "property")?.stringValue == "belongs-to-collection"
+    {
+        guard let id = element.attribute(forName: "id")?.stringValue else { continue }
+        let name = element.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty else { continue }
+
+        let refinements = metadataElements.filter {
+            $0.attribute(forName: "refines")?.stringValue == "#\(id)"
+        }
+        let isSeries = refinements.contains {
+            guard $0.attribute(forName: "property")?.stringValue == "collection-type",
+                let value = $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+            else { return false }
+            return value.caseInsensitiveCompare("series") == .orderedSame
+        }
+        guard isSeries else { continue }
+
+        let position = refinements.first {
+            $0.attribute(forName: "property")?.stringValue == "group-position"
+        }?.stringValue
+        series.append(BookSeries(name: name, position: BookSeries.importedPosition(position)))
+    }
+
+    // EPUB 2 and older Calibre-written EPUBs used private metadata names.
+    // Prefer the standardized EPUB 3 properties above when present.
+    if series.isEmpty {
+        let legacySeries = metadataElements.first {
+            $0.attribute(forName: "name")?.stringValue == "calibre:series"
+        }?.attribute(forName: "content")?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let legacySeries, !legacySeries.isEmpty {
+            let legacyPosition = metadataElements.first {
+                $0.attribute(forName: "name")?.stringValue == "calibre:series_index"
+            }?.attribute(forName: "content")?.stringValue
+            series = [BookSeries(name: legacySeries, position: BookSeries.importedPosition(legacyPosition))]
+        }
+    }
+
     // <package unique-identifier="ID"> + <dc:identifier id="ID"> wins.
     let uniqueIDAttr = first("//*[local-name()='package']/@unique-identifier")
     let identifier: String? = {
@@ -300,6 +344,8 @@ private nonisolated func parseOPF(_ xml: Data) throws -> ParsedOPF {
     return ParsedOPF(
         title: title,
         authors: authors,
+        series: series,
+        version: first("//*[local-name()='package']/@version"),
         language: language,
         date: date,
         identifier: identifier,

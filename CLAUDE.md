@@ -51,7 +51,7 @@ These are load-bearing. Don't violate them without flagging it.
    filename — devices like Kindle dedupe by filename, so the legacy
    `book.epub` shape collided on every send. Survives the app being
    deleted. Each book carries a `metadata.json` sidecar with everything
-   the index needs (title, authors, locale, collections by name, id,
+   the index needs (title, authors, series, locale, collections by name, id,
    etc.) including the on-disk filename. Collection *definitions* (id,
    sortOrder, dateCreated) live in `<library>/.tomo/collections.json`
    so empty collections and sortOrder also survive a rebuild.
@@ -102,8 +102,9 @@ Fast and snappy is not negotiable:
 Models live in `Tomo/Models/`. Read those files for the current shapes
 (`Book.swift`, `Collection.swift`, `LanguageProfile.swift`). The sidecar
 `metadata.json` carries everything in `Book` *including* `id`, plus the
-`collections` array (by name) and a top-level `version` field for future
-migrations. See `Tomo/Core/Metadata/MetadataSidecar.swift`.
+`collections` array (by name) and a top-level `version` field
+(`Book.metadataVersion`, see "Metadata migrations" below). See
+`Tomo/Core/Metadata/MetadataSidecar.swift`.
 
 Disk truth split:
 
@@ -114,6 +115,7 @@ Intent notes the code can't express:
 
 - `BookOrigin` distinguishes manual-import from plugin-sourced books (`.source(id, ref)`). All books imported via a JS plugin's `download()` carry the originating plugin's id.
 - `Book` has a single `fileURL` (primary file) — multi-format-per-book (`formats: [BookFormat]`) isn't shipped. The `FileFormat` enum in `Tomo/Core/Conversion/` is the conversion layer's format identifier, not a data-model type.
+- **Metadata migrations.** The sidecar `version` is `Book.metadataVersion`: which fields have been read from the file. When import starts reading a new field, bump `Book.currentMetadataVersion` and add a step to `Core/Library/MetadataMigration.swift`, so books imported earlier get it too. It runs per book after each sync, skips iCloud-evicted files (retried next sync, never triggers a download), and runs on send for books it hasn't reached yet. A step only fills an empty field, so it can't override a user's choice. Until a book is migrated, an empty value means "not read yet", not "none" — code that acts on the difference (e.g. the Kobo writer) checks `MetadataMigration.needsMigration`.
 
 ## Language profiles — intent
 
@@ -211,7 +213,7 @@ Each device implements `BookDevice` (`Core/Delivery/BookDevice.swift`); the libr
 - **Kindle** (`Core/Delivery/Kindle.swift`): identified by `documents/` + `system/` at the volume root. Writes books to `documents/`. EPUB needs conversion (see above); AZW3/MOBI/PDF passthrough.
 - **Kobo** (`Core/Delivery/Kobo.swift`): identified by `.kobo/` at the volume root (contains `KoboReader.sqlite`, present on every Kobo from Touch onwards). Writes books to the volume root — Kobo's scanner walks the whole device on disconnect. EPUB and PDF passthrough; no conversion, no cover-thumbnail workaround (Kobo extracts covers from EPUB metadata natively).
 
-**Metadata projection on delivery.** Devices read the file's *embedded* metadata, not Tomo's sidecar, so the user's edited title/author/language is projected onto the **delivered copy** at send time — the library file is never mutated (sidecar stays canonical; Principle 1). Kindle gets it for free: `EPUBToAZW3Converter` takes an `EPUBSource.MetadataOverride` built from the `Book` and the `AZW3Writer` serialises it. Kobo (raw EPUB passthrough) needs an actual OPF rewrite: `Core/Metadata/EPUBMetadataWriter.metadataCorrectedCopy` produces a scratch copy with the differing `<dc:*>` fields overwritten, sent in place of the original. It's **diff-only** (untouched authors keep their `opf:file-as`/role) and **best-effort** (DRM/malformed/no-diff → returns nil → original sent untouched). Scope is title/author/language only — no `file-as` synthesis. An opt-in "embed metadata into library files" action (Calibre-style) is deliberately out of scope.
+**Metadata projection on delivery.** Devices read the file's *embedded* metadata, not Tomo's sidecar, so the user's edited title/author/language (and, for Kobo, series) is projected onto the **delivered copy** at send time — the library file is never mutated (sidecar stays canonical; Principle 1). Kindle gets it for free: `EPUBToAZW3Converter` takes an `EPUBSource.MetadataOverride` built from the `Book` and the `AZW3Writer` serialises it. Kobo (raw EPUB passthrough) needs an actual OPF rewrite: `Core/Metadata/EPUBMetadataWriter.metadataCorrectedCopy` produces a scratch copy with the differing `<dc:*>` fields (and series `<meta>` — EPUB 3 `belongs-to-collection`, or Calibre's `calibre:series` tags for EPUB 2) overwritten, sent in place of the original. An empty series list removes the EPUB's series, except on books `MetadataMigration` hasn't reached yet (their series simply hasn't been read), which keep the EPUB's own. It's **diff-only** (untouched authors keep their `opf:file-as`/role) and **best-effort** (DRM/malformed/no-diff → returns nil → original sent untouched). Scope is title/author/language/series only — no `file-as` synthesis. Kindle doesn't get series. An opt-in "embed metadata into library files" action (Calibre-style) is deliberately out of scope.
 
 ## Out of scope (don't add without discussion)
 

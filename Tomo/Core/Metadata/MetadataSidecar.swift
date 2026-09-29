@@ -35,13 +35,13 @@ nonisolated enum MetadataSidecar {
 }
 
 private nonisolated struct SidecarPayload: Codable {
-    /// Schema version. Always emitted on write. On read, defaults to 1 when
-    /// absent (covers all sidecars written before this field existed). Switch
-    /// on this when introducing breaking changes — bump and add migration.
+    /// `Book.metadataVersion`. Always emitted on write. On read, defaults to
+    /// 1 when absent (covers all sidecars written before this field existed).
     var version: Int
     var id: UUID
     var title: String
     var authors: [String]
+    var series: [BookSeries]
     var year: Int?
     var locale: String
     var coverPath: String?
@@ -49,13 +49,12 @@ private nonisolated struct SidecarPayload: Codable {
     var fileName: String
     var collections: [String]
 
-    static let currentVersion = 1
-
     init(book: Book, collectionNames: [String]) {
-        self.version = Self.currentVersion
+        self.version = book.metadataVersion
         self.id = book.id
         self.title = book.title
         self.authors = book.authors
+        self.series = book.series
         self.year = book.year
         self.locale = book.locale
         self.coverPath = book.coverPath
@@ -69,16 +68,18 @@ private nonisolated struct SidecarPayload: Codable {
             id: id,
             title: title,
             authors: authors,
+            series: series,
             year: year,
             locale: locale,
             coverPath: coverPath,
             dateAdded: dateAdded,
-            fileURL: folder.appending(component: fileName)
+            fileURL: folder.appending(component: fileName),
+            metadataVersion: version
         )
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, id, title, authors, year, locale, coverPath, dateAdded, fileName,
+        case version, id, title, authors, series, year, locale, coverPath, dateAdded, fileName,
             collections
         // Legacy keys (sidecars written before the unified-locale refactor):
         case languageCode, languageProfileId
@@ -94,6 +95,7 @@ private nonisolated struct SidecarPayload: Codable {
         self.id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         self.title = try c.decode(String.self, forKey: .title)
         self.authors = try c.decode([String].self, forKey: .authors)
+        self.series = try c.decodeIfPresent([BookSeries].self, forKey: .series) ?? []
         self.year = try c.decodeIfPresent(Int.self, forKey: .year)
         self.coverPath = try c.decodeIfPresent(String.self, forKey: .coverPath)
         self.dateAdded = try c.decode(Date.self, forKey: .dateAdded)
@@ -119,6 +121,9 @@ private nonisolated struct SidecarPayload: Codable {
         try c.encode(id, forKey: .id)
         try c.encode(title, forKey: .title)
         try c.encode(authors, forKey: .authors)
+        if !series.isEmpty {
+            try c.encode(series, forKey: .series)
+        }
         try c.encodeIfPresent(year, forKey: .year)
         try c.encode(locale, forKey: .locale)
         try c.encodeIfPresent(coverPath, forKey: .coverPath)

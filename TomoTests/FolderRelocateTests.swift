@@ -13,6 +13,24 @@ import Testing
 @Suite("relocateBookFolderIfChanged")
 struct FolderRelocateTests {
 
+    @Test
+    func seriesEditDoesNotChangeFolderIdentity() {
+        let original = Book(
+            id: UUID(),
+            title: "Torujący Drogi",
+            authors: ["Elaine Cunningham"],
+            year: 1999,
+            locale: "und",
+            coverPath: nil,
+            dateAdded: .now,
+            fileURL: URL(fileURLWithPath: "/library/imported/book.epub")
+        )
+        var updated = original
+        updated.series = [BookSeries(name: "Forgotten Realms", position: "1")]
+
+        #expect(!bookFolderMetadataChanged(from: original, to: updated))
+    }
+
     // MARK: - .noChange
 
     @Test

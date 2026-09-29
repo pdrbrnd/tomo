@@ -58,6 +58,38 @@ struct MetadataSidecarTests {
         #expect(loaded.book.locale == "pt-PT")
     }
 
+    @Test func missingVersionDecodesAsOne() throws {
+        let folder = try makeTempBookFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        try writeRawSidecar(
+            in: folder,
+            """
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "title": "Old Book",
+              "authors": ["X"],
+              "locale": "en",
+              "dateAdded": "2024-01-01T00:00:00Z",
+              "fileName": "book.epub"
+            }
+            """)
+
+        #expect(try MetadataSidecar.read(from: folder).book.metadataVersion == 1)
+    }
+
+    @Test func metadataVersionRoundTripsWithoutBumping() throws {
+        let folder = try makeTempBookFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        // Editing a not-yet-migrated book must not mark it migrated.
+        var book = makeBook(in: folder)
+        book.metadataVersion = 1
+        try MetadataSidecar.write(book, collectionNames: [], to: folder)
+
+        #expect(try MetadataSidecar.read(from: folder).book.metadataVersion == 1)
+    }
+
     @Test func legacyLanguageCodeMapsToLocale() throws {
         let folder = try makeTempBookFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
