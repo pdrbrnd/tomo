@@ -350,5 +350,20 @@
             ]]></description>
             <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.16.0/Tomo-v1.16.0.dmg" type="application/octet-stream" sparkle:edSignature="sB3GehmNtQ6VTrFgfjqnURXISz2MWWaHrQdRiaM0YIWAz+s4ZxS25imynmRbMe/kPa5P7ypC+uMFbEXcEVgQBg==" length="11855968" />
         </item>
+        <item>
+            <title>v1.17.0</title>
+            <pubDate>Tue, 29 Sep 2026 09:16:46 +0000</pubDate>
+            <sparkle:version>11700</sparkle:version>
+            <sparkle:shortVersionString>1.17.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+- Add book series support
+
+**Full Changelog**: https://github.com/pdrbrnd/tomo/compare/v1.16.0...v1.17.0
+
+**Full Changelog**: https://github.com/pdrbrnd/tomo/compare/v1.16.0...v1.17.0
+            ]]></description>
+            <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.17.0/Tomo-v1.17.0.dmg" type="application/octet-stream" sparkle:edSignature="rIuUMBrRXB8XA+V8RDp9rJdkHaCv5wIOWLbO3uOO3cDnkKYDC3qu0vRV0Wmgud4lYLbaeItmq2fc/Ovq0blrAw==" length="11940047" />
+        </item>
     </channel>
 </rss>
