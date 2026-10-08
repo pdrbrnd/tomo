@@ -178,10 +178,20 @@ final class PluginHost {
     /// task can run off-actor without holding non-Sendable JSValues.
     private func prepareFetchOptions(opts: JSValue?) -> FetchOptions {
         guard let opts, opts.isObject else { return FetchOptions() }
-        let method = opts.forProperty("method")?.toString()
+        let method = stringProperty(opts, "method")
         let headers = opts.forProperty("headers")?.toDictionary() as? [String: String]
-        let body = opts.forProperty("body")?.toString()
+        let body = stringProperty(opts, "body")
         return FetchOptions(method: method, headers: headers, body: body)
+    }
+
+    /// A missing key comes back as JS `undefined`, which `toString()` turns
+    /// into the literal "undefined" — `fetch(url, { headers })` used to send
+    /// method "undefined" with body "undefined". Absent means nil.
+    private func stringProperty(_ object: JSValue, _ key: String) -> String? {
+        guard let value = object.forProperty(key), !value.isUndefined, !value.isNull else {
+            return nil
+        }
+        return value.toString()
     }
 
     private struct FetchOptions: Sendable {
@@ -299,7 +309,7 @@ final class PluginHost {
 
     private func prepareCacheImageOptions(opts: JSValue?) -> CacheImageOptions {
         guard let opts, opts.isObject else { return CacheImageOptions() }
-        let referer = opts.forProperty("referer")?.toString()
+        let referer = stringProperty(opts, "referer")
         let headers = opts.forProperty("headers")?.toDictionary() as? [String: String]
         return CacheImageOptions(referer: referer, headers: headers)
     }

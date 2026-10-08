@@ -133,11 +133,12 @@ nonisolated enum PluginEndToEnd {
     }
 
     /// Streams just enough of the body to sniff the file type, then stops.
-    /// Same UA as the plugin bindings so anti-bot cookies earned during
-    /// search still apply.
+    /// Default URLSession UA, like the app's real download
+    /// (`LibraryView.fetchToTempFile`) — ws-export (Wikisource) serves a
+    /// proof-of-work page to browser UAs, so a Safari UA here would test a
+    /// path the app never takes. Cookies from search still apply.
     static func fetchMagicBytes(_ url: URL) async throws -> ([UInt8], HTTPURLResponse) {
-        var request = URLRequest(url: url, timeoutInterval: 60)
-        request.setValue(PluginHost.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        let request = URLRequest(url: url, timeoutInterval: 60)
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw PluginError.runtime("non-HTTP response from \(url)")

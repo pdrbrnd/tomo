@@ -23,7 +23,7 @@ Declare `minAppVersion` as the lowest Tomo version that contains every host capa
 | `query` fields: `text`, `title`, `author`, `language`, `isbn`, `format`, `year`, `publisher` | 1.7.0 | |
 | `Result` fields: `id`, `title`, `authors`, `year`, `language`, `format`, `sizeBytes`, `coverURL`, `detailURL`, `metadata[]` | 1.7.0 | |
 | `download()` returning `{ kind: "browser", url? }` | 1.7.0 | For sources that require user interaction (Cloudflare, slow-download partners). |
-| `fetch(url, opts?)` | 1.7.0 | URLSession-backed. |
+| `fetch(url, opts?)` | 1.7.0 | URLSession-backed. Up to 1.17.0, an `opts` without `method` and `body` sent them as the string "undefined" (HTTP 405, or a GET-with-body error). Plugins supporting those hosts pass `method: "GET", body: ""` alongside `headers`. |
 | `querySelectorAll(html, selector)` | 1.7.0 | SwiftSoup-backed. |
 | `cacheImage(url, opts?)` | 1.7.0 | For hotlink-protected covers. |
 | `console.log` / `console.error` | 1.7.0 | |
