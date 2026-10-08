@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Sentry
 import os
@@ -31,28 +30,18 @@ enum CrashReporter {
         }
     }
 
-    /// Runs a modal file panel without it being reported as an app hang.
-    ///
-    /// `runModal` blocks the main run loop for as long as the panel is up —
-    /// that's what modal means — and Sentry's hang detector can't tell it
-    /// apart from a stall. It was the single noisiest issue in the project
-    /// (TOMO-MACOS-7). Pausing only mutes *reporting*; detection keeps
-    /// running and resumes reporting when the panel closes. Safe to call
-    /// when the SDK isn't started (both calls no-op).
-    static func runModal(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
-        SentrySDK.pauseAppHangTracking()
-        defer { SentrySDK.resumeAppHangTracking() }
-        return panel.runModal()
-    }
-
     static func start() {
         // The DSN ships in the public repo, so anyone building from source
         // would report their Debug crashes (on whatever old tag they checked
         // out) into our project (TOMO-MACOS-17). Only Release builds report.
         #if DEBUG
             telemetryLogger.info("Debug build — skipping Sentry init")
-            return
+        #else
+            startSentry()
         #endif
+    }
+
+    private static func startSentry() {
         guard isEnabled else {
             telemetryLogger.info("Crash reporting opted out — skipping Sentry init")
             return
@@ -72,7 +61,12 @@ enum CrashReporter {
             options.enableNetworkBreadcrumbs = false
             options.enableNetworkTracking = false
             options.enableAutoPerformanceTracing = false
-            options.enableMetricKit = false
+            // Hangs come from MetricKit (the OS's own hang diagnostics), not
+            // Sentry's watchdog. The watchdog reported every modal panel or
+            // alert as a hang and was the whole issue list (TOMO-MACOS-7,
+            // -19); Sentry deprecated it in 9.x in favour of MetricKit.
+            options.enableAppHangTracking = false
+            options.enableMetricKit = true
             // Tomo has no own backend — every URLSession request is
             // third-party (plugin sources, OpenLibrary, iTunes, GitHub
             // releases). Mirror failover and cover enrichment both 5xx

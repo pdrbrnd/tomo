@@ -790,7 +790,7 @@ struct LibraryView: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
-        if CrashReporter.runModal(panel) == .OK, let url = panel.url {
+        if panel.runModal() == .OK, let url = panel.url {
             state.libraryFolder = url
         }
     }
