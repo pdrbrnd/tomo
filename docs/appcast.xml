@@ -365,5 +365,25 @@
             ]]></description>
             <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.17.0/Tomo-v1.17.0.dmg" type="application/octet-stream" sparkle:edSignature="rIuUMBrRXB8XA+V8RDp9rJdkHaCv5wIOWLbO3uOO3cDnkKYDC3qu0vRV0Wmgud4lYLbaeItmq2fc/Ovq0blrAw==" length="11940047" />
         </item>
+        <item>
+            <title>v1.18.0</title>
+            <pubDate>Thu, 08 Oct 2026 20:18:52 +0000</pubDate>
+            <sparkle:version>11800</sparkle:version>
+            <sparkle:shortVersionString>1.18.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+- fixes plugin searches stalling ~45s on Cloudflare-hosted sources
+- fixes plugin requests that set custom headers
+- crash reporting now uses macOS's own hang diagnostics (fewer false reports)
+- tightens code-signing security (library validation on)
+- updates Sparkle (security fixes), Sentry, SwiftSoup and GRDB
+- new plugins: Projecto Adamastor (pt-PT classics) and Wikisource; Project Gutenberg search fixed (update in Settings → Plugins)
+
+**Full Changelog**: https://github.com/pdrbrnd/tomo/compare/v1.17.0...v1.18.0
+
+**Full Changelog**: https://github.com/pdrbrnd/tomo/compare/v1.17.0...v1.18.0
+            ]]></description>
+            <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.18.0/Tomo-v1.18.0.dmg" type="application/octet-stream" sparkle:edSignature="DfnKKHcdXc/Bygisg1ccIXRPXkFpJLXMMVLXQ1fm1RWC0x+xrKHgSO0dT22zYsXR6f1jSg6RrT5AMYrfYOWSAw==" length="12571621" />
+        </item>
     </channel>
 </rss>
