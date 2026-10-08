@@ -11,7 +11,7 @@ import Foundation
 /// hide those differences.
 nonisolated enum KindleSync {
     static func run(volumeURL: URL) async {
-        await Task.detached {
+        _ = await Task.detached {
             KindleCoverThumbnail.restoreOverwrittenThumbnails(volumeURL: volumeURL)
         }.value
     }

@@ -427,8 +427,8 @@ final class AppState {
         libraryWindow?.makeKeyAndOrderFront(nil)
     }
 
-    private nonisolated(unsafe) var mountTask: Task<Void, Never>?
-    private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var mountTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
     private var sendStateResetTask: Task<Void, Never>?
     private var toastDismissTask: Task<Void, Never>?
 
