@@ -60,7 +60,12 @@ enum PluginChallengeSolver {
     nonisolated private static let challengeMarkers = [
         "ddos-guard",  // DDoS-Guard's js-challenge and block pages
         "cf-browser-verification",  // Cloudflare, legacy
-        "challenge-platform",  // Cloudflare, current
+        // Cloudflare, current. Only the challenge page itself loads from
+        // `/cdn-cgi/challenge-platform/h/…`; plain "challenge-platform" also
+        // matches the passive bot script (`…/scripts/jsd/main.js`) Cloudflare
+        // injects into ordinary pages, which turned every 403/503 from a
+        // Cloudflare site into a 45s solve that could never clear.
+        "challenge-platform/h/",
     ]
 
     /// True when a response is an anti-bot interstitial rather than the page

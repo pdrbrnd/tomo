@@ -134,7 +134,7 @@ External book search runs through JavaScript plugins loaded from `~/Library/Appl
 
 There's no install ledger. Whether a plugin is "from the official registry" is derived on the fly: the file's sha256 matches some cached registry entry's sha256. No match → user-supplied. Update available → registry has matching id with a different sha + compatible `minAppVersion`.
 
-The contract and host bindings (fetch, querySelectorAll, cacheImage, console) are documented in `docs/plugins.md`; host capabilities per app version live in `docs/CONTRACT.md`. Source-of-truth shapes live in `Tomo/Core/Plugins/`. Multi-plugin search runs each enabled plugin in turn; per-plugin enable/disable in the sources popover (quick-toggle during search) or Settings → Plugins (full management), persisted in `UserDefaults`.
+The contract and host bindings (fetch, querySelectorAll, cacheImage, console) are documented in `docs/plugins.md`; host capabilities per app version live in `docs/CONTRACT.md`. Source-of-truth shapes live in `Tomo/Core/Plugins/`. Multi-plugin search runs all enabled plugins concurrently, rendering each as it finishes; per-plugin enable/disable in the sources popover (quick-toggle during search) or Settings → Plugins (full management), persisted in `UserDefaults`.
 
 ## Format support
 
