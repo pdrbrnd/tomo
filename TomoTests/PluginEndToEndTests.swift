@@ -128,6 +128,7 @@ nonisolated enum PluginEndToEnd {
         }
         switch pluginID {
         case "libgen", "annas": return "dune herbert"
+        case "projecto-adamastor": return "queirós"  // Portuguese-only catalogue
         default: return "frankenstein"
         }
     }

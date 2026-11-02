@@ -181,21 +181,22 @@ struct LibraryView: View {
             // order and across any field. Lets "vonnegut slaughterhouse" match
             // "Slaughterhouse-Five" by "Kurt Vonnegut". Substring (not
             // word-boundary) matching keeps "slaughterhouse" matching inside
-            // "Slaughterhouse-Five".
+            // "Slaughterhouse-Five". Case- and accent-insensitive, so
+            // "paraiso" finds "Paraíso".
             let haystack = ([book.title] + book.authors + book.series.map(\.name))
-                .joined(separator: " ").lowercased()
-            let words = query.text.lowercased().split(whereSeparator: \.isWhitespace)
-            for word in words where !haystack.contains(word) {
+                .joined(separator: " ")
+            let words = query.text.split(whereSeparator: \.isWhitespace)
+            for word in words where !haystack.localizedStandardContains(word) {
                 return false
             }
         }
-        if let title = query.title?.lowercased(), !title.isEmpty,
-            !book.title.lowercased().contains(title)
+        if let title = query.title, !title.isEmpty,
+            !book.title.localizedStandardContains(title)
         {
             return false
         }
-        if let author = query.author?.lowercased(), !author.isEmpty,
-            !book.authors.contains(where: { $0.lowercased().contains(author) })
+        if let author = query.author, !author.isEmpty,
+            !book.authors.contains(where: { $0.localizedStandardContains(author) })
         {
             return false
         }

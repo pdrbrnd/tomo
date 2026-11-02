@@ -256,18 +256,18 @@ struct DeviceContentsSheet: View {
 
     // MARK: - Filtering
 
-    /// Rows after applying the current search. Case-insensitive substring
-    /// match across title, authors, filename, and on-device folder so the
+    /// Rows after applying the current search. Case- and accent-insensitive
+    /// substring match across title, authors, filename, and on-device folder so the
     /// user can search by whatever they remember.
     private var visibleRows: [Row] {
-        let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let needle = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return rows }
         return rows.filter { row in
-            if row.file.name.lowercased().contains(needle) { return true }
-            if let folder = row.file.folder, folder.lowercased().contains(needle) { return true }
+            if row.file.name.localizedStandardContains(needle) { return true }
+            if let folder = row.file.folder, folder.localizedStandardContains(needle) { return true }
             if let book = row.book {
-                if book.title.lowercased().contains(needle) { return true }
-                if book.authors.contains(where: { $0.lowercased().contains(needle) }) { return true }
+                if book.title.localizedStandardContains(needle) { return true }
+                if book.authors.contains(where: { $0.localizedStandardContains(needle) }) { return true }
             }
             return false
         }
