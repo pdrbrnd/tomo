@@ -385,5 +385,16 @@
             ]]></description>
             <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.18.0/Tomo-v1.18.0.dmg" type="application/octet-stream" sparkle:edSignature="DfnKKHcdXc/Bygisg1ccIXRPXkFpJLXMMVLXQ1fm1RWC0x+xrKHgSO0dT22zYsXR6f1jSg6RrT5AMYrfYOWSAw==" length="12571621" />
         </item>
+        <item>
+            <title>v1.18.1</title>
+            <pubDate>Mon, 02 Nov 2026 17:47:53 +0000</pubDate>
+            <sparkle:version>11801</sparkle:version>
+            <sparkle:shortVersionString>1.18.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+**Full Changelog**: https://github.com/pdrbrnd/tomo/compare/v1.18.0...v1.18.1
+            ]]></description>
+            <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.18.1/Tomo-v1.18.1.dmg" type="application/octet-stream" sparkle:edSignature="tTU2F8gWw9UDw7BXqEauIPh2DRzTWASyPFubCw1iuJ7RIFzdmikVzFU3XtPK7FnwizJd4ftju1KBIXN0CUo+AA==" length="12572248" />
+        </item>
     </channel>
 </rss>
