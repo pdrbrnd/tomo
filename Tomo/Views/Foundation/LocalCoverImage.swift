@@ -13,13 +13,33 @@ struct LocalCoverImage: View {
     /// Once `url` is non-nil, the internal fetch state takes over —
     /// skeleton stays up until the image actually loads.
     var isLoading: Bool = false
+    /// Grid cards can be recreated as they scroll into view. Use the item's
+    /// identity as well as its cover URL, since a reimport can reuse a path.
+    var cacheID: String? = nil
 
-    @State private var image: NSImage?
-    @State private var isFetching = false
+    @State private var loadedCover: (url: URL, image: NSImage?)?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var skeletonPulse = false
 
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 128
+        cache.totalCostLimit = 96 * 1024 * 1024
+        return cache
+    }()
+
+    private var cacheKey: NSString? {
+        guard let cacheID, let url else { return nil }
+        return "\(cacheID)\n\(url.absoluteString)" as NSString
+    }
+
+    private var image: NSImage? {
+        if let loadedCover, loadedCover.url == url { return loadedCover.image }
+        return cacheKey.flatMap { Self.cache.object(forKey: $0) }
+    }
+
     var body: some View {
+        let image = image
         // `Color.clear` is the load-bearing primitive: flexible, always
         // reports the proposed size to its parent, never propagates inner
         // content size up. Putting the image inside `.overlay` means its
@@ -50,10 +70,10 @@ struct LocalCoverImage: View {
             .task(id: url) { await load() }
     }
 
-    /// True while we're either actively fetching the image, or the parent
-    /// has flagged a pending cover that hasn't even produced a URL yet.
+    /// Show a skeleton from the first frame of a pending load.
     private var showsSkeleton: Bool {
-        isFetching || (url == nil && isLoading)
+        guard let url else { return isLoading }
+        return loadedCover?.url != url
     }
 
     /// Soft surface pulse — same gradient stack as the typography
@@ -131,15 +151,20 @@ struct LocalCoverImage: View {
 
     private func load() async {
         guard let url else {
-            image = nil
-            isFetching = false
+            loadedCover = nil
             return
         }
-        // Reset image so a URL change re-triggers the skeleton instead of
-        // showing the previous cover during the new fetch.
-        image = nil
-        isFetching = true
-        defer { isFetching = false }
-        image = await Task.detached { NSImage(contentsOf: url) }.value
+        if let image {
+            loadedCover = (url, image)
+            return
+        }
+        let cacheKey = cacheKey
+        let image = await Task.detached { NSImage(contentsOf: url) }.value
+        if let cacheKey, let image {
+            let cost = image.representations.map { $0.pixelsWide * $0.pixelsHigh * 4 }.max() ?? 0
+            Self.cache.setObject(image, forKey: cacheKey, cost: cost)
+        }
+        guard !Task.isCancelled else { return }
+        loadedCover = (url, image)
     }
 }

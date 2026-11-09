@@ -1,15 +1,10 @@
 import SwiftUI
 
-/// Bottom-edge floating row: sidebar toggle (leading) + search pill (centered)
-/// + inspector toggle (trailing). Floats over the entire window — including
+/// Bottom-edge pane toggles. Floats over the entire window — including
 /// over the sidebar and inspector when they're open — so the toggle buttons
 /// stay in the same screen position. Tap the same spot to open *or* close
 /// each pane; the icon's filled state reflects whether the pane is open.
 struct BottomChrome: View {
-    let state: AppState
-    @Binding var searchText: String
-    var searchFocused: FocusState<Bool>.Binding
-    let searchPlaceholder: String
     let sidebarOpen: Bool
     let inspectorOpen: Bool
     let onToggleSidebar: () -> Void
@@ -24,37 +19,13 @@ struct BottomChrome: View {
     static var buttonDiameter: CGFloat { Theme.Chrome.toggleDiameter }
 
     var body: some View {
-        ZStack {
-            HStack {
-                Spacer()
-                SearchPill(text: $searchText, placeholder: searchPlaceholder) {
-                    if searchText.isEmpty {
-                        SourcesSettingsButton(state: state)
-                    } else {
-                        ClearSearchButton { searchText = "" }
-                    }
-                }
-                .focused(searchFocused)
-                Spacer()
-            }
-
-            HStack {
-                sidebarButton
-                    .padding(.leading, Self.horizontalPadding)
-                Spacer()
-                inspectorButton
-                    .padding(.trailing, Self.horizontalPadding)
-            }
+        HStack {
+            sidebarButton
+                .padding(.leading, Self.horizontalPadding)
+            Spacer()
+            inspectorButton
+                .padding(.trailing, Self.horizontalPadding)
         }
-        // Empty regions of the chrome blur the search on click. As a
-        // `.background` (not a ZStack child), this sizes to the chrome's
-        // natural content frame — it doesn't expand the chrome to fill the
-        // window, so it doesn't eat clicks outside the bottom strip.
-        .background(
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { searchFocused.wrappedValue = false }
-        )
         .padding(.bottom, Self.bottomPadding)
     }
 

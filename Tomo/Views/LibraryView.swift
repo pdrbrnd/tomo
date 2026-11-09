@@ -10,9 +10,14 @@ struct LibraryView: View {
     @State private var selectedBookIDs: Set<Book.ID> = []
     @State private var selectionAnchor: Book.ID?
     @State private var inspectorOpen = false
+    @State private var lastClickedCover: Book.ID?
+    @State private var doubleClickedCover: Book.ID?
+    @State private var coverReaderRequest: Book.ID?
     @AppStorage("sidebar.open") private var sidebarOpen = false
     @AppStorage("library.sort.key") private var sortKeyRaw = BookSort.title.rawValue
     @AppStorage("library.sort.ascending") private var sortAscending = true
+    @AppStorage(AppAppearance.coverSizeKey) private var coverSize = Theme.Library.defaultCoverSize
+    @AppStorage(AppAppearance.libraryScrollBarKey) private var alwaysShowScrollBar = false
     /// Bumped by the menu bar's "New Collection…" action — `LibrarySidebar`
     /// watches this so the inline-create field gets focused without lifting
     /// its create state up.
@@ -81,6 +86,7 @@ struct LibraryView: View {
     private static let inspectorWidth: CGFloat = 332
     private static let paneInset: CGFloat = Theme.Chrome.paneInset
     private static let inspectorPaneWidth: CGFloat = inspectorWidth + paneInset * 2
+    private static let headerClearance: CGFloat = 50
 
     private static let sidebarWidth: CGFloat = 232
     private static let sidebarPaneWidth: CGFloat = sidebarWidth + paneInset * 2
@@ -382,27 +388,10 @@ struct LibraryView: View {
             if inspectorOpen {
                 inspectorPane
                     .frame(width: Self.inspectorPaneWidth)
-                    .transition(inspectorTransition)
                     .zIndex(1)
             }
         }
-        .overlay(alignment: .topLeading) {
-            // Library folder pill — replaces the old Settings pane. Sits
-            // immediately to the right of the traffic lights at the same
-            // vertical center; floats over both panes so it stays put when
-            // the sidebar opens. Vertical center matches traffic-light
-            // center: lights are nudged down by `trafficLightInset` (10)
-            // from their default ~14pt; their visual center is therefore
-            // ~24pt from the window top. The pill is ~24pt tall, so
-            // top padding ≈ 24 − 12 ≈ 12pt aligns the centers.
-            LibraryFolderPicker(
-                folder: state.libraryFolder,
-                setFolder: { state.libraryFolder = $0 },
-                clearFolder: { state.libraryFolder = nil }
-            )
-            .padding(.leading, 90)
-            .padding(.top, 14)
-        }
+        .overlay(alignment: .top) { header }
         .ignoresSafeArea(.all)
         .overlay(alignment: .bottom) {
             // Window-level chrome floats above the panes so the toggle
@@ -410,10 +399,6 @@ struct LibraryView: View {
             // sidebar / inspector are open. Tapping the same spot toggles
             // open/closed — no separate "close X" inside each pane.
             BottomChrome(
-                state: state,
-                searchText: $searchText,
-                searchFocused: $searchFocused,
-                searchPlaceholder: searchPlaceholder,
                 sidebarOpen: sidebarOpen,
                 inspectorOpen: inspectorOpen,
                 onToggleSidebar: { sidebarOpen.toggle() },
@@ -421,18 +406,26 @@ struct LibraryView: View {
             )
         }
         .background(WindowCustomizer(windowID: .libraryWindow, wantsInsetTrafficLights: true))
+        .background(GridClickMonitor(onMouseEvent: handleGridMouseEvent))
         .background(
             WindowAccessor { window in
                 state.libraryWindow = window
             }
         )
         .frame(minWidth: 880, minHeight: 600)
-        .animation(paneAnimation, value: inspectorOpen)
+        .transaction(value: inspectorOpen) { $0.animation = nil }
         .animation(paneAnimation, value: sidebarOpen)
         .focusedSceneValue(\.libraryContext, libraryFocusContext)
         .task { await state.bootstrap() }
         .task(id: state.libraryFolder) { await state.syncWithDisk() }
         .onOpenURL { url in handleFinderOpen(url) }
+        .onChange(of: coverReaderRequest) { _, id in
+            guard let id else { return }
+            coverReaderRequest = nil
+            if let book = state.books.first(where: { $0.id == id }) {
+                openReader(book)
+            }
+        }
         .onChange(of: searchText) { _, newValue in
             schedulePluginSearch(for: newValue)
             // Each new search session starts fresh. Within a session
@@ -594,12 +587,60 @@ struct LibraryView: View {
 
     // MARK: - Main pane
 
+    private var header: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            LibraryFolderPicker(
+                folder: state.libraryFolder,
+                setFolder: { state.libraryFolder = $0 },
+                clearFolder: { state.libraryFolder = nil }
+            )
+            Spacer(minLength: 0)
+            if let device = state.device {
+                DeviceTile(
+                    displayName: device.displayName,
+                    bookCount: state.deviceFilenames.count,
+                    inAppDragCount: state.inAppDragCount,
+                    sendState: state.deviceSendState,
+                    onTap: { deviceContentsSheetOpen = true },
+                    onEject: { Task { await state.ejectDevice() } },
+                    onDrop: { drag in
+                        let books = drag.bookIDs
+                            .compactMap { id in state.books.first(where: { $0.id == id }) }
+                        guard !books.isEmpty else { return false }
+                        Task { await state.sendBooksToDevice(books) }
+                        return true
+                    }
+                )
+                .transition(deviceTileTransition)
+                Spacer(minLength: 0)
+            }
+            SearchPill(text: $searchText, placeholder: searchPlaceholder) {
+                if searchText.isEmpty {
+                    SourcesSettingsButton(state: state)
+                } else {
+                    ClearSearchButton { searchText = "" }
+                }
+            }
+            .focused($searchFocused)
+        }
+        .padding(.leading, 90)  // Clear the traffic lights.
+        .padding(.trailing, Theme.Spacing.lg)
+        .padding(.top, 10)
+        .animation(deviceTileAnimation, value: state.device?.displayName)
+    }
+
     private var mainPane: some View {
         // ScrollViewReader wraps the ZStack so the keyboard-navigation
         // handlers (siblings of the grid in the ZStack) can ask the grid's
         // ScrollView to bring the new selection into view.
         ScrollViewReader { scrollProxy in
             mainPaneContent(scrollProxy: scrollProxy)
+                .onChange(of: inspectorOpen) { _, open in
+                    guard open, !isSearching,
+                        let book = state.books.first(where: { $0.id == selectionAnchor })
+                    else { return }
+                    scrollProxy.scrollTo(LibraryItem.book(book).id)
+                }
         }
     }
 
@@ -611,47 +652,19 @@ struct LibraryView: View {
             gridArea
                 .ignoresSafeArea(.all)
 
-            // Top chrome: device tile at top-center ("the notch"). Floats
-            // over the grid; the grid scrolls under it.
-            if let device = state.device {
-                VStack {
-                    DeviceTile(
-                        displayName: device.displayName,
-                        bookCount: state.deviceFilenames.count,
-                        inAppDragCount: state.inAppDragCount,
-                        sendState: state.deviceSendState,
-                        onTap: { deviceContentsSheetOpen = true },
-                        onEject: { Task { await state.ejectDevice() } },
-                        onDrop: { drag in
-                            let books = drag.bookIDs
-                                .compactMap { id in state.books.first(where: { $0.id == id }) }
-                            guard !books.isEmpty else { return false }
-                            Task { await state.sendBooksToDevice(books) }
-                            return true
-                        }
-                    )
-                    .padding(.top, Theme.Spacing.lg)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-                .transition(deviceTileTransition)
-            }
-
             if externalDropTargeted {
                 DropOverlay()
                     .ignoresSafeArea(.all)
                     .transition(.opacity)
             }
 
-            // Top-right toast surface. The bottom-center spot is occupied by
-            // the search chrome; top-right is empty and out of the device
-            // tile's lane (top-center).
+            // Keep toasts below the header controls.
             if let toast = state.currentToast {
                 VStack {
                     HStack {
                         Spacer()
                         ToastView(toast: toast)
-                            .padding(.top, Theme.Spacing.lg)
+                            .padding(.top, Self.headerClearance)
                             .padding(.trailing, Theme.Spacing.lg)
                     }
                     Spacer()
@@ -690,7 +703,6 @@ struct LibraryView: View {
         .onPreferenceChange(GridColumnCountPreference.self) { count in
             gridColumnCount = count
         }
-        .animation(deviceTileAnimation, value: state.device?.displayName)
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.28), value: state.currentToast?.id)
         .dropDestination(for: URL.self) { urls, _ in
             // Walk dropped folders so their EPUB/PDFs get imported instead of
@@ -734,6 +746,14 @@ struct LibraryView: View {
     }
 
     // MARK: - Grid
+
+    private var scrollBarInsets: EdgeInsets {
+        guard alwaysShowScrollBar else { return EdgeInsets() }
+        return EdgeInsets(
+            top: Self.headerClearance, leading: 0,
+            bottom: BottomChrome.bottomPadding + BottomChrome.buttonDiameter, trailing: 0
+        )
+    }
 
     @ViewBuilder
     private var gridArea: some View {
@@ -826,10 +846,19 @@ struct LibraryView: View {
             let minCardWidth = Theme.Library.minCardWidth
             let maxCardWidth = Theme.Library.maxCardWidth
 
-            let availableWidth = proxy.size.width - 2 * margin
-            let cols = max(1, Int((availableWidth + gutter) / (minCardWidth + gutter)))
-            let computed = (availableWidth - CGFloat(cols - 1) * gutter) / CGFloat(cols)
-            let cardWidth = min(maxCardWidth, max(minCardWidth, computed))
+            let scrollBarWidth = alwaysShowScrollBar
+                ? NSScroller.scrollerWidth(for: .regular, scrollerStyle: .legacy) : 0
+            let availableWidth = max(1, proxy.size.width - 2 * margin - scrollBarWidth)
+            // Size covers as if the inspector were open. The actual width
+            // still determines how many of those covers fit per row.
+            let referenceWidth = max(1, availableWidth - (inspectorOpen ? 0 : Self.inspectorPaneWidth))
+            let defaultColumns = max(1, Int((referenceWidth + gutter) / (minCardWidth + gutter)))
+            let defaultWidth = (referenceWidth - CGFloat(defaultColumns - 1) * gutter) / CGFloat(defaultColumns)
+            let baseWidth = min(maxCardWidth, max(minCardWidth, defaultWidth))
+            // Scale the old layout's width, then fit as many scaled cards as
+            // possible. Re-expanding columns would undo some slider steps.
+            let cardWidth = min(referenceWidth, floor(baseWidth * CGFloat(coverSize / 100)))
+            let cols = max(1, Int((availableWidth + gutter) / (cardWidth + gutter)))
 
             ScrollView {
                 ZStack(alignment: .topLeading) {
@@ -841,10 +870,7 @@ struct LibraryView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
                         .gesture(marqueeGesture)
-                        .onTapGesture {
-                            clearSelection()
-                            searchFocused = false
-                        }
+                        .onTapGesture(perform: clearGridSelection)
 
                     LazyVGrid(
                         columns: Array(repeating: GridItem(.fixed(cardWidth), spacing: gutter), count: cols),
@@ -879,8 +905,13 @@ struct LibraryView: View {
                 .onPreferenceChange(CardFramePreference.self) { frames in
                     cardFrames = frames
                 }
+                .background {
+                    if alwaysShowScrollBar { PersistentScrollBar() }
+                }
             }
             .scrollContentBackground(.hidden)
+            .scrollIndicators(alwaysShowScrollBar ? .visible : .never, axes: .vertical)
+            .contentMargins(.vertical, scrollBarInsets, for: .scrollIndicators)
             .preference(key: GridColumnCountPreference.self, value: cols)
         }
     }
@@ -908,8 +939,13 @@ struct LibraryView: View {
             .padding(.bottom, Theme.Library.gridMargin)
             .frame(maxWidth: Self.searchListMaxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
+            .background {
+                if alwaysShowScrollBar { PersistentScrollBar() }
+            }
         }
         .scrollContentBackground(.hidden)
+        .scrollIndicators(alwaysShowScrollBar ? .visible : .never, axes: .vertical)
+        .contentMargins(.vertical, scrollBarInsets, for: .scrollIndicators)
     }
 
     /// Quiet inline pointer to Plugins settings when the library returned
@@ -1726,6 +1762,7 @@ struct LibraryView: View {
         return BookCard(
             item: .book(book),
             isSelected: isSelected,
+            dimmedBySelection: !isSelected && !selectedBookIDs.isEmpty,
             deviceStatus: deviceStatus(for: book),
             cardWidth: cardWidth
         )
@@ -1750,12 +1787,8 @@ struct LibraryView: View {
         .draggable(buildBookDrag(for: book)) {
             BookDragPreview(books: dragBooks(for: book))
         }
-        // simultaneousGesture so single-tap fires immediately, no double-tap
-        // disambiguation lag. Modifier flags read from NSEvent because
-        // TapGesture.modifiers() doesn't reliably exclude plain taps when
-        // both forms are attached simultaneously.
         .simultaneousGesture(
-            TapGesture(count: 1).onEnded {
+            TapGesture().onEnded {
                 let flags = NSEvent.modifierFlags
                 if flags.contains(.command) {
                     handleCommandClick(book)
@@ -1763,13 +1796,9 @@ struct LibraryView: View {
                     handleShiftClick(book)
                 } else {
                     handlePlainClick(book)
+                    lastClickedCover = book.id
                 }
-            }
-        )
-        .simultaneousGesture(
-            TapGesture(count: 2).onEnded {
-                handlePlainClick(book)
-                openReader(book)
+                inspectorOpen = !selectedBookIDs.isEmpty
             }
         )
         .overlay(
@@ -1837,6 +1866,24 @@ struct LibraryView: View {
 
     // MARK: - Selection handling
 
+    /// The inspector can reflow the grid between clicks. Route the second
+    /// press and release to the book selected by the first click.
+    private func handleGridMouseEvent(_ event: NSEvent) -> Bool {
+        if event.type == .leftMouseUp {
+            guard let id = doubleClickedCover else { return false }
+            doubleClickedCover = nil
+            coverReaderRequest = id
+            return true
+        }
+
+        let clickedCover = lastClickedCover
+        lastClickedCover = nil
+        doubleClickedCover = nil
+        guard event.clickCount == 2, let clickedCover else { return false }
+        doubleClickedCover = clickedCover
+        return true
+    }
+
     private func handlePlainClick(_ book: Book) {
         withAnimation(selectionAnimation) {
             selectedBookIDs = [book.id]
@@ -1846,8 +1893,7 @@ struct LibraryView: View {
         }
     }
 
-    /// Opens the book in its own reader window. Double-click reads; the
-    /// inspector stays on single-select + ⌘I.
+    /// Opens the book in its own reader window.
     private func openReader(_ book: Book) {
         openWindow(
             id: TomoApp.readerWindowID,
@@ -1905,6 +1951,12 @@ struct LibraryView: View {
             selectionAnchor = nil
             selectedSourceID = nil
         }
+    }
+
+    private func clearGridSelection() {
+        clearSelection()
+        inspectorOpen = false
+        searchFocused = false
     }
 
     private var selectionAnimation: Animation {
@@ -2091,6 +2143,8 @@ struct LibraryView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: clearGridSelection)
     }
 
     // MARK: - Sidebar
@@ -2260,17 +2314,11 @@ struct LibraryView: View {
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
         .paneShadow()
+        .padding(.top, Self.headerClearance - Self.paneInset)
         .padding(Self.paneInset)
     }
 
-    private var inspectorTransition: AnyTransition {
-        if reduceMotion {
-            return .opacity
-        }
-        return .move(edge: .trailing).combined(with: .opacity)
-    }
-
-    /// Single animation curve shared by sidebar + inspector pane open/close.
+    /// Opening and closing animation for the navigation sidebar.
     private var paneAnimation: Animation {
         if reduceMotion {
             return .easeOut(duration: 0.18)

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Card body shared by library books and source-search results. Pure
@@ -11,7 +12,7 @@ import SwiftUI
 ///   floating state capsule (DeviceTile-shaped) while a download is in
 ///   flight.
 ///
-/// Selected overlay, scale-up, fallback typography are identical across
+/// Selection ring and fallback typography are identical across
 /// both kinds.
 enum BookCardDeviceStatus {
     case noDevice
@@ -32,6 +33,7 @@ enum CardDownloadState: Equatable {
 struct BookCard: View {
     let item: LibraryItem
     let isSelected: Bool
+    var dimmedBySelection = false
     var deviceStatus: BookCardDeviceStatus = .noDevice
     var downloadState: CardDownloadState = .idle
     /// Forwarded to `LocalCoverImage` so source-result cards show a
@@ -78,15 +80,11 @@ struct BookCard: View {
                 url: item.coverURL,
                 fallbackTitle: item.title,
                 fallbackAuthor: item.firstAuthor,
-                isLoading: isCoverLoading
+                isLoading: isCoverLoading,
+                cacheID: item.id
             )
             .opacity(coverDimmed ? 0.45 : 1.0)
             .animation(.easeInOut(duration: 0.18), value: coverDimmed)
-
-            if isSelected {
-                selectedOverlay
-                    .transition(.opacity)
-            }
 
             // Top-left badge slot. Mutually exclusive: on-device check for
             // library books on the device, or idle cloud for source items
@@ -115,9 +113,19 @@ struct BookCard: View {
             RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                 .stroke(Theme.hairline, lineWidth: 0.5)
         )
-        .softShadow(elevated: isSelected || downloadState != .idle)
-        .scaleEffect(scaleAmount)
-        .animation(reduceMotion ? .easeOut(duration: 0.16) : .spring(duration: 0.32, bounce: 0.20), value: isSelected)
+        .softShadow(elevated: downloadState != .idle)
+        .opacity(dimmedBySelection ? 0.65 : 1)
+        .animation(.easeOut(duration: 0.16), value: dimmedBySelection)
+        .overlay {
+            if isSelected {
+                SelectedCoverRing()
+                    .padding(-SelectedCoverRing.outset)
+                    .transition(.identity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.32), value: downloadState)
         .animation(reduceMotion ? .easeOut(duration: 0.18) : .snappy(duration: 0.32), value: isPreviewing)
     }
@@ -140,44 +148,6 @@ struct BookCard: View {
         .clipShape(Capsule(style: .continuous))
         .softShadow(elevated: true)
         .padding(.horizontal, Theme.Spacing.sm)
-    }
-
-    private var scaleAmount: CGFloat {
-        if reduceMotion { return 1.0 }
-        return isSelected ? 1.014 : 1.0
-    }
-
-    // MARK: - Selected overlay
-    //
-    // Backdrop-blur of the cover + dark tint. White typography always.
-    // Readability is guaranteed by the tint, not by adapting to the cover.
-    // Author treatment matches the rest-state coverless fallback (uppercase,
-    // tracked, 10pt) so the card reads consistent across all four cells of
-    // the {cover, no-cover} × {selected, rest} matrix.
-    private var selectedOverlay: some View {
-        ZStack(alignment: .bottomLeading) {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-
-            Color.black.opacity(0.30)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                Text(item.firstAuthor ?? "Unknown")
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(Color.white.opacity(0.78))
-                    .lineLimit(2)
-                    .tracking(0.1)
-                    .textCase(.uppercase)
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 
     // MARK: - Badges
@@ -321,6 +291,31 @@ struct BookCard: View {
                     .frame(width: geo.size.width * CGFloat(min(max(progress, 0), 1)), height: 2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             }
+        }
+    }
+}
+
+/// Draws AppKit's native focus ring for each selected cover while keyboard
+/// focus stays on the grid. The extra drawing space keeps the glow unclipped.
+private struct SelectedCoverRing: NSViewRepresentable {
+    static let outset: CGFloat = 8
+
+    func makeNSView(context: Context) -> RingView { RingView() }
+    func updateNSView(_ view: RingView, context: Context) {}
+
+    final class RingView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func draw(_ dirtyRect: NSRect) {
+            let mask = NSBezierPath(
+                roundedRect: bounds.insetBy(dx: outset, dy: outset),
+                xRadius: Theme.Radius.card, yRadius: Theme.Radius.card
+            )
+            NSGraphicsContext.saveGraphicsState()
+            NSFocusRingPlacement.only.set()
+            NSColor.black.setFill()
+            mask.fill()
+            NSGraphicsContext.restoreGraphicsState()
         }
     }
 }
