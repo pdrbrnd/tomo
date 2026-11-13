@@ -161,7 +161,7 @@ private nonisolated func imageMimeType(for item: ManifestItem) -> String {
     return mimeFromExtension(item.href)
 }
 
-private nonisolated func mimeFromExtension(_ path: String) -> String {
+nonisolated func mimeFromExtension(_ path: String) -> String {
     switch (path as NSString).pathExtension.lowercased() {
     case "jpg", "jpeg": return "image/jpeg"
     case "png": return "image/png"
