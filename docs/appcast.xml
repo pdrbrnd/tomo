@@ -396,5 +396,20 @@
             ]]></description>
             <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.18.1/Tomo-v1.18.1.dmg" type="application/octet-stream" sparkle:edSignature="tTU2F8gWw9UDw7BXqEauIPh2DRzTWASyPFubCw1iuJ7RIFzdmikVzFU3XtPK7FnwizJd4ftju1KBIXN0CUo+AA==" length="12572248" />
         </item>
+        <item>
+            <title>v1.18.2</title>
+            <pubDate>Fri, 13 Nov 2026 11:23:05 +0000</pubDate>
+            <sparkle:version>11802</sparkle:version>
+            <sparkle:shortVersionString>1.18.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+## What's Changed
+* Kobo: send the library cover, not the EPUB's embedded one by @pdrbrnd in https://github.com/pdrbrnd/tomo/pull/6
+
+
+**Full Changelog**: https://github.com/pdrbrnd/tomo/compare/v1.18.1...v1.18.2
+            ]]></description>
+            <enclosure url="https://github.com/pdrbrnd/tomo/releases/download/v1.18.2/Tomo-v1.18.2.dmg" type="application/octet-stream" sparkle:edSignature="ddFLlz5aOv3g+NT8iMnNv3QdaMQXz4ugmBAg7aNshFRYz+WEvh+N++Yi5fSqwzk0fi8TzOqmg1VM/Yx/8UXcCA==" length="12576954" />
+        </item>
     </channel>
 </rss>
