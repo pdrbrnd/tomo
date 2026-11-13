@@ -2,8 +2,8 @@ import Foundation
 import ZIPFoundation
 import os
 
-/// Projects a `Book`'s edited metadata (title / authors / language / series)
-/// onto a *copy* of an EPUB, for devices that read the EPUB's embedded
+/// Projects a `Book`'s edited metadata (title / authors / language / series
+/// / cover) onto a *copy* of an EPUB, for devices that read the EPUB's embedded
 /// `content.opf` directly (Kobo) rather than going through Tomo's manifest
 /// builder (Kindle).
 ///
@@ -21,8 +21,8 @@ nonisolated enum EPUBMetadataWriter {
     private static let dcURI = "http://purl.org/dc/elements/1.1/"
     private static let opfURI = "http://www.idpf.org/2007/opf"
 
-    /// If `book`'s title/authors/language/series differ from what's embedded
-    /// in the EPUB at `source`, writes a metadata-corrected copy into
+    /// If `book`'s title/authors/language/series/cover differ from what's
+    /// embedded in the EPUB at `source`, writes a metadata-corrected copy into
     /// `scratchDir` and returns its URL. Returns `nil` when nothing differs
     /// (caller should send the original) or when anything goes wrong
     /// (fallback to original).
@@ -57,20 +57,28 @@ nonisolated enum EPUBMetadataWriter {
         let seriesDiffers =
             seriesKnown && bookSeries != writableSeries(epub.opf.series, epub3: epub3)
 
-        guard titleDiffers || authorsDiffer || langDiffers || seriesDiffers else { return nil }
+        let cover = coverChange(for: book, in: epub)
 
-        guard let opfData = epub.data(at: epub.opfPath) else { return nil }
+        let metadataDiffers = titleDiffers || authorsDiffer || langDiffers || seriesDiffers
+        guard metadataDiffers || cover != nil else { return nil }
 
-        guard
-            let newOPFData = rewriteOPF(
-                opfData,
-                title: titleDiffers ? book.title : nil,
-                authors: authorsDiffer ? book.authors : nil,
-                language: langDiffers ? book.locale : nil,
-                series: seriesDiffers ? bookSeries : nil,
-                epub3: epub3
-            )
-        else { return nil }
+        // A replaced cover keeps its manifest entry, so the OPF only changes
+        // when a field differs or the cover is a new item.
+        var newOPFData: Data?
+        if metadataDiffers || cover?.addedHref != nil {
+            guard let opfData = epub.data(at: epub.opfPath),
+                let rewritten = rewriteOPF(
+                    opfData,
+                    title: titleDiffers ? book.title : nil,
+                    authors: authorsDiffer ? book.authors : nil,
+                    language: langDiffers ? book.locale : nil,
+                    series: seriesDiffers ? bookSeries : nil,
+                    addedCoverHref: cover?.addedHref,
+                    epub3: epub3
+                )
+            else { return nil }
+            newOPFData = rewritten
+        }
 
         let dest = scratchDir.appending(component: source.lastPathComponent)
         do {
@@ -81,24 +89,18 @@ nonisolated enum EPUBMetadataWriter {
             try fm.copyItem(at: source, to: dest)
 
             let archive = try Archive(url: dest, accessMode: .update)
-            guard let entry = archive[epub.opfPath] else { return nil }
-            try archive.remove(entry)
-            // Store (no compression) — only `mimetype` must be stored in an
-            // EPUB, but storing the OPF too is valid and keeps this simple.
-            // `remove` preserves the order of surviving entries, so the
-            // first-entry `mimetype` stays put; this re-added OPF lands last.
-            try archive.addEntry(
-                with: epub.opfPath,
-                type: .file,
-                uncompressedSize: Int64(newOPFData.count),
-                compressionMethod: .none,
-                provider: { position, size in
-                    let start = Int(position)
-                    let end = min(start + size, newOPFData.count)
-                    guard start < end else { return Data() }
-                    return newOPFData.subdata(in: start..<end)
-                }
-            )
+            if let newOPFData {
+                try replaceEntry(in: archive, at: epub.opfPath, with: newOPFData)
+            }
+            switch cover {
+            case .replace(let path, let data):
+                try replaceEntry(in: archive, at: path, with: data)
+            case .add(let href, let data):
+                let path = epub.opfDir.isEmpty ? href : "\(epub.opfDir)/\(href)"
+                try replaceEntry(in: archive, at: path, with: data)
+            case nil:
+                break
+            }
             return dest
         } catch {
             metadataLogger.warning(
@@ -106,6 +108,88 @@ nonisolated enum EPUBMetadataWriter {
             )
             return nil
         }
+    }
+
+    /// How the user's cover reaches the copy.
+    private enum CoverChange {
+        /// Overwrite the EPUB's cover image entry in place, re-encoded to its
+        /// declared type, so a cover page that shows the image updates too.
+        case replace(path: String, data: Data)
+        /// The EPUB has no cover Tomo can overwrite: add a JPEG (href
+        /// relative to the OPF) and point the cover metadata at it.
+        case add(href: String, data: Data)
+
+        var addedHref: String? {
+            if case .add(let href, _) = self { return href }
+            return nil
+        }
+    }
+
+    private static let addedCoverID = "tomo-cover"
+    private static let addedCoverHref = "tomo-cover.jpg"
+
+    /// The cover change needed for the copy to show the book's cover, or nil
+    /// when the EPUB already carries it. Import stores the EPUB's cover bytes
+    /// verbatim, so a byte-equal file means the user hasn't changed it.
+    ///
+    /// A removed cover (no `coverURL`) leaves the EPUB's own in place:
+    /// stripping it cleanly would mean editing the cover page as well.
+    private static func coverChange(for book: Book, in epub: EPUBArchive) -> CoverChange? {
+        guard let coverURL = book.coverURL, let userCover = try? Data(contentsOf: coverURL) else {
+            return nil
+        }
+        let userMime = mimeFromExtension(coverURL.path)
+
+        if let item = epub.opf.coverItem {
+            let path = EPUBArchive.resolvePath(item.href, baseDir: epub.opfDir)
+            if let existing = epub.data(at: path) {
+                if existing == userCover { return nil }
+                let mime = item.mediaType.isEmpty ? mimeFromExtension(item.href) : item.mediaType
+                if let data = encodeCover(userCover, from: userMime, to: mime) {
+                    return .replace(path: path, data: data)
+                }
+            }
+        }
+
+        guard let jpeg = encodeCover(userCover, from: userMime, to: "image/jpeg") else {
+            metadataLogger.warning("cover could not be encoded for EPUB; sending EPUB's own")
+            return nil
+        }
+        return .add(href: addedCoverHref, data: jpeg)
+    }
+
+    /// `bytes` as `targetMime`, passed through when already that type. Only
+    /// JPEG and PNG targets; anything else (SVG, GIF) returns nil.
+    private static func encodeCover(_ bytes: Data, from sourceMime: String, to targetMime: String) -> Data? {
+        if sourceMime == targetMime { return bytes }
+        switch targetMime {
+        case "image/jpeg": return CoverRasterizer.reencodeToJPEG(bytes)
+        case "image/png": return CoverRasterizer.reencodeToPNG(bytes)
+        default: return nil
+        }
+    }
+
+    /// Writes `data` at `path`, replacing any existing entry. Stored (no
+    /// compression) — only `mimetype` must be stored in an EPUB, but storing
+    /// more is valid and images don't compress anyway. `remove` preserves
+    /// the order of surviving entries, so the first-entry `mimetype` stays
+    /// put; the written entry lands last.
+    private static func replaceEntry(in archive: Archive, at path: String, with data: Data) throws {
+        if let entry = archive[path] {
+            try archive.remove(entry)
+        }
+        try archive.addEntry(
+            with: path,
+            type: .file,
+            uncompressedSize: Int64(data.count),
+            compressionMethod: .none,
+            provider: { position, size in
+                let start = Int(position)
+                let end = min(start + size, data.count)
+                guard start < end else { return Data() }
+                return data.subdata(in: start..<end)
+            }
+        )
     }
 
     /// Returns the OPF XML with the given fields overwritten, or `nil` if the
@@ -116,6 +200,7 @@ nonisolated enum EPUBMetadataWriter {
         authors: [String]?,
         language: String?,
         series: [BookSeries]?,
+        addedCoverHref: String?,
         epub3: Bool
     ) -> Data? {
         guard let doc = try? XMLDocument(data: data) else { return nil }
@@ -149,6 +234,14 @@ nonisolated enum EPUBMetadataWriter {
 
         if let series {
             rewriteSeries(series, in: metadata, epub3: epub3)
+        }
+
+        if let addedCoverHref {
+            guard
+                let manifest = (try? doc.nodes(forXPath: "//*[local-name()='manifest']"))?
+                    .first as? XMLElement
+            else { return nil }
+            addCover(href: addedCoverHref, metadata: metadata, manifest: manifest, epub3: epub3)
         }
 
         return doc.xmlData()
@@ -249,6 +342,46 @@ nonisolated enum EPUBMetadataWriter {
                 }
             }
         }
+    }
+
+    /// Points the cover metadata at a new JPEG manifest item, dropping
+    /// whatever cover declaration was there (it named an image Tomo couldn't
+    /// overwrite, or one missing from the archive).
+    private static func addCover(
+        href: String,
+        metadata: XMLElement,
+        manifest: XMLElement,
+        epub3: Bool
+    ) {
+        for element in metadata.children?.compactMap({ $0 as? XMLElement }) ?? []
+        where element.attribute(forName: "name")?.stringValue == "cover" {
+            element.detach()
+        }
+        for item in manifest.children?.compactMap({ $0 as? XMLElement }) ?? [] {
+            guard let properties = item.attribute(forName: "properties")?.stringValue else { continue }
+            let kept = properties.split(separator: " ").filter { $0 != "cover-image" }
+            if kept.isEmpty {
+                item.removeAttribute(forName: "properties")
+            } else {
+                item.attribute(forName: "properties")?.stringValue = kept.joined(separator: " ")
+            }
+        }
+
+        let item = XMLElement(name: "item", uri: opfURI)
+        addAttribute(to: item, name: "id", value: addedCoverID)
+        addAttribute(to: item, name: "href", value: href)
+        addAttribute(to: item, name: "media-type", value: "image/jpeg")
+        if epub3 {
+            addAttribute(to: item, name: "properties", value: "cover-image")
+        }
+        manifest.addChild(item)
+
+        // EPUB 2's cover declaration; EPUB 3 still allows it, and readers
+        // that predate `cover-image` (Kobo's included) look for it.
+        let meta = XMLElement(name: "meta", uri: opfURI)
+        addAttribute(to: meta, name: "name", value: "cover")
+        addAttribute(to: meta, name: "content", value: addedCoverID)
+        metadata.addChild(meta)
     }
 
     private static func addAttribute(to element: XMLElement, name: String, value: String) {

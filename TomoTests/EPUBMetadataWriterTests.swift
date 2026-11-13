@@ -1,4 +1,5 @@
 import AZW3
+import AppKit
 import Foundation
 import Testing
 import ZIPFoundation
@@ -286,6 +287,136 @@ import ZIPFoundation
         #expect(manifest.title == "New")
         #expect(manifest.authors == ["A", "B"])
         #expect(manifest.language == "pt-BR")
+    }
+
+    // MARK: - Cover
+
+    /// A 2×2 image of one colour, so different colours give different bytes.
+    private func imageData(_ color: CGColor, as fileType: NSBitmapImageRep.FileType) throws -> Data {
+        let context = try #require(
+            CGContext(
+                data: nil, width: 2, height: 2, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(color)
+        context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        let rep = NSBitmapImageRep(cgImage: try #require(context.makeImage()))
+        return try #require(rep.representation(using: fileType, properties: [:]))
+    }
+
+    private let red = CGColor(red: 1, green: 0, blue: 0, alpha: 1)
+    private let blue = CGColor(red: 0, green: 0, blue: 1, alpha: 1)
+
+    /// EPUB with a JPEG cover declared both ways, plus a cover page showing it.
+    private func epubWithCover(_ cover: Data) throws -> URL {
+        let opf = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
+              <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:title>Title</dc:title>
+                <dc:identifier id="id">x</dc:identifier>
+                <dc:creator>Author</dc:creator>
+                <dc:language>en</dc:language>
+                <meta name="cover" content="cover-img"/>
+              </metadata>
+              <manifest>
+                <item id="cover-img" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>
+                <item id="item0" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+              </manifest>
+              <spine>
+                <itemref idref="item0"/>
+              </spine>
+            </package>
+            """
+        let body = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml"><head><title>x</title></head><body><img src="images/cover.jpg"/></body></html>
+            """
+        return try MetaEPUBFixture.custom(
+            opf: opf, files: ["ch1.xhtml": Data(body.utf8), "images/cover.jpg": cover])
+    }
+
+    /// A book matching the cover fixtures' metadata whose cover is `cover`,
+    /// written next to the EPUB the way the library keeps it.
+    private func bookWithCover(_ cover: Data?, ext: String, fileURL: URL) throws -> Book {
+        var book = makeBook(title: "Title", authors: ["Author"], locale: "en", fileURL: fileURL)
+        if let cover {
+            let name = "cover-\(UUID().uuidString).\(ext)"
+            try cover.write(to: fileURL.deletingLastPathComponent().appending(component: name))
+            book.coverPath = name
+        }
+        return book
+    }
+
+    @Test func unchangedCoverDoesNotRewrite() throws {
+        let jpeg = try imageData(red, as: .jpeg)
+        let source = try epubWithCover(jpeg)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let book = try bookWithCover(jpeg, ext: "jpg", fileURL: source)
+        defer { book.coverURL.map { try? FileManager.default.removeItem(at: $0) } }
+
+        #expect(EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch) == nil)
+    }
+
+    @Test func removedCoverKeepsEPUBCover() throws {
+        let source = try epubWithCover(try imageData(red, as: .jpeg))
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let book = try bookWithCover(nil, ext: "jpg", fileURL: source)
+
+        #expect(EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch) == nil)
+    }
+
+    @Test func changedCoverOverwritesEPUBCoverInPlace() throws {
+        let source = try epubWithCover(try imageData(red, as: .jpeg))
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        // PNG over a JPEG entry: re-encoded so the declared type stays true.
+        let book = try bookWithCover(try imageData(blue, as: .png), ext: "png", fileURL: source)
+        defer { book.coverURL.map { try? FileManager.default.removeItem(at: $0) } }
+
+        let corrected = try #require(
+            EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch))
+        let epub = try EPUBArchive.open(corrected)
+        #expect(epub.opf.coverItem?.href == "images/cover.jpg")
+        let written = try #require(epub.data(forResourceHref: "images/cover.jpg"))
+        #expect(written.starts(with: [0xFF, 0xD8]))  // JPEG SOI
+        let pixel = try #require(NSBitmapImageRep(data: written)?.colorAt(x: 0, y: 0))
+        #expect(pixel.blueComponent > pixel.redComponent + 0.5)  // the user's blue, not the red original
+    }
+
+    @Test func coverIsAddedWhenEPUBHasNone() throws {
+        let source = try MetaEPUBFixture.minimal(
+            title: "Title", authors: ["Author"], language: "en",
+            spineDocs: [("ch1.xhtml", "<p>Body</p>")]
+        )
+        defer { try? FileManager.default.removeItem(at: source) }
+        let scratch = try scratchDir()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let book = try bookWithCover(try imageData(blue, as: .png), ext: "png", fileURL: source)
+        defer { book.coverURL.map { try? FileManager.default.removeItem(at: $0) } }
+
+        let corrected = try #require(
+            EPUBMetadataWriter.metadataCorrectedCopy(of: source, for: book, into: scratch))
+        let epub = try EPUBArchive.open(corrected)
+        let item = try #require(epub.opf.coverItem)
+        #expect(item.mediaType == "image/jpeg")
+        #expect(item.properties == "cover-image")
+        let written = try #require(epub.data(forResourceHref: item.href))
+        #expect(written.starts(with: [0xFF, 0xD8]))
+
+        // EPUB 2's declaration points at it too.
+        let opf = try XMLDocument(data: try #require(epub.data(at: epub.opfPath)))
+        let metaCover = try opf.nodes(forXPath: "//*[local-name()='meta' and @name='cover']/@content")
+        #expect(metaCover.map(\.stringValue) == [item.id])
     }
 }
 

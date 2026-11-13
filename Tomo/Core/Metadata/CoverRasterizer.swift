@@ -14,14 +14,25 @@ nonisolated enum CoverRasterizer {
     /// the AZW3 writer doesn't support still reach the Kindle. Returns
     /// nil if the bytes can't be decoded.
     static func reencodeToJPEG(_ data: Data) -> Data? {
+        reencode(data, as: .jpeg, properties: [.compressionFactor: NSNumber(value: jpegQuality)])
+    }
+
+    /// PNG counterpart of `reencodeToJPEG`, for writing a user cover over an
+    /// EPUB's PNG cover entry without changing its declared media type.
+    static func reencodeToPNG(_ data: Data) -> Data? {
+        reencode(data, as: .png, properties: [:])
+    }
+
+    private static func reencode(
+        _ data: Data,
+        as fileType: NSBitmapImageRep.FileType,
+        properties: [NSBitmapImageRep.PropertyKey: Any]
+    ) -> Data? {
         guard let image = NSImage(data: data),
             let tiff = image.tiffRepresentation,
             let rep = NSBitmapImageRep(data: tiff)
         else { return nil }
-        return rep.representation(
-            using: .jpeg,
-            properties: [.compressionFactor: NSNumber(value: jpegQuality)]
-        )
+        return rep.representation(using: fileType, properties: properties)
     }
 
     /// Renders SVG bytes to JPEG at a Kindle-friendly resolution.

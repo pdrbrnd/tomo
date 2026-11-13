@@ -9,8 +9,9 @@ import os
 ///
 /// Simpler than `Kindle` because Kobo's scanner natively indexes EPUB and PDF
 /// — which is also everything `LibraryImporter` ingests — so there is no
-/// conversion path. Cover artwork is extracted from EPUB metadata by the
-/// device itself, so there's no thumbnail-folder workaround either.
+/// conversion path. Cover artwork is extracted from the EPUB by the device
+/// itself, so there's no thumbnail-folder workaround either — the user's
+/// cover is projected into the delivered EPUB instead.
 nonisolated struct Kobo: BookDevice {
     let volumeURL: URL
 
@@ -101,7 +102,7 @@ nonisolated struct Kobo: BookDevice {
         let dest = volumeURL.appending(component: deviceFilename(for: book))
 
         // Kobo reads the EPUB's embedded `content.opf`, not Tomo's sidecar, so
-        // project the user's edited title/author/language/series onto a
+        // project the user's edited title/author/language/series/cover onto a
         // scratch copy before sending. Only EPUB carries rewritable OPF
         // metadata; PDF and anything else passes through untouched. The rewrite is best-effort —
         // `metadataCorrectedCopy` returns nil (and we send the original) when
