@@ -24,7 +24,6 @@ private struct StubDevice: BookDevice {
     let supportedFormats: Set<String>
     var id: String { "stub" }
     var displayName: String { "Stub" }
-    var volumeURL: URL { URL(fileURLWithPath: "/Volumes/Stub") }
     func filenames() -> Set<String> { [] }
     func files() -> [DeviceFile] { [] }
     func deviceFilename(for book: Book) -> String { book.fileURL.lastPathComponent }

@@ -429,6 +429,12 @@ final class AppState {
 
     @ObservationIgnored private nonisolated(unsafe) var mountTask: Task<Void, Never>?
     @ObservationIgnored private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var usbTask: Task<Void, Never>?
+    /// Debounces bursts of USB events (one plug fires several) into one scan.
+    @ObservationIgnored private var usbRefreshTask: Task<Void, Never>?
+    /// An MTP device the user ejected. MTP has nothing to unmount, so the
+    /// device stays detectable; this hides it until it's unplugged.
+    @ObservationIgnored private var ejectedDeviceID: String?
     private var sendStateResetTask: Task<Void, Never>?
     private var toastDismissTask: Task<Void, Never>?
 
@@ -753,6 +759,7 @@ final class AppState {
     nonisolated deinit {
         mountTask?.cancel()
         unmountTask?.cancel()
+        usbTask?.cancel()
     }
 
     func sendToDevice(book: Book) async {
@@ -864,6 +871,13 @@ final class AppState {
             try await device.eject()
             deliveryLogger.info("ejected device: \(device.displayName, privacy: .public)")
             // The unmount notification clears `device` and `deviceFilenames`.
+            // MTP devices never unmount, so clear them here and keep them
+            // hidden until they're unplugged.
+            if device is KindleMTP {
+                ejectedDeviceID = device.id
+                self.device = nil
+                deviceFilenames = []
+            }
         } catch {
             deliveryLogger.error("eject failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -881,6 +895,18 @@ final class AppState {
                 await self?.refreshDeviceState()
             }
         }
+        // MTP Kindles never mount; USB attach/detach is their trigger. The
+        // delay also gives the device time to become ready for MTP sessions.
+        usbTask = Task { @MainActor [weak self] in
+            for await _ in USBDeviceEvents.stream() {
+                self?.usbRefreshTask?.cancel()
+                self?.usbRefreshTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard !Task.isCancelled else { return }
+                    await self?.refreshDeviceState()
+                }
+            }
+        }
     }
 
     /// Detection and enumeration run detached, same as `bootstrap()`:
@@ -891,7 +917,12 @@ final class AppState {
     /// off main is what prevents app-hang reports when any volume comes
     /// and goes.
     private func refreshDeviceState() async {
-        let detected = await Task.detached { DeviceScanner.detect() }.value
+        var detected = await Task.detached { DeviceScanner.detect() }.value
+        if let id = detected?.id, id == ejectedDeviceID {
+            detected = nil
+        } else {
+            ejectedDeviceID = nil  // unplugged (or another device): forget the eject
+        }
         device = detected
         if let detected {
             deviceFilenames = await Task.detached { detected.filenames() }.value

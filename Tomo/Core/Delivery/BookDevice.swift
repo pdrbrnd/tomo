@@ -3,7 +3,7 @@ import Foundation
 import os
 
 /// A connected e-reader. Implementations live alongside this file
-/// (`Kindle.swift`, eventually `Kobo.swift`, etc). The library/UI never
+/// (`Kindle.swift`, `KindleMTP.swift`, `Kobo.swift`). The library/UI never
 /// depends on a specific device — it just talks to this protocol.
 nonisolated protocol BookDevice: Sendable {
     /// Stable identifier for change detection (volume path is fine).
@@ -11,9 +11,6 @@ nonisolated protocol BookDevice: Sendable {
 
     /// User-facing display name ("Kindle", "Kobo Clara", etc).
     var displayName: String { get }
-
-    /// Mounted volume URL — used by `eject` and for the user to see in the UI.
-    var volumeURL: URL { get }
 
     /// File extensions (lowercase, no dot) the device's home-screen indexer
     /// will actually recognise. A book whose extension isn't in this set will
@@ -177,8 +174,9 @@ enum BookDeviceError: LocalizedError {
     }
 }
 
-/// Scans `/Volumes` and instantiates the appropriate device driver. New
-/// device types are added by appending an init attempt below.
+/// Scans `/Volumes` and the USB bus for MTP Kindles, and instantiates the
+/// appropriate device driver. New device types are added by appending an
+/// init attempt below.
 nonisolated enum DeviceScanner {
     static func detect() -> (any BookDevice)? {
         let fm = FileManager.default
@@ -190,13 +188,14 @@ nonisolated enum DeviceScanner {
                 options: [.skipsHiddenFiles]
             )
         else {
-            return nil
+            return KindleMTP.detect()
         }
         for url in entries {
             if let kindle = Kindle(volumeURL: url) { return kindle }
             if let kobo = Kobo(volumeURL: url) { return kobo }
         }
-        return nil
+        // MTP devices never mount, so they're found via the IORegistry.
+        return KindleMTP.detect()
     }
 }
 
