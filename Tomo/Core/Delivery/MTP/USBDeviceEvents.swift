@@ -28,8 +28,12 @@ nonisolated enum USBDeviceEvents {
 
             var iterators: [io_iterator_t] = []
             for type in [kIOFirstMatchNotification, kIOTerminatedNotification] {
-                let matching = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary
-                matching["idVendor"] = vendorID
+                // Watch interfaces, not devices: the MTP interface is what
+                // detection looks for, so its arrival means it's ready.
+                // The vendor filter must go through IOPropertyMatch — a bare
+                // top-level `idVendor` key never matches from user space.
+                let matching = IOServiceMatching("IOUSBHostInterface") as NSMutableDictionary
+                matching[kIOPropertyMatchKey] = ["idVendor": vendorID]
                 var iterator: io_iterator_t = 0
                 let result = IOServiceAddMatchingNotification(
                     port, type, matching, callback, refcon, &iterator)
