@@ -432,9 +432,6 @@ final class AppState {
     @ObservationIgnored private nonisolated(unsafe) var usbTask: Task<Void, Never>?
     /// Debounces bursts of USB events (one plug fires several) into one scan.
     @ObservationIgnored private var usbRefreshTask: Task<Void, Never>?
-    /// An MTP device the user ejected. MTP has nothing to unmount, so the
-    /// device stays detectable; this hides it until it's unplugged.
-    @ObservationIgnored private var ejectedDeviceID: String?
     private var sendStateResetTask: Task<Void, Never>?
     private var toastDismissTask: Task<Void, Never>?
 
@@ -871,10 +868,9 @@ final class AppState {
             try await device.eject()
             deliveryLogger.info("ejected device: \(device.displayName, privacy: .public)")
             // The unmount notification clears `device` and `deviceFilenames`.
-            // MTP devices never unmount, so clear them here and keep them
-            // hidden until they're unplugged.
+            // MTP devices never unmount (their USB-removal event lands ~1.5 s
+            // later), so clear them now for an immediate UI response.
             if device is KindleMTP {
-                ejectedDeviceID = device.id
                 self.device = nil
                 deviceFilenames = []
             }
@@ -917,12 +913,7 @@ final class AppState {
     /// off main is what prevents app-hang reports when any volume comes
     /// and goes.
     private func refreshDeviceState() async {
-        var detected = await Task.detached { DeviceScanner.detect() }.value
-        if let id = detected?.id, id == ejectedDeviceID {
-            detected = nil
-        } else {
-            ejectedDeviceID = nil  // unplugged (or another device): forget the eject
-        }
+        let detected = await Task.detached { DeviceScanner.detect() }.value
         device = detected
         if let detected {
             deviceFilenames = await Task.detached { detected.filenames() }.value

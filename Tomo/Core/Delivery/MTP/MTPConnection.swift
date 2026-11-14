@@ -116,6 +116,32 @@ nonisolated final class MTPConnection {
         }
     }
 
+    /// "Eject" for MTP: sends SET_CONFIGURATION 0, which unconfigures the
+    /// device. The Kindle treats that as the host letting go — it leaves the
+    /// "connected to computer" screen and stays usable on the cable — and
+    /// macOS doesn't reconfigure it until it's unplugged and replugged.
+    /// Takes the session lock so it can't cut an in-flight transfer short.
+    static func unconfigure(serial: String) throws(MTPError) {
+        try sessionLock.withLock { _ throws(MTPError) in
+            let matching = IOServiceMatching("IOUSBHostDevice") as NSMutableDictionary
+            matching[kIOPropertyMatchKey] = [
+                "idVendor": amazonVendorID, "kUSBSerialNumberString": serial,
+            ]
+            let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
+            guard service != 0 else { throw .deviceNotFound }
+            defer { IOObjectRelease(service) }
+            do {
+                let device = try IOUSBHostDevice(
+                    __ioService: service, options: [], queue: nil, interestHandler: nil)
+                defer { device.destroy() }
+                try device.__configure(withValue: 0, matchInterfaces: false)
+            } catch {
+                if (error as NSError).code == Int(Int32(bitPattern: 0xE000_02C5)) { throw .deviceBusy }
+                throw .transport(error.localizedDescription)
+            }
+        }
+    }
+
     /// Calls `visit` for each vendor-specific USB interface named "MTP" on an
     /// Amazon device until it returns true.
     private static func forEachMTPInterface(_ visit: (io_service_t) -> Bool) {

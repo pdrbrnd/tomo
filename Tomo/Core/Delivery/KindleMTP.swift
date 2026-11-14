@@ -9,7 +9,8 @@ import os
 ///
 /// Every operation opens its own short MTP session (`MTPConnection`), so
 /// nothing is held open between calls and the device is always safe to
-/// unplug — which is also why `eject()` has nothing to do.
+/// unplug. `eject()` unconfigures the USB device so the Kindle leaves its
+/// "connected to computer" screen.
 nonisolated struct KindleMTP: BookDevice {
     /// USB serial number — stable across reconnects.
     let serial: String
@@ -86,8 +87,17 @@ nonisolated struct KindleMTP: BookDevice {
         }
     }
 
-    /// Nothing to unmount, and no session is left open between operations.
-    func eject() async throws {}
+    /// Nothing to unmount, so unconfigure the USB device instead: the Kindle
+    /// leaves its "connected to computer" screen, the MTP interface goes
+    /// away, and it isn't detected again until it's replugged.
+    func eject() async throws {
+        let serial = serial
+        do {
+            try await Task.detached { try MTPConnection.unconfigure(serial: serial) }.value
+        } catch {
+            throw BookDeviceError.ejectFailed(underlying: error)
+        }
+    }
 
     // MARK: - Private
 
