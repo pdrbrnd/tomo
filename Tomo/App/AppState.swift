@@ -429,6 +429,9 @@ final class AppState {
 
     @ObservationIgnored private nonisolated(unsafe) var mountTask: Task<Void, Never>?
     @ObservationIgnored private nonisolated(unsafe) var unmountTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var usbTask: Task<Void, Never>?
+    /// Debounces bursts of USB events (one plug fires several) into one scan.
+    @ObservationIgnored private var usbRefreshTask: Task<Void, Never>?
     private var sendStateResetTask: Task<Void, Never>?
     private var toastDismissTask: Task<Void, Never>?
 
@@ -753,6 +756,7 @@ final class AppState {
     nonisolated deinit {
         mountTask?.cancel()
         unmountTask?.cancel()
+        usbTask?.cancel()
     }
 
     func sendToDevice(book: Book) async {
@@ -864,6 +868,12 @@ final class AppState {
             try await device.eject()
             deliveryLogger.info("ejected device: \(device.displayName, privacy: .public)")
             // The unmount notification clears `device` and `deviceFilenames`.
+            // MTP devices never unmount (their USB-removal event lands ~1.5 s
+            // later), so clear them now for an immediate UI response.
+            if device is KindleMTP {
+                self.device = nil
+                deviceFilenames = []
+            }
         } catch {
             deliveryLogger.error("eject failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -879,6 +889,18 @@ final class AppState {
         unmountTask = Task { @MainActor [weak self] in
             for await _ in center.notifications(named: NSWorkspace.didUnmountNotification) {
                 await self?.refreshDeviceState()
+            }
+        }
+        // MTP Kindles never mount; USB attach/detach is their trigger. The
+        // delay also gives the device time to become ready for MTP sessions.
+        usbTask = Task { @MainActor [weak self] in
+            for await _ in USBDeviceEvents.stream() {
+                self?.usbRefreshTask?.cancel()
+                self?.usbRefreshTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(1.5))
+                    guard !Task.isCancelled else { return }
+                    await self?.refreshDeviceState()
+                }
             }
         }
     }
