@@ -31,14 +31,7 @@ nonisolated struct Kindle: BookDevice {
         self.firmwareVersion = Self.readFirmwareVersion(volumeURL: volumeURL)
     }
 
-    /// Kindle's home-screen scanner ignores EPUB regardless of firmware.
-    /// The renderer reads EPUB on FW 5.16+, but the scanner that builds
-    /// the library list from `/documents/` only indexes Amazon-friendly
-    /// formats. EPUBs are converted to AZW3 on the fly via the
-    /// conversion adapter — see `Tomo/Core/Conversion/`.
-    var supportedFormats: Set<String> {
-        ["azw", "azw3", "mobi", "prc", "pdf", "txt"]
-    }
+    var supportedFormats: Set<String> { KindleDelivery.supportedFormats }
 
     func filenames() -> Set<String> {
         // Basenames only (no path), so the grid's "is this book on device?"
@@ -108,55 +101,9 @@ nonisolated struct Kindle: BookDevice {
         return results
     }
 
-    /// Pre-installed Kindle content we don't want users deleting accidentally
-    /// (or — for dictionaries — content that's recoverable but better managed
-    /// via the on-device Settings flow). The `supportedFormats` whitelist
-    /// already filters non-book extensions, so this only needs to catch
-    /// things that *look* like books but aren't user content.
-    ///
-    /// Two layers:
-    ///  - exact stem matches for well-known Amazon files (`My Clippings`,
-    ///    User's Guides, Welcome, etc.)
-    ///  - brand-anchored dictionary detection — stem must contain BOTH an
-    ///    Amazon dictionary publisher (Oxford, Duden…) AND the word
-    ///    "dictionary"/"diccionario"/"…" to avoid hiding user books like
-    ///    "The Devil's Dictionary" by Ambrose Bierce.
+    /// Amazon guides, `My Clippings`, dictionaries — see `KindleDelivery`.
     nonisolated func isSystemFile(relativePath: String) -> Bool {
-        let basename = (relativePath as NSString).lastPathComponent
-        let stem = ((basename as NSString).deletingPathExtension).lowercased()
-
-        let amazonStems: Set<String> = [
-            "my clippings",
-            "kindle user's guide",
-            "user's guide",
-            "welcome",
-            "getting started",
-            "quick tour",
-        ]
-        if amazonStems.contains(stem) { return true }
-
-        // Localized "dictionary" words. These are nouns that are
-        // *specifically* used for dictionaries in their languages, so
-        // hiding on stem-contains alone is safe — minimal false-positive
-        // risk for user books.
-        let localizedDictionaryWords = [
-            "dicionário", "dictionnaire", "wörterbuch", "diccionario",
-        ]
-        if localizedDictionaryWords.contains(where: { stem.contains($0) }) {
-            return true
-        }
-
-        // English "dictionary": require co-occurrence with a known Amazon
-        // dictionary publisher so a user's "Devil's Dictionary" stays
-        // visible.
-        if stem.contains("dictionary") {
-            let publishers = ["oxford", "duden", "larousse", "sanseido"]
-            if publishers.contains(where: { stem.contains($0) }) {
-                return true
-            }
-        }
-
-        return false
+        KindleDelivery.isSystemFile(relativePath: relativePath)
     }
 
     func copy(_ book: Book) async throws {
@@ -165,68 +112,18 @@ nonisolated struct Kindle: BookDevice {
             .appending(component: "documents")
             .appending(component: deviceFilename(for: book))
 
-        switch deliveryRoute(for: book) {
-        case .passthrough:
-            try await performCopy(from: book.fileURL, to: dest)
-
-        case .convert(let target):
-            // The route helper already verified a converter exists,
-            // but we fetch it again here for the actual call. Source
-            // format is guaranteed to round-trip since we just got
-            // back a non-nil route.
-            let sourceExt = book.fileURL.pathExtension.lowercased()
-            guard let sourceFormat = FileFormat(rawValue: sourceExt),
-                let converter = ConversionRegistry.default
-                    .converter(from: sourceFormat, to: target)
-            else {
-                throw BookDeviceError.copyFailed(
-                    underlying: FormatConverterError.unsupported(
-                        input: sourceExt, output: target
-                    )
-                )
-            }
-            try await ConversionScratch.withScratchDirectory { scratch in
-                // For EPUB→AZW3, route through the EPUB-specific overload
-                // so the user's on-disk cover override (or its explicit
-                // removal) flows into both the AZW3 cover record and the
-                // home-screen thumbnail. Other source formats keep the
-                // generic registry path.
-                let converted: URL
-                if let epubConverter = converter as? EPUBToAZW3Converter {
-                    converted = try await epubConverter.convert(
-                        source: book.fileURL,
-                        into: scratch,
-                        coverSource: .override(book.coverURL),
-                        metadata: EPUBSource.MetadataOverride(
-                            title: book.title,
-                            authors: book.authors.isEmpty ? nil : book.authors,
-                            language: book.locale
-                        )
-                    )
-                } else {
-                    converted = try await converter.convert(source: book.fileURL, into: scratch)
-                }
-                try await self.performCopy(from: converted, to: dest)
-                // Best-effort home-screen cover. Calibre's thumbnail-folder
-                // approach is the reliable path on modern firmwares — EXTH 201
-                // alone renders inside the book but isn't picked up by the
-                // home-screen scanner. Failures are non-fatal; the book is
-                // usable either way.
-                if sourceFormat == .epub {
-                    await self.writeKindleCoverThumbnail(
-                        epubURL: book.fileURL,
-                        coverOverride: book.coverURL
-                    )
-                }
-            }
-
-        case .none:
-            throw BookDeviceError.copyFailed(
-                underlying: FormatConverterError.unsupported(
-                    input: book.fileURL.pathExtension.lowercased(),
-                    output: .azw3
-                )
-            )
+        let convertedFromEPUB = try await KindleDelivery.withDeliverableFile(
+            for: book, route: deliveryRoute(for: book)
+        ) { file in
+            try await self.performCopy(from: file, to: dest)
+        }
+        // Best-effort home-screen cover. Calibre's thumbnail-folder
+        // approach is the reliable path on modern firmwares — EXTH 201
+        // alone renders inside the book but isn't picked up by the
+        // home-screen scanner. Failures are non-fatal; the book is
+        // usable either way.
+        if convertedFromEPUB {
+            await writeKindleCoverThumbnail(epubURL: book.fileURL, coverOverride: book.coverURL)
         }
     }
 

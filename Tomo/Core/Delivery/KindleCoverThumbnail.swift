@@ -31,26 +31,34 @@ nonisolated enum KindleCoverThumbnail {
     /// Calibre's `amazon-cover-bug/` (each tool owns its own cache).
     static let coverCacheSubpath = ".tomo/cover-thumbnails"
 
-    /// Best-effort cover write. No-op when the manifest has no cover.
-    /// Throws on filesystem errors — caller handles non-fatally (book is
-    /// still usable; just won't show a custom cover on the home screen).
-    static func write(manifest: BookManifest, volumeURL: URL) throws {
+    /// The thumbnail file for this book: its `system/thumbnails/` filename
+    /// and resized JPEG bytes. Nil when the manifest has no cover. Shared by
+    /// the volume driver (`write`) and the MTP driver, which uploads it.
+    static func thumbnail(for manifest: BookManifest) -> (filename: String, bytes: Data)? {
         guard let cover = manifest.cover else {
             // Surfaces "no cover in book" vs. "write failed" in the logs so
             // future repro sessions can tell why the home-screen tile fell
             // back to a placeholder.
             deliveryLogger.info("kindle thumbnail skipped: manifest has no cover")
-            return
+            return nil
         }
-
         let asin = AZW3Writer(manifest: manifest).asin
+        let filename = "thumbnail_\(asin)_\(cdeType)_portrait.jpg"
+        let bytes = resizeAsJPEG(cover.bytes, height: thumbnailHeight) ?? cover.bytes
+        return (filename, bytes)
+    }
+
+    /// Best-effort cover write. No-op when the manifest has no cover.
+    /// Throws on filesystem errors — caller handles non-fatally (book is
+    /// still usable; just won't show a custom cover on the home screen).
+    static func write(manifest: BookManifest, volumeURL: URL) throws {
+        guard let (filename, bytes) = thumbnail(for: manifest) else { return }
+
         let dir = volumeURL.appending(
             component: thumbnailsSubpath, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let filename = "thumbnail_\(asin)_\(cdeType)_portrait.jpg"
         let dest = dir.appending(component: filename)
-        let bytes = resizeAsJPEG(cover.bytes, height: thumbnailHeight) ?? cover.bytes
         try bytes.write(to: dest, options: .atomic)
         deliveryLogger.info(
             "kindle thumbnail wrote \(bytes.count) bytes to \(filename, privacy: .public)")
