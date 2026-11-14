@@ -80,6 +80,8 @@ struct SettingsRoot: View {
     @ViewBuilder
     private func detail(for section: SettingsSection) -> some View {
         switch section {
+        case .appearance:
+            AppearanceSettingsView()
         case .languages:
             LanguageSettingsView(state: state)
         case .plugins:
@@ -91,6 +93,7 @@ struct SettingsRoot: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
+    case appearance
     case languages
     case plugins
     case privacy
@@ -99,6 +102,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
+        case .appearance: "Appearance"
         case .languages: "Languages"
         case .plugins: "Plugins"
         case .privacy: "Privacy"
@@ -107,6 +111,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var symbol: String {
         switch self {
+        case .appearance: "circle.lefthalf.filled"
         case .languages: "character.bubble"
         case .plugins: "puzzlepiece.extension"
         case .privacy: "hand.raised"

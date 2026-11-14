@@ -28,7 +28,7 @@ struct SourcesSettingsButton: View {
         }
         .buttonStyle(.plain)
         .help("Sources")
-        .popover(isPresented: $popoverOpen, arrowEdge: .top) {
+        .popover(isPresented: $popoverOpen, arrowEdge: .bottom) {
             SourcesPopoverContent(state: state, popoverOpen: $popoverOpen)
                 .onAppear { state.acknowledgePluginUpdatesBadge() }
         }

@@ -6,6 +6,7 @@ import SwiftUI
 @main
 struct TomoApp: App {
     @State private var state = AppState()
+    @AppStorage(AppAppearance.storageKey) private var appearance = AppAppearance.system
     private let updaterController: SPUStandardUpdaterController
 
     init() {
@@ -37,6 +38,7 @@ struct TomoApp: App {
         // whenever a file/URL is opened. `Window` can't duplicate.
         Window("Tomo", id: Self.libraryWindowID) {
             LibraryView(state: state)
+                .preferredColorScheme(appearance.colorScheme)
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
@@ -73,6 +75,7 @@ struct TomoApp: App {
 
         Window("Settings", id: Self.settingsWindowID) {
             SettingsRoot(state: state)
+                .preferredColorScheme(appearance.colorScheme)
         }
         .windowStyle(.hiddenTitleBar)
         // `.contentSize` + a fixed frame on the content view = the window
@@ -85,6 +88,7 @@ struct TomoApp: App {
         // `openWindow(id:value:)` — never by the library.
         WindowGroup(id: Self.readerWindowID, for: ReaderRoute.self) { $route in
             ReaderWindowRoot(route: route, state: state)
+                .preferredColorScheme(appearance.colorScheme)
         }
         .windowStyle(.hiddenTitleBar)
         // Wider than the text column (which stays capped at ~62ch) so the

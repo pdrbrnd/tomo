@@ -140,6 +140,8 @@ enum Theme {
         /// computation in `LibraryView.grid`.
         static let minCardWidth: CGFloat = 168
         static let maxCardWidth: CGFloat = 224
+        static let coverSizeRange: ClosedRange<Double> = 60...150
+        static let defaultCoverSize: Double = 100
 
         /// Margin around the entire library grid, larger than
         /// `Spacing.xxl` on purpose — gives the floating chrome (top

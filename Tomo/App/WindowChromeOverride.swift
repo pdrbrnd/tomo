@@ -99,8 +99,8 @@ enum WindowChromeOverride {
     }
 
     /// Offsets the standard window buttons by `inset` *inside* `NSThemeFrame`'s
-    /// `-layout`, after AppKit places them at their defaults. Running every
-    /// layout pass (including each live-resize frame) means the buttons never
+    /// `-layout`, after AppKit updates their positions. Running every layout
+    /// pass (including each live-resize frame) means the buttons never
     /// lag — no resize jump. Used for the library (resizable); short-title-bar
     /// windows (Settings/reader) use the notification offset instead, since the
     /// swizzle left their click region behind the visual position.
@@ -123,8 +123,9 @@ enum WindowChromeOverride {
 
         typealias LayoutFunc = @convention(c) (AnyObject, Selector) -> Void
         let originalIMP = method_getImplementation(method)
+        let adjustedOrigins = NSMapTable<NSButton, NSValue>.weakToStrongObjects()
         let block: @convention(block) (AnyObject) -> Void = { themeFrame in
-            // Let AppKit lay the frame (and buttons at their defaults) out first.
+            // Let AppKit lay out the frame and its buttons first.
             unsafeBitCast(originalIMP, to: LayoutFunc.self)(themeFrame, sel)
             // `-layout` is always called on the main thread.
             MainActor.assumeIsolated {
@@ -137,11 +138,17 @@ enum WindowChromeOverride {
                 else { return }
                 for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
                     guard let button = window.standardWindowButton(type) else { continue }
-                    // Title-bar coords aren't flipped — moving DOWN means a
-                    // smaller Y. Offset from the freshly-laid-out default, so
-                    // it never compounds across passes.
+                    // AppKit can retain the previous position during layout.
+                    // Apply the inset only on axes AppKit has repositioned.
                     let origin = button.frame.origin
-                    button.setFrameOrigin(NSPoint(x: origin.x + inset, y: origin.y - inset))
+                    let previous = adjustedOrigins.object(forKey: button)?.pointValue
+                    let adjusted = NSPoint(
+                        x: origin.x == previous?.x ? origin.x : origin.x + inset,
+                        y: origin.y == previous?.y ? origin.y : origin.y - inset
+                    )
+                    guard adjusted != origin else { continue }
+                    adjustedOrigins.setObject(NSValue(point: adjusted), forKey: button)
+                    button.setFrameOrigin(adjusted)
                     // Rebuild the button's hover tracking at its new position so
                     // the glyph reveal triggers on the button, not its old spot.
                     button.updateTrackingAreas()
